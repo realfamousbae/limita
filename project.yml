@@ -1,0 +1,29 @@
+name: Limita
+options:
+  bundleIdPrefix: com.limita
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+targets:
+  Limita:
+    type: application
+    platform: macOS
+    sources:
+      - Limita
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.limita.app
+        INFOPLIST_FILE: Limita/Info.plist
+        PRODUCT_NAME: Limita
+        SWIFT_EMIT_LOC_STRINGS: YES
+        CODE_SIGN_STYLE: Automatic
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+    preBuildScripts: []

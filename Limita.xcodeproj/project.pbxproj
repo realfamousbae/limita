@@ -1,0 +1,357 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		198D43F3F9A2905D654DFD2C /* MiniPillView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EF6C8CCC714A70DC1BA4B0 /* MiniPillView.swift */; };
+		342D1ABDA46FB2E87D722AF1 /* ClaudeScraper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D03E111D1B9D2E63E43FE23 /* ClaudeScraper.swift */; };
+		43C1CB71110D3B3917E3575E /* LimitsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */; };
+		4EA5262139160334A05CAE9E /* BezelPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27C03CC32416785B5AE66956 /* BezelPanelController.swift */; };
+		8047ED5CA8064614590FF52D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37A349072A6F933C9F03DCC /* AppDelegate.swift */; };
+		87D73D8E5C39EEA3F12B8F26 /* LimitaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5CA708E4B041F7AED42C7A /* LimitaApp.swift */; };
+		C0E87B7D549C94F8610649EE /* ExpandedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AEC302EB596BCC32079CE7A /* ExpandedView.swift */; };
+		C6914B7C391A7F70A58E797C /* OpenAIScraper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01D613219B6182622CB94D6 /* OpenAIScraper.swift */; };
+		CE560AF28A8DA7E0D318ADA4 /* LimitData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 597AA6F50B34A3D5C5B2FBEF /* LimitData.swift */; };
+		F41A005AC586FC72AD3993DE /* LoginWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EECFA74F4F2002E070D631E /* LoginWebView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1EDD6F89AE8BABCC152E6C77 /* Limita.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Limita.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1EECFA74F4F2002E070D631E /* LoginWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginWebView.swift; sourceTree = "<group>"; };
+		27C03CC32416785B5AE66956 /* BezelPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BezelPanelController.swift; sourceTree = "<group>"; };
+		3B5CA708E4B041F7AED42C7A /* LimitaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitaApp.swift; sourceTree = "<group>"; };
+		597AA6F50B34A3D5C5B2FBEF /* LimitData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitData.swift; sourceTree = "<group>"; };
+		5D03E111D1B9D2E63E43FE23 /* ClaudeScraper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeScraper.swift; sourceTree = "<group>"; };
+		9AEC302EB596BCC32079CE7A /* ExpandedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandedView.swift; sourceTree = "<group>"; };
+		B37A349072A6F933C9F03DCC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitsStore.swift; sourceTree = "<group>"; };
+		E4EF6C8CCC714A70DC1BA4B0 /* MiniPillView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPillView.swift; sourceTree = "<group>"; };
+		F01D613219B6182622CB94D6 /* OpenAIScraper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIScraper.swift; sourceTree = "<group>"; };
+		F17056D8730C101CB2795C3D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		03D9EFC499B66064BF741A99 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1EDD6F89AE8BABCC152E6C77 /* Limita.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2E5BE84BD99B5020ABC5EDED /* App */ = {
+			isa = PBXGroup;
+			children = (
+				B37A349072A6F933C9F03DCC /* AppDelegate.swift */,
+				3B5CA708E4B041F7AED42C7A /* LimitaApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		32D1BC3AF1601C05E25B026D /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				597AA6F50B34A3D5C5B2FBEF /* LimitData.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		626FC2F8DF6C3B96B46508B0 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				27C03CC32416785B5AE66956 /* BezelPanelController.swift */,
+				9AEC302EB596BCC32079CE7A /* ExpandedView.swift */,
+				E4EF6C8CCC714A70DC1BA4B0 /* MiniPillView.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		806CBFA75D75C9FDB326240C = {
+			isa = PBXGroup;
+			children = (
+				F252A1D915E5AACE86783687 /* Limita */,
+				03D9EFC499B66064BF741A99 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9D9C38A9B66B0872B1655CA8 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				5D03E111D1B9D2E63E43FE23 /* ClaudeScraper.swift */,
+				DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */,
+				1EECFA74F4F2002E070D631E /* LoginWebView.swift */,
+				F01D613219B6182622CB94D6 /* OpenAIScraper.swift */,
+			);
+			path = Data;
+			sourceTree = "<group>";
+		};
+		F252A1D915E5AACE86783687 /* Limita */ = {
+			isa = PBXGroup;
+			children = (
+				F17056D8730C101CB2795C3D /* Info.plist */,
+				2E5BE84BD99B5020ABC5EDED /* App */,
+				9D9C38A9B66B0872B1655CA8 /* Data */,
+				32D1BC3AF1601C05E25B026D /* Models */,
+				626FC2F8DF6C3B96B46508B0 /* UI */,
+			);
+			path = Limita;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		15D69141E4E3BB35DEB0AA15 /* Limita */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CA55345FFF50A5D5F3D5237B /* Build configuration list for PBXNativeTarget "Limita" */;
+			buildPhases = (
+				3508059F6D1296A937C7D4C7 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Limita;
+			packageProductDependencies = (
+			);
+			productName = Limita;
+			productReference = 1EDD6F89AE8BABCC152E6C77 /* Limita.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C77BB9E840AEF78F0366A8DB /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					15D69141E4E3BB35DEB0AA15 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = AC8EDB4D83762435F91AF775 /* Build configuration list for PBXProject "Limita" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 806CBFA75D75C9FDB326240C;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 03D9EFC499B66064BF741A99 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				15D69141E4E3BB35DEB0AA15 /* Limita */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3508059F6D1296A937C7D4C7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8047ED5CA8064614590FF52D /* AppDelegate.swift in Sources */,
+				4EA5262139160334A05CAE9E /* BezelPanelController.swift in Sources */,
+				342D1ABDA46FB2E87D722AF1 /* ClaudeScraper.swift in Sources */,
+				C0E87B7D549C94F8610649EE /* ExpandedView.swift in Sources */,
+				CE560AF28A8DA7E0D318ADA4 /* LimitData.swift in Sources */,
+				87D73D8E5C39EEA3F12B8F26 /* LimitaApp.swift in Sources */,
+				43C1CB71110D3B3917E3575E /* LimitsStore.swift in Sources */,
+				F41A005AC586FC72AD3993DE /* LoginWebView.swift in Sources */,
+				198D43F3F9A2905D654DFD2C /* MiniPillView.swift in Sources */,
+				C6914B7C391A7F70A58E797C /* OpenAIScraper.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1B0126216814FF4645D22840 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		6EA53E46095F9D914E418D03 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Limita/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.limita.app;
+				PRODUCT_NAME = Limita;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		A127EB3E81FB3B42E703C6D8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		DCB27DC4F01F6EBEA509BA24 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Limita/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.limita.app;
+				PRODUCT_NAME = Limita;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AC8EDB4D83762435F91AF775 /* Build configuration list for PBXProject "Limita" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1B0126216814FF4645D22840 /* Debug */,
+				A127EB3E81FB3B42E703C6D8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CA55345FFF50A5D5F3D5237B /* Build configuration list for PBXNativeTarget "Limita" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6EA53E46095F9D914E418D03 /* Debug */,
+				DCB27DC4F01F6EBEA509BA24 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = C77BB9E840AEF78F0366A8DB /* Project object */;
+}
