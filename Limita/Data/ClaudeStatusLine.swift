@@ -197,10 +197,13 @@ struct ClaudeStatusLineConfigurator {
         self.executableURL = executableURL
     }
 
-    /// Paths that disappear on a clean build or a move; hooks pointing there break silently.
-    var isRunningFromBuildDirectory: Bool {
-        let path = executableURL.path
-        return path.contains("/DerivedData/") || path.contains("/.build/")
+    /// Only an installed app has a stable path. Builds in DerivedData, tmp or Downloads
+    /// disappear or move, and a hook pointing there silently blanks the status line.
+    var isRunningFromStableLocation: Bool {
+        let path = executableURL.standardizedFileURL.path
+        let userApplications = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications").path + "/"
+        return path.hasPrefix("/Applications/") || path.hasPrefix(userApplications)
     }
 
     func status() throws -> Status {
@@ -253,7 +256,7 @@ struct ClaudeStatusLineConfigurator {
         guard case .installed(let path, _) = try status(),
               path != executableURL.path,
               !FileManager.default.fileExists(atPath: path),
-              !isRunningFromBuildDirectory
+              isRunningFromStableLocation
         else { return false }
         return try install() == .updated
     }

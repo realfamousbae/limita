@@ -31,9 +31,12 @@ struct MiniPillView: View {
             Circle()
                 .fill(DashboardStyle.statusColor(state, now: now))
                 .frame(width: 6, height: 6)
-            Text(state.snapshot.map { "\(Int(($0.peakFraction(at: now) * 100).rounded()))%" } ?? "—")
+            let peak = state.snapshot?.peakFraction(at: now)
+            Text(peak.map { "\(Int(($0 * 100).rounded()))%" } ?? "—")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .monospacedDigit()
+                // The dot shows freshness when data is stale; the number always shows pressure.
+                .foregroundStyle(DashboardStyle.pressureColor(peak ?? 0, fallback: .white))
         }
     }
 }

@@ -175,6 +175,24 @@ final class LimitaTests: XCTestCase {
         )
     }
 
+    func testOnlyApplicationsFolderCountsAsStableLocation() {
+        func configurator(_ path: String) -> ClaudeStatusLineConfigurator {
+            ClaudeStatusLineConfigurator(settingsFile: URL(fileURLWithPath: "/dev/null"), executableURL: URL(fileURLWithPath: path))
+        }
+        XCTAssertTrue(configurator("/Applications/Limita.app/Contents/MacOS/Limita").isRunningFromStableLocation)
+        XCTAssertTrue(configurator(NSHomeDirectory() + "/Applications/Limita.app/Contents/MacOS/Limita").isRunningFromStableLocation)
+        XCTAssertFalse(configurator("/private/tmp/dd/Build/Products/Debug/Limita.app/Contents/MacOS/Limita").isRunningFromStableLocation)
+        XCTAssertFalse(configurator(NSHomeDirectory() + "/Downloads/Limita.app/Contents/MacOS/Limita").isRunningFromStableLocation)
+    }
+
+    func testRepairDoesNotPointHookAtUnstableBuild() throws {
+        let settings = try temporaryDirectory().appendingPathComponent("settings.json")
+        let old = ClaudeStatusLineConfigurator(settingsFile: settings, executableURL: URL(fileURLWithPath: "/old/Limita"))
+        let build = ClaudeStatusLineConfigurator(settingsFile: settings, executableURL: URL(fileURLWithPath: "/tmp/dd/Limita"))
+        XCTAssertEqual(try old.install(), .installed)
+        XCTAssertFalse(try build.repairIfNeeded())
+    }
+
     func testConfiguratorRejectsNonObjectSettings() throws {
         let settings = try temporaryDirectory().appendingPathComponent("settings.json")
         try Data("[1,2]".utf8).write(to: settings)

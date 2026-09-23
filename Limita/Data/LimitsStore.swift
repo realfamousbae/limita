@@ -76,9 +76,9 @@ final class LimitsStore {
 
     func connectClaude() {
         do {
-            let hint = configurator.isRunningFromBuildDirectory
-                ? "\nLimita запущена из папки сборки: перенесите её в /Applications и подключите заново."
-                : ""
+            let hint = configurator.isRunningFromStableLocation
+                ? ""
+                : "\nLimita запущена не из /Applications: после переноса туда подключите заново."
             switch try configurator.install() {
             case .installed:
                 claudeSetupMessage = "Подключено. Лимиты появятся после следующего ответа Claude Code." + hint
