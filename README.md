@@ -1,101 +1,77 @@
-# 🏝️ Limita
+# Limita
 
-> **Dynamic Bezel AI Limits Tracker for macOS**  
-> Нативное macOS приложение в стиле Dynamic Island для отслеживания 5-часовых и недельных лимитов **Codex (ChatGPT)** и **Claude**.
+Нативный индикатор лимитов Codex и Claude Code для macOS. Приложение живёт в menu bar и открывает отдельную панель справа под строкой меню, не перекрывая вырез камеры.
 
----
+## Что работает
 
-## ✨ Возможности
+- лимиты Codex за 5 часов и 7 дней из локальных session-логов Codex;
+- лимиты Claude Code за 5 часов и 7 дней через официальный status-line JSON;
+- процент использования и время до сброса каждого окна;
+- признаки свежих, устаревших и недоступных данных;
+- автоматическое обновление раз в минуту и ручное обновление;
+- несколько мониторов и полноэкранные Space;
+- полностью кастомный чёрный dashboard без стандартного SwiftUI Material;
+- вызов только из menu bar — центральная зона камеры не используется.
 
-- **Скрытый режим (Dynamic Bezel)**: По умолчанию приложение не занимает места на экране и спрятано за верхней гранью дисплея.
-- **Интерактивная пилюля (Hover Pill)**: При подведении курсора к верхнему краю плавно выезжает компактная пилюля с цветовыми индикаторами статуса:
-  - 🟢 **Зелёный**: < 70% расхода
-  - 🟡 **Оранжевый**: 70% – 90% расхода
-  - 🔴 **Красный**: > 90% расхода
-- **Развёрнутая панель (Expanded View)**: Клик по пилюле открывает детальное окно с визуальными прогресс-барами:
-  - ⚡ **Codex**: 5-hour limit + weekly limit
-  - 🤖 **Claude**: 5-hour limit + weekly limit
-- **Фоновое автообновление**: Проверка и актуализация данных каждые 15 минут в фоне.
-- **Однократная авторизация**: Встроенное изолированное окно входа с поддержкой OAuth (Google / Apple ID) и десктопным движком WebKit.
-- **Menu Bar интеграция**: Иконка в строке меню для быстрого вызова логина, ручного обновления (`⌘R`) и выхода. Приложение не захламляет Dock (`LSUIElement = true`).
+Limita не использует закрытые web API, не хранит cookies и не просит логин/пароль.
 
----
+## Требования
 
-## 🛠️ Стек технологий
+- macOS 14 или новее;
+- Xcode 15 или новее для сборки;
+- установленный Codex CLI и/или Claude Code.
 
-- **Язык**: Swift 5.9+
-- **Интерфейс**: SwiftUI + AppKit (`NSPanel`, `.statusBar` level)
-- **Платформа**: macOS 14.0 (Sonoma) и новее (Apple Silicon & Intel)
-- **Сетевой движок**: WebKit (`WKWebView`, `WKWebsiteDataStore`) с поддержкой десктопных заголовков и асинхронного выполнения скриптов
-- **Сборка**: Xcode / [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+## Сборка
 
----
-
-## 🚀 Сборка и запуск
-
-### Требования
-- macOS 14.0+
-- Xcode 15+
-
-### Быстрый старт
-
-1. Склонируйте репозиторий:
-   ```bash
-   git clone https://github.com/your-username/limita.git
-   cd limita
-   ```
-
-2. Откройте проект в Xcode:
-   ```bash
-   open Limita.xcodeproj
-   ```
-
-3. Нажмите **Run (`⌘R`)**.
-
-*(Опционально)* Если вы изменяете структуру файлов или конфигурацию проекта:
 ```bash
-# Установка XcodeGen (если не установлен)
-brew install xcodegen
-
-# Регенерация проекта из project.yml
+swift test
 xcodegen generate
+xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Debug build
 ```
 
----
+Или откройте `Limita.xcodeproj` в Xcode и запустите схему `Limita`.
 
-## ⚙️ Настройка при первом запуске
+## Источники данных
 
-1. При первом запуске появится иконка ⊙ в строке меню (menu bar).
-2. Нажмите на иконку в menu bar → **«Войти в Codex...»** и выполните вход в аккаунт OpenAI.
-3. Повторите для **«Войти в Claude...»** (аккаунт Anthropic).
-4. Сессия и куки сохраняются локально. Дальше приложение автоматически скрапит актуальные лимиты.
-5. При запросе системы разрешите доступ в **Системные настройки → Конфиденциальность и безопасность → Мониторинг ввода (Input Monitoring)**, чтобы приложение могло отслеживать подведение курсора к верхнему краю экрана.
+### Codex
 
----
+Дополнительная настройка не нужна. Limita ищет последние `rate_limits` в:
 
-## 📂 Структура проекта
+- `~/.codex/sessions/**/rollout-*.jsonl`;
+- `~/.codex/archived_sessions/rollout-*.jsonl`.
 
-```
+Если данных ещё нет, запустите хотя бы одну сессию Codex. Limita читает файлы с конца и не загружает содержимое диалога в память целиком.
+
+### Claude Code
+
+Выберите в menu bar **«Подключить Claude Code…»** или нажмите кнопку в панели. Limita добавит в `~/.claude/settings.json` status-line command, который получает лимиты от Claude Code.
+
+После подключения запустите или продолжите интерактивную сессию Claude Code. Данные появятся при первом обновлении status line.
+
+Если status line уже настроена другим инструментом, Limita не перезаписывает её и сообщает об этом. Подключение не выполняется автоматически без действия пользователя.
+
+## Приватность
+
+Для Codex обрабатывается только объект `rate_limits` из последней подходящей записи. Для Claude из status-line JSON сохраняются только:
+
+- `five_hour.used_percentage` и `five_hour.resets_at`;
+- `seven_day.used_percentage` и `seven_day.resets_at`;
+- локальное время получения.
+
+Путь проекта, transcript, session ID, prompts, ответы и учётные данные не сохраняются. Кэш Claude находится в `~/Library/Application Support/Limita/claude-status.json`.
+
+## Структура
+
+```text
 Limita/
-├── App/
-│   ├── LimitaApp.swift           # Точка входа SwiftUI (@main)
-│   └── AppDelegate.swift         # Жизненный цикл, Menu Bar и окна логина
-├── Models/
-│   └── LimitData.swift           # Модели данных (ServiceLimit, ServiceStatus, Service)
-├── Data/
-│   ├── LimitsStore.swift         # @Observable хранилище состояния и таймер
-│   ├── OpenAIScraper.swift       # WKWebView скрапер для ChatGPT / Codex
-│   ├── ClaudeScraper.swift       # WKWebView скрапер для Claude.ai
-│   └── LoginWebView.swift        # Окно авторизации с панелью навигации
-├── UI/
-│   ├── BezelPanelController.swift# Управление NSPanel оверлеем и hover-триггером
-│   ├── MiniPillView.swift        # Компактный виджет пилюли при наведении
-│   └── ExpandedView.swift        # Полная карточка со всеми лимитами
-└── Info.plist                    # Конфигурация приложения (LSUIElement)
+├── App/       # жизненный цикл и menu bar
+├── Data/      # локальные readers и Claude status-line capture
+├── Models/    # окна лимитов и состояния источников
+└── UI/        # Dynamic Bezel, pill и полная панель
+Tests/
+└── LimitaTests/
 ```
 
----
+## Лицензия
 
-## 📄 Лицензия
-
-MIT License. См. файл [LICENSE](LICENSE) для подробностей.
+MIT — см. [LICENSE](LICENSE).

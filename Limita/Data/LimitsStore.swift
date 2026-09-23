@@ -4,84 +4,69 @@ import Observation
 @Observable
 @MainActor
 final class LimitsStore {
-    var codex: ServiceStatus = .empty
-    var claude: ServiceStatus = .empty
+    private(set) var codex: ServiceState = .unavailable(reason: "Данные Codex ещё не прочитаны")
+    private(set) var claude: ServiceState = .unavailable(reason: "Данные Claude ещё не прочитаны")
+    private(set) var isRefreshing = false
 
-    private var refreshTimer: Timer?
-    private let codexScraper = OpenAIScraper()
-    private let claudeScraper = ClaudeScraper()
+    @ObservationIgnored private var refreshTimer: Timer?
+    @ObservationIgnored private let codexReader: CodexLimitsReader
+    @ObservationIgnored private let claudeReader: ClaudeLimitsReader
 
-    private enum Keys {
-        static let codex = "limita.codex"
-        static let claude = "limita.claude"
-    }
-
-    init() {
-        load()
+    init(
+        codexReader: CodexLimitsReader = CodexLimitsReader(),
+        claudeReader: ClaudeLimitsReader = ClaudeLimitsReader()
+    ) {
+        self.codexReader = codexReader
+        self.claudeReader = claudeReader
         scheduleRefresh()
     }
 
-    // MARK: - Persistence
-
-    private func load() {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        if let data = UserDefaults.standard.data(forKey: Keys.codex),
-           let status = try? decoder.decode(ServiceStatus.self, from: data) {
-            codex = status
-        }
-        if let data = UserDefaults.standard.data(forKey: Keys.claude),
-           let status = try? decoder.decode(ServiceStatus.self, from: data) {
-            claude = status
-        }
-    }
-
-    private func save() {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        if let data = try? encoder.encode(codex) {
-            UserDefaults.standard.set(data, forKey: Keys.codex)
-        }
-        if let data = try? encoder.encode(claude) {
-            UserDefaults.standard.set(data, forKey: Keys.claude)
-        }
-    }
-
-    // MARK: - Refresh
-
-    func scheduleRefresh() {
+    private func scheduleRefresh() {
         refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 15 * 60, repeats: true) { [weak self] _ in
+        refreshTimer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.refresh()
             }
         }
+        if let refreshTimer {
+            RunLoop.main.add(refreshTimer, forMode: .common)
+        }
     }
 
     func refresh() async {
-        guard codex.isLoggedIn || claude.isLoggedIn else { return }
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
 
-        async let codexResult = codex.isLoggedIn ? codexScraper.fetchLimits() : nil
-        async let claudeResult = claude.isLoggedIn ? claudeScraper.fetchLimits() : nil
+        let codexReader = self.codexReader
+        let claudeReader = self.claudeReader
 
-        let (newCodex, newClaude) = await (codexResult, claudeResult)
-        if let c = newCodex { codex = c }
-        if let cl = newClaude { claude = cl }
-        save()
+        async let codexState = Task.detached(priority: .utility) {
+            codexReader.read()
+        }.value
+        async let claudeState = Task.detached(priority: .utility) {
+            claudeReader.read()
+        }.value
+
+        let results = await (codexState, claudeState)
+        codex = results.0
+        claude = results.1
     }
 
-    // MARK: - Login state
-
-    func markLoggedIn(_ service: Service) {
-        switch service {
-        case .codex:
-            codex.isLoggedIn = true
-            codex.errorMessage = nil
-        case .claude:
-            claude.isLoggedIn = true
-            claude.errorMessage = nil
+    func configureClaudeStatusLine() -> String {
+        do {
+            let outcome = try ClaudeStatusLineConfigurator().configure()
+            switch outcome {
+            case .installed:
+                claude = .unavailable(reason: "Готово. Запустите Claude Code: данные появятся после обновления status line.")
+                return "Limita подключена к Claude Code. Запустите или продолжите сессию — после обновления status line появятся лимиты."
+            case .updated:
+                return "Путь к Limita в настройках Claude Code обновлён."
+            case .alreadyConfigured:
+                return "Limita уже подключена к Claude Code."
+            }
+        } catch {
+            return error.localizedDescription
         }
-        save()
-        Task { await refresh() }
     }
 }

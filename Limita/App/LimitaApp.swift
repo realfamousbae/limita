@@ -1,12 +1,24 @@
 import SwiftUI
+#if canImport(Darwin)
+import Darwin
+#endif
 
 @main
 struct LimitaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    init() {
+        guard CommandLine.arguments.contains("--capture-claude-status") else { return }
+        do {
+            try ClaudeStatusCapture.capture()
+            exit(EXIT_SUCCESS)
+        } catch {
+            FileHandle.standardError.write(Data("Limita: \(error.localizedDescription)\n".utf8))
+            exit(EXIT_FAILURE)
+        }
+    }
+
     var body: some Scene {
-        // We don't use a WindowGroup — the app lives in the menu bar + bezel panel only.
-        // Settings scene for keyboard shortcut Cmd+, (optional)
         Settings {
             EmptyView()
         }

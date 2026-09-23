@@ -27,3 +27,13 @@ targets:
           - "$(inherited)"
           - "@executable_path/../Frameworks"
     preBuildScripts: []
+  LimitaTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/LimitaTests
+    dependencies:
+      - target: Limita
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.limita.tests

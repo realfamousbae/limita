@@ -7,30 +7,41 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		198D43F3F9A2905D654DFD2C /* MiniPillView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EF6C8CCC714A70DC1BA4B0 /* MiniPillView.swift */; };
-		342D1ABDA46FB2E87D722AF1 /* ClaudeScraper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D03E111D1B9D2E63E43FE23 /* ClaudeScraper.swift */; };
+		1ECB8764D7AD21C120CB9330 /* LimitaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFEC67C0B6E1EDDF35098A9A /* LimitaTests.swift */; };
 		43C1CB71110D3B3917E3575E /* LimitsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */; };
 		4EA5262139160334A05CAE9E /* BezelPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27C03CC32416785B5AE66956 /* BezelPanelController.swift */; };
+		61B11378717DC64DB9E74DA2 /* TailLineReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5835DDCBD37DB19D625A0446 /* TailLineReader.swift */; };
 		8047ED5CA8064614590FF52D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37A349072A6F933C9F03DCC /* AppDelegate.swift */; };
 		87D73D8E5C39EEA3F12B8F26 /* LimitaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5CA708E4B041F7AED42C7A /* LimitaApp.swift */; };
+		A0ABC1554C414757DCD5AB08 /* ClaudeLimitsReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = DADC5EAEDBA151AA15A121E9 /* ClaudeLimitsReader.swift */; };
 		C0E87B7D549C94F8610649EE /* ExpandedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AEC302EB596BCC32079CE7A /* ExpandedView.swift */; };
-		C6914B7C391A7F70A58E797C /* OpenAIScraper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01D613219B6182622CB94D6 /* OpenAIScraper.swift */; };
 		CE560AF28A8DA7E0D318ADA4 /* LimitData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 597AA6F50B34A3D5C5B2FBEF /* LimitData.swift */; };
-		F41A005AC586FC72AD3993DE /* LoginWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EECFA74F4F2002E070D631E /* LoginWebView.swift */; };
+		E310C5B496E7266D16576583 /* CodexLimitsReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6295DA81A65D70795B72DA9 /* CodexLimitsReader.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		63AF458E50984B47C87AAE80 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C77BB9E840AEF78F0366A8DB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 15D69141E4E3BB35DEB0AA15;
+			remoteInfo = Limita;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		1EDD6F89AE8BABCC152E6C77 /* Limita.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Limita.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		1EECFA74F4F2002E070D631E /* LoginWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginWebView.swift; sourceTree = "<group>"; };
 		27C03CC32416785B5AE66956 /* BezelPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BezelPanelController.swift; sourceTree = "<group>"; };
 		3B5CA708E4B041F7AED42C7A /* LimitaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitaApp.swift; sourceTree = "<group>"; };
+		5835DDCBD37DB19D625A0446 /* TailLineReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailLineReader.swift; sourceTree = "<group>"; };
 		597AA6F50B34A3D5C5B2FBEF /* LimitData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitData.swift; sourceTree = "<group>"; };
-		5D03E111D1B9D2E63E43FE23 /* ClaudeScraper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeScraper.swift; sourceTree = "<group>"; };
 		9AEC302EB596BCC32079CE7A /* ExpandedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandedView.swift; sourceTree = "<group>"; };
+		A80FCA4381FCE7D920A56645 /* LimitaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LimitaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B37A349072A6F933C9F03DCC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		DADC5EAEDBA151AA15A121E9 /* ClaudeLimitsReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeLimitsReader.swift; sourceTree = "<group>"; };
 		DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitsStore.swift; sourceTree = "<group>"; };
-		E4EF6C8CCC714A70DC1BA4B0 /* MiniPillView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPillView.swift; sourceTree = "<group>"; };
-		F01D613219B6182622CB94D6 /* OpenAIScraper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIScraper.swift; sourceTree = "<group>"; };
+		DFEC67C0B6E1EDDF35098A9A /* LimitaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitaTests.swift; sourceTree = "<group>"; };
+		E6295DA81A65D70795B72DA9 /* CodexLimitsReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexLimitsReader.swift; sourceTree = "<group>"; };
 		F17056D8730C101CB2795C3D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -39,6 +50,7 @@
 			isa = PBXGroup;
 			children = (
 				1EDD6F89AE8BABCC152E6C77 /* Limita.app */,
+				A80FCA4381FCE7D920A56645 /* LimitaTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -60,12 +72,20 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
+		4CB52F06EA96651D6EB86BF6 /* LimitaTests */ = {
+			isa = PBXGroup;
+			children = (
+				DFEC67C0B6E1EDDF35098A9A /* LimitaTests.swift */,
+			);
+			name = LimitaTests;
+			path = Tests/LimitaTests;
+			sourceTree = "<group>";
+		};
 		626FC2F8DF6C3B96B46508B0 /* UI */ = {
 			isa = PBXGroup;
 			children = (
 				27C03CC32416785B5AE66956 /* BezelPanelController.swift */,
 				9AEC302EB596BCC32079CE7A /* ExpandedView.swift */,
-				E4EF6C8CCC714A70DC1BA4B0 /* MiniPillView.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -74,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				F252A1D915E5AACE86783687 /* Limita */,
+				4CB52F06EA96651D6EB86BF6 /* LimitaTests */,
 				03D9EFC499B66064BF741A99 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -81,10 +102,10 @@
 		9D9C38A9B66B0872B1655CA8 /* Data */ = {
 			isa = PBXGroup;
 			children = (
-				5D03E111D1B9D2E63E43FE23 /* ClaudeScraper.swift */,
+				DADC5EAEDBA151AA15A121E9 /* ClaudeLimitsReader.swift */,
+				E6295DA81A65D70795B72DA9 /* CodexLimitsReader.swift */,
 				DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */,
-				1EECFA74F4F2002E070D631E /* LoginWebView.swift */,
-				F01D613219B6182622CB94D6 /* OpenAIScraper.swift */,
+				5835DDCBD37DB19D625A0446 /* TailLineReader.swift */,
 			);
 			path = Data;
 			sourceTree = "<group>";
@@ -121,6 +142,24 @@
 			productReference = 1EDD6F89AE8BABCC152E6C77 /* Limita.app */;
 			productType = "com.apple.product-type.application";
 		};
+		654B90ABB95D516F60492FB0 /* LimitaTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 301085A4412FBAC8D1DA8266 /* Build configuration list for PBXNativeTarget "LimitaTests" */;
+			buildPhases = (
+				4CD1A3FED0DC35EBED611813 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				548BDA041FFCA780F41C57F1 /* PBXTargetDependency */,
+			);
+			name = LimitaTests;
+			packageProductDependencies = (
+			);
+			productName = LimitaTests;
+			productReference = A80FCA4381FCE7D920A56645 /* LimitaTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -150,6 +189,7 @@
 			projectRoot = "";
 			targets = (
 				15D69141E4E3BB35DEB0AA15 /* Limita */,
+				654B90ABB95D516F60492FB0 /* LimitaTests */,
 			);
 		};
 /* End PBXProject section */
@@ -161,18 +201,33 @@
 			files = (
 				8047ED5CA8064614590FF52D /* AppDelegate.swift in Sources */,
 				4EA5262139160334A05CAE9E /* BezelPanelController.swift in Sources */,
-				342D1ABDA46FB2E87D722AF1 /* ClaudeScraper.swift in Sources */,
+				A0ABC1554C414757DCD5AB08 /* ClaudeLimitsReader.swift in Sources */,
+				E310C5B496E7266D16576583 /* CodexLimitsReader.swift in Sources */,
 				C0E87B7D549C94F8610649EE /* ExpandedView.swift in Sources */,
 				CE560AF28A8DA7E0D318ADA4 /* LimitData.swift in Sources */,
 				87D73D8E5C39EEA3F12B8F26 /* LimitaApp.swift in Sources */,
 				43C1CB71110D3B3917E3575E /* LimitsStore.swift in Sources */,
-				F41A005AC586FC72AD3993DE /* LoginWebView.swift in Sources */,
-				198D43F3F9A2905D654DFD2C /* MiniPillView.swift in Sources */,
-				C6914B7C391A7F70A58E797C /* OpenAIScraper.swift in Sources */,
+				61B11378717DC64DB9E74DA2 /* TailLineReader.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4CD1A3FED0DC35EBED611813 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1ECB8764D7AD21C120CB9330 /* LimitaTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		548BDA041FFCA780F41C57F1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 15D69141E4E3BB35DEB0AA15 /* Limita */;
+			targetProxy = 63AF458E50984B47C87AAE80 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		1B0126216814FF4645D22840 /* Debug */ = {
@@ -256,6 +311,22 @@
 			};
 			name = Debug;
 		};
+		89AB46B3ED1797E9CBAE4841 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.limita.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Limita.app/Contents/MacOS/Limita";
+			};
+			name = Release;
+		};
 		A127EB3E81FB3B42E703C6D8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -312,6 +383,22 @@
 			};
 			name = Release;
 		};
+		BC5E400231CEA6E0D4C8CAC1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.limita.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Limita.app/Contents/MacOS/Limita";
+			};
+			name = Debug;
+		};
 		DCB27DC4F01F6EBEA509BA24 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -333,6 +420,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		301085A4412FBAC8D1DA8266 /* Build configuration list for PBXNativeTarget "LimitaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC5E400231CEA6E0D4C8CAC1 /* Debug */,
+				89AB46B3ED1797E9CBAE4841 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		AC8EDB4D83762435F91AF775 /* Build configuration list for PBXProject "Limita" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
