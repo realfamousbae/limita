@@ -110,18 +110,18 @@ final class LimitaTests: XCTestCase {
     func testCodexAppServerResponsePrefersCodexBucket() throws {
         let response = #"{"id":2,"result":{"rateLimits":{"limitId":"premium","primary":null,"secondary":null},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":3,"windowDurationMins":300,"resetsAt":1790215642},"secondary":{"usedPercent":98,"windowDurationMins":10080,"resetsAt":1790268541}}}}}"#
         let now = Date(timeIntervalSince1970: 1_790_200_000)
-        let snapshot = try CodexLiveClient.snapshot(fromResponse: Data(response.utf8), capturedAt: now)
+        let snapshot = try CodexLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: now).snapshot
         XCTAssertEqual(snapshot.fiveHour, LimitWindow(usedPercent: 3, resetsAt: Date(timeIntervalSince1970: 1_790_215_642)))
         XCTAssertEqual(snapshot.sevenDay?.usedPercent, 98)
         XCTAssertEqual(snapshot.capturedAt, now)
 
         let error = #"{"id":2,"error":{"code":-32600,"message":"not logged in"}}"#
-        XCTAssertThrowsError(try CodexLiveClient.snapshot(fromResponse: Data(error.utf8), capturedAt: now))
+        XCTAssertThrowsError(try CodexLiveClient.reading(fromResponse: Data(error.utf8), capturedAt: now))
     }
 
     func testClaudeUsageResponseIsParsedAsPercent() throws {
         let response = #"{"five_hour":{"utilization":1.0,"resets_at":"2026-09-24T04:59:59.943648+00:00"},"seven_day":{"utilization":37.0,"resets_at":"2026-09-28T11:00:00+00:00"},"seven_day_opus":null}"#
-        let snapshot = try ClaudeLiveClient.snapshot(fromResponse: Data(response.utf8), capturedAt: Date())
+        let snapshot = try ClaudeLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: Date()).snapshot
         XCTAssertEqual(snapshot.fiveHour?.usedPercent, 1, "utilization is already a percentage")
         XCTAssertEqual(
             snapshot.fiveHour?.resetsAt?.timeIntervalSince1970 ?? 0,
@@ -129,14 +129,63 @@ final class LimitaTests: XCTestCase {
             accuracy: 1
         )
         XCTAssertEqual(snapshot.sevenDay?.usedPercent, 37)
-        XCTAssertThrowsError(try ClaudeLiveClient.snapshot(fromResponse: Data("{}".utf8), capturedAt: Date()))
+        XCTAssertThrowsError(try ClaudeLiveClient.reading(fromResponse: Data("{}".utf8), capturedAt: Date()))
+    }
+
+    func testCodexDetailsReadResetsAndCredits() throws {
+        let response = #"{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":1,"windowDurationMins":300,"resetsAt":1790215642},"secondary":null,"credits":{"hasCredits":true,"unlimited":false,"balance":"250"}},"rateLimitsByLimitId":null,"rateLimitResetCredits":{"availableCount":2,"credits":null}}}"#
+        let details = try CodexLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: Date()).details
+        XCTAssertEqual(details.limitResets, 2)
+        XCTAssertEqual(details.codexCredits, 250)
+        XCTAssertEqual(details.codexCredits.map { $0 / AccountDetails.codexCreditsPerDollar }, 10)
+        XCTAssertFalse(details.codexCreditsUnlimited)
+    }
+
+    func testClaudeDetailsReadCloudAndUsageCredits() throws {
+        // Trimmed from a real /api/oauth/usage response.
+        let response = #"""
+        {"five_hour":{"utilization":33.0,"resets_at":"2026-09-24T00:10:00.439325+00:00"},
+         "seven_day":{"utilization":7.0,"resets_at":"2026-09-28T11:00:00.439346+00:00"},
+         "iguana_necktie":{"utilization":4.910254,"resets_at":"2026-11-05T07:59:00+00:00","limit_dollars":100,"used_dollars":4.910254,"remaining_dollars":95.089746},
+         "spend":{"used":{"amount_minor":0,"currency":"USD","exponent":2},"limit":null,"enabled":false,"balance":null}}
+        """#
+        let details = try ClaudeLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: Date()).details
+        XCTAssertEqual(details.cloudCredits?.remaining ?? 0, 95.09, accuracy: 0.01)
+        XCTAssertEqual(details.cloudCredits?.limit, 100)
+        XCTAssertEqual(details.cloudCredits?.expiresAt, ISO8601DateFormatter.parseFlexible("2026-11-05T07:59:00Z"))
+        XCTAssertEqual(details.claudeUsageCredits, .off)
+        XCTAssertNil(details.limitResets)
+
+        let enabled = #"{"five_hour":{"utilization":1},"spend":{"enabled":true,"used":{"amount_minor":1250,"exponent":2},"limit":{"amount_minor":5000,"exponent":2}}}"#
+        XCTAssertEqual(
+            try ClaudeLiveClient.reading(fromResponse: Data(enabled.utf8), capturedAt: Date()).details.claudeUsageCredits,
+            .spent(dollars: 12.5, limit: 50)
+        )
+
+        let withBalance = #"{"five_hour":{"utilization":1},"spend":{"enabled":true,"balance":{"amount_minor":2000,"exponent":2}},"iguana_necktie":"unexpected"}"#
+        let parsed = try ClaudeLiveClient.reading(fromResponse: Data(withBalance.utf8), capturedAt: Date()).details
+        XCTAssertEqual(parsed.claudeUsageCredits, .balance(dollars: 20))
+        XCTAssertNil(parsed.cloudCredits, "a changed shape hides the row instead of failing")
+    }
+
+    func testDetailRowsFormatting() {
+        var codex = AccountDetails()
+        codex.limitResets = 0
+        codex.codexCredits = 250
+        XCTAssertEqual(ExpandedView.detailRows(for: .codex, details: codex).map(\.value), ["0", "250 credits · $10.00"])
+
+        var claude = AccountDetails()
+        claude.claudeUsageCredits = .off
+        claude.cloudCredits = .init(remaining: 95.089746, limit: 100, expiresAt: nil)
+        XCTAssertEqual(ExpandedView.detailRows(for: .claude, details: claude).map(\.value), ["Off", "$95.09 / $100.00"])
+        XCTAssertEqual(ExpandedView.detailRows(for: .claude, details: AccountDetails()), [], "missing values hide rows")
     }
 
     func testExpiredWindowDisplaysZero() {
         let window = LimitWindow(usedPercent: 80, resetsAt: Date(timeIntervalSince1970: 1000))
         XCTAssertEqual(window.displayPercent(at: Date(timeIntervalSince1970: 999)), 80)
         XCTAssertEqual(window.displayPercent(at: Date(timeIntervalSince1970: 1000)), 0)
-        XCTAssertEqual(window.resetText(at: Date(timeIntervalSince1970: 2000)), "окно обновилось")
+        XCTAssertEqual(window.resetText(at: Date(timeIntervalSince1970: 2000)), "window reset")
     }
 
     // MARK: - Claude status line

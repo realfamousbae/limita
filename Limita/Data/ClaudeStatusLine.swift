@@ -62,7 +62,7 @@ enum ClaudeStatusLineCommand {
         do {
             try process.run()
         } catch {
-            FileHandle.standardError.write(Data("Limita: не удалось запустить status line: \(error)\n".utf8))
+            FileHandle.standardError.write(Data("Limita: could not run the status line: \(error)\n".utf8))
             return EXIT_FAILURE
         }
         // The command may exit without reading stdin; a closed pipe must not kill us.
@@ -290,7 +290,7 @@ struct ClaudeStatusLineConfigurator {
         let data = try Data(contentsOf: settingsFile)
         if data.allSatisfy({ $0 == 0x20 || $0 == 0x0A || $0 == 0x0D || $0 == 0x09 }) { return [:] }
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw ConfigurationError(message: "Не удалось прочитать ~/.claude/settings.json: файл не является JSON-объектом.")
+            throw ConfigurationError(message: "Could not read ~/.claude/settings.json: it is not a JSON object.")
         }
         return object
     }

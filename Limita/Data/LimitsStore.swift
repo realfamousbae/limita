@@ -9,8 +9,8 @@ final class LimitsStore {
     static let localInterval: TimeInterval = 60
     static let liveInterval: TimeInterval = 20 * 60
 
-    private(set) var codex: ServiceState = .unavailable(reason: "Данные Codex ещё не прочитаны")
-    private(set) var claude: ServiceState = .unavailable(reason: "Данные Claude ещё не прочитаны")
+    private(set) var codex: ServiceState = .unavailable(reason: "Codex data not read yet")
+    private(set) var claude: ServiceState = .unavailable(reason: "Claude data not read yet")
     /// Whether Limita's hook is in Claude Code's settings.
     private(set) var isClaudeConnected = false
     /// Last network error per service, shown when the displayed data is stale.
@@ -18,6 +18,8 @@ final class LimitsStore {
     private(set) var isRefreshing = false
     /// Newest snapshot fetched over the network per service.
     private var liveSnapshots: [Service: LimitSnapshot] = [:]
+    /// Balances and extras from the last successful network read.
+    private(set) var details: [Service: AccountDetails] = [:]
     /// Result of the last connect/disconnect action, shown inline in the panel.
     var claudeSetupMessage: String?
 
@@ -115,17 +117,18 @@ final class LimitsStore {
     }
 
     private nonisolated static func fetch(
-        _ body: @escaping @Sendable () async throws -> LimitSnapshot
-    ) async -> Result<LimitSnapshot, Error> {
+        _ body: @escaping @Sendable () async throws -> LiveReading
+    ) async -> Result<LiveReading, Error> {
         await Task.detached(priority: .utility) {
             do { return .success(try await body()) } catch { return .failure(error) }
         }.value
     }
 
-    private func apply(_ result: Result<LimitSnapshot, Error>?, to service: Service) {
+    private func apply(_ result: Result<LiveReading, Error>?, to service: Service) {
         switch result {
-        case .success(let snapshot):
-            liveSnapshots[service] = snapshot
+        case .success(let reading):
+            liveSnapshots[service] = reading.snapshot
+            details[service] = reading.details
             liveErrors[service] = nil
         case .failure(let error):
             liveErrors[service] = error.localizedDescription
@@ -149,16 +152,16 @@ final class LimitsStore {
         do {
             let hint = configurator.isRunningFromStableLocation
                 ? ""
-                : "\nLimita запущена не из /Applications: после переноса туда подключите заново."
+                : "\nLimita is not running from /Applications: move it there and connect again."
             switch try configurator.install() {
             case .installed:
-                claudeSetupMessage = "Подключено. Лимиты появятся после следующего ответа Claude Code." + hint
+                claudeSetupMessage = "Connected. Limits appear after the next Claude Code response." + hint
             case .wrapped:
-                claudeSetupMessage = "Подключено. Ваша status line сохранена и работает как раньше." + hint
+                claudeSetupMessage = "Connected. Your status line is kept and works as before." + hint
             case .updated:
-                claudeSetupMessage = "Путь к Limita в настройках Claude Code обновлён." + hint
+                claudeSetupMessage = "Updated the Limita path in Claude Code settings." + hint
             case .alreadyConfigured:
-                claudeSetupMessage = "Limita уже подключена к Claude Code."
+                claudeSetupMessage = "Limita is already connected to Claude Code."
             }
         } catch {
             claudeSetupMessage = error.localizedDescription
@@ -169,7 +172,7 @@ final class LimitsStore {
     func disconnectClaude() {
         do {
             try configurator.uninstall()
-            claudeSetupMessage = "Limita отключена от Claude Code, прежняя status line восстановлена."
+            claudeSetupMessage = "Disconnected from Claude Code; your previous status line is restored."
         } catch {
             claudeSetupMessage = error.localizedDescription
         }

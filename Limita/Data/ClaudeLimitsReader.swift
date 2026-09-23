@@ -15,17 +15,17 @@ struct ClaudeLimitsReader: Sendable {
     func read(isConnected: Bool, now: Date = Date()) -> ServiceState {
         guard let data = try? Data(contentsOf: cacheFile) else {
             return .unavailable(reason: isConnected
-                ? "Запустите Claude Code — лимиты появятся после первого ответа"
-                : "Подключите Claude Code, чтобы получать его лимиты")
+                ? "Start Claude Code — limits appear after its first response"
+                : "Connect Claude Code to see its limits")
         }
 
         guard let cache = try? ClaudeStatusCache.decoder.decode(ClaudeStatusCache.self, from: data) else {
-            return .unavailable(reason: "Кэш Claude повреждён — дождитесь следующего ответа Claude Code")
+            return .unavailable(reason: "Claude cache is corrupted — wait for the next Claude Code response")
         }
 
         let snapshot = cache.snapshot
         guard !snapshot.isEmpty else {
-            return .unavailable(reason: "Claude Code пока не передал данные о лимитах")
+            return .unavailable(reason: "Claude Code has not reported limits yet")
         }
         return .from(snapshot, staleAfter: Self.staleAfter, now: now)
     }

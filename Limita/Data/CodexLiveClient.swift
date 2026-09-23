@@ -13,9 +13,9 @@ struct CodexLiveClient: Sendable {
 
     var timeout: TimeInterval = 20
 
-    func fetch(now: Date = Date()) throws -> LimitSnapshot {
+    func fetch(now: Date = Date()) throws -> LiveReading {
         guard let executable = CLILocator.find("codex") else {
-            throw FetchError(message: "Codex CLI не найден")
+            throw FetchError(message: "Codex CLI not found")
         }
         let response = try JSONRPCSession.request(
             executable: executable,
@@ -28,16 +28,16 @@ struct CodexLiveClient: Sendable {
             responseID: 2,
             timeout: timeout
         )
-        return try Self.snapshot(fromResponse: response, capturedAt: now)
+        return try Self.reading(fromResponse: response, capturedAt: now)
     }
 
-    static func snapshot(fromResponse data: Data, capturedAt: Date) throws -> LimitSnapshot {
+    static func reading(fromResponse data: Data, capturedAt: Date) throws -> LiveReading {
         let envelope = try JSONDecoder().decode(Envelope.self, from: data)
         if let error = envelope.error {
-            throw FetchError(message: "Codex: \(error.message ?? "ошибка app-server")")
+            throw FetchError(message: "Codex: \(error.message ?? "app-server error")")
         }
         guard let result = envelope.result else {
-            throw FetchError(message: "Codex app-server вернул пустой ответ")
+            throw FetchError(message: "Codex app-server returned an empty response")
         }
         let limits = result.rateLimitsByLimitId?["codex"] ?? result.rateLimits
         let payload = CodexLimitsReader.RateLimitsPayload(
@@ -46,9 +46,17 @@ struct CodexLiveClient: Sendable {
         )
         let snapshot = CodexLimitsReader.snapshot(from: payload, capturedAt: capturedAt)
         guard !snapshot.isEmpty else {
-            throw FetchError(message: "Codex app-server не вернул окна лимитов")
+            throw FetchError(message: "Codex app-server returned no limit windows")
         }
-        return snapshot
+
+        var details = AccountDetails()
+        details.limitResets = result.rateLimitResetCredits?.availableCount
+        if let credits = limits?.credits {
+            details.codexCreditsUnlimited = credits.unlimited ?? false
+            // `balance` is a decimal string of credits, as the CLI's /status shows it.
+            details.codexCredits = credits.balance.flatMap(Double.init)
+        }
+        return LiveReading(snapshot: snapshot, details: details)
     }
 
     // MARK: - Wire format (camelCase, unlike the session logs)
@@ -65,11 +73,23 @@ struct CodexLiveClient: Sendable {
     private struct Result: Decodable {
         let rateLimits: Limits?
         let rateLimitsByLimitId: [String: Limits]?
+        let rateLimitResetCredits: ResetCredits?
     }
 
     private struct Limits: Decodable {
         let primary: Window?
         let secondary: Window?
+        let credits: Credits?
+    }
+
+    private struct Credits: Decodable {
+        let hasCredits: Bool?
+        let unlimited: Bool?
+        let balance: String?
+    }
+
+    private struct ResetCredits: Decodable {
+        let availableCount: Int?
     }
 
     private struct Window: Decodable {
@@ -124,10 +144,10 @@ enum JSONRPCSession {
         try stdin.fileHandleForWriting.write(contentsOf: Data(payload.utf8))
 
         guard collector.wait(timeout: timeout) else {
-            throw CodexLiveClient.FetchError(message: "Codex app-server не ответил за \(Int(timeout)) с")
+            throw CodexLiveClient.FetchError(message: "Codex app-server did not respond within \(Int(timeout)) s")
         }
         guard let response = collector.response else {
-            throw CodexLiveClient.FetchError(message: "Codex app-server завершился без ответа")
+            throw CodexLiveClient.FetchError(message: "Codex app-server exited without a response")
         }
         return response
     }

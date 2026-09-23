@@ -71,7 +71,7 @@ struct ExpandedView: View {
             }
             .buttonStyle(.plain)
             .disabled(store.isRefreshing)
-            .help("Обновить")
+            .help("Refresh")
         }
         .padding(.horizontal, 18)
         .padding(.top, 9)
@@ -112,8 +112,10 @@ struct ExpandedView: View {
                     metric("7 DAYS", window: snapshot.sevenDay, color: DashboardStyle.accent(for: service).opacity(0.72), now: now)
                 }
 
+                detailRows(for: service)
+
                 HStack(spacing: 6) {
-                    Text("UPDATED \(snapshot.capturedAt.formatted(.relative(presentation: .numeric)).uppercased())")
+                    Text("UPDATED \(snapshot.capturedAt.formatted(.relative(presentation: .numeric).locale(.english)).uppercased())")
                         .font(.system(size: 7, weight: .bold, design: .rounded))
                         .tracking(0.45)
                         .foregroundStyle(.white.opacity(0.25))
@@ -130,7 +132,7 @@ struct ExpandedView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 9) {
-                    Text(store.liveErrors[service] ?? state.unavailableReason ?? "Нет данных")
+                    Text(store.liveErrors[service] ?? state.unavailableReason ?? "No data")
                         .font(.system(size: 10, weight: .medium, design: .rounded))
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -145,6 +147,91 @@ struct ExpandedView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Balances
+
+    /// Rows under the meters. A row is hidden when the service did not report its value.
+    @ViewBuilder
+    private func detailRows(for service: Service) -> some View {
+        let rows = Self.detailRows(for: service, details: store.details[service] ?? AccountDetails())
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(rows, id: \.label) { row in
+                    HStack(spacing: 6) {
+                        Text(row.label)
+                            .font(.system(size: 7, weight: .heavy, design: .rounded))
+                            .tracking(0.6)
+                            .foregroundStyle(.white.opacity(0.35))
+                        Spacer(minLength: 4)
+                        Text(row.value)
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .help(row.help ?? "")
+                }
+            }
+        }
+    }
+
+    struct DetailRow: Equatable {
+        let label: String
+        let value: String
+        var help: String?
+    }
+
+    static func detailRows(for service: Service, details: AccountDetails) -> [DetailRow] {
+        var rows: [DetailRow] = []
+        if let resets = details.limitResets {
+            rows.append(DetailRow(label: "LIMIT RESETS", value: "\(resets)", help: "Rate-limit resets available to redeem"))
+        }
+        switch service {
+        case .codex:
+            if details.codexCreditsUnlimited {
+                rows.append(DetailRow(label: "CREDITS", value: "Unlimited"))
+            } else if let credits = details.codexCredits {
+                let dollars = credits / AccountDetails.codexCreditsPerDollar
+                rows.append(DetailRow(
+                    label: "CREDITS",
+                    value: "\(credits.formatted(.number.precision(.fractionLength(0...2)).locale(.english))) credits · \(usd(dollars))",
+                    help: "Codex credits, $1 = \(Int(AccountDetails.codexCreditsPerDollar)) credits"
+                ))
+            }
+        case .claude:
+            switch details.claudeUsageCredits {
+            case .off:
+                rows.append(DetailRow(label: "USAGE CREDITS", value: "Off", help: "Credits that cover usage past the plan limits"))
+            case .balance(let dollars):
+                rows.append(DetailRow(label: "USAGE CREDITS", value: usd(dollars), help: "Credits that cover usage past the plan limits"))
+            case .spent(let dollars, let limit):
+                rows.append(DetailRow(
+                    label: "USAGE CREDITS",
+                    value: limit.map { "\(usd(dollars)) of \(usd($0)) used" } ?? "\(usd(dollars)) used",
+                    help: "Credits that cover usage past the plan limits"
+                ))
+            case nil:
+                break
+            }
+            if let cloud = details.cloudCredits {
+                var value = usd(cloud.remaining)
+                if let limit = cloud.limit { value += " / \(usd(limit))" }
+                rows.append(DetailRow(
+                    label: "CLOUD CREDITS",
+                    value: value,
+                    help: cloud.expiresAt.map {
+                        "Cloud session credits left, expire \($0.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(.english)))"
+                    } ?? "Cloud session credits left"
+                ))
+            }
+        }
+        return rows
+    }
+
+    private static func usd(_ value: Double) -> String {
+        value.formatted(.currency(code: "USD").locale(.english))
     }
 
     /// The status-line hook is only a fallback once the usage API works.
@@ -206,7 +293,7 @@ struct ExpandedView: View {
             )
         }
         .buttonStyle(.plain)
-        .help("Добавить Limita в status line Claude Code")
+        .help("Add Limita to the Claude Code status line")
     }
 
     private func setupMessage(_ message: String) -> some View {

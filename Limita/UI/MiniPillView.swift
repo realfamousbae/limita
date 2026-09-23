@@ -21,7 +21,7 @@ struct MiniPillView: View {
             .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
             .contentShape(Capsule())
         }
-        .help("Нажмите, чтобы открыть Limita")
+        .help("Click to open Limita")
     }
 
     private func indicator(_ service: Service, state: ServiceState, now: Date) -> some View {

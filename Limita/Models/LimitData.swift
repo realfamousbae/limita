@@ -33,8 +33,8 @@ struct LimitWindow: Codable, Sendable, Equatable {
 
     func resetText(at now: Date = Date()) -> String? {
         guard let resetsAt else { return nil }
-        if resetsAt <= now { return "окно обновилось" }
-        return "сброс \(resetsAt.formatted(.relative(presentation: .numeric)))"
+        if resetsAt <= now { return "window reset" }
+        return "resets \(resetsAt.formatted(.relative(presentation: .numeric).locale(.english)))"
     }
 }
 
@@ -110,4 +110,50 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
         case .claude: "sparkles"
         }
     }
+}
+
+/// Balances and extras beyond the rate-limit windows. Only the network sources report
+/// these; a field is `nil` when the service did not report it, and the UI hides it.
+struct AccountDetails: Sendable, Equatable {
+    /// A prepaid dollar allowance, e.g. Claude's cloud session credits.
+    struct Allowance: Sendable, Equatable {
+        let remaining: Double
+        let limit: Double?
+        let expiresAt: Date?
+    }
+
+    enum UsageCredits: Sendable, Equatable {
+        case off
+        case balance(dollars: Double)
+        case spent(dollars: Double, limit: Double?)
+    }
+
+    /// Codex sells credits at $1 = 25 credits (1 credit = $0.04).
+    static let codexCreditsPerDollar: Double = 25
+
+    /// Codex: rate-limit reset credits available to redeem.
+    var limitResets: Int?
+    /// Codex: credit balance, in credits.
+    var codexCredits: Double?
+    var codexCreditsUnlimited = false
+    /// Claude: credits that cover usage beyond the plan limits.
+    var claudeUsageCredits: UsageCredits?
+    /// Claude: cloud session credits.
+    var cloudCredits: Allowance?
+
+    var isEmpty: Bool {
+        limitResets == nil && codexCredits == nil && !codexCreditsUnlimited
+            && claudeUsageCredits == nil && cloudCredits == nil
+    }
+}
+
+/// What a network source returns: the windows plus any account details.
+struct LiveReading: Sendable, Equatable {
+    let snapshot: LimitSnapshot
+    let details: AccountDetails
+}
+
+extension Locale {
+    /// The UI is English regardless of the system language.
+    static let english = Locale(identifier: "en_US")
 }

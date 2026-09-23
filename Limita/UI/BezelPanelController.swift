@@ -25,7 +25,7 @@ final class PanelModel {
 @MainActor
 final class BezelPanelController {
     static let pillSize = CGSize(width: 204, height: 34)
-    static let expandedSize = CGSize(width: 520, height: 212)
+    static let expandedSize = CGSize(width: 520, height: 256)
 
     /// How long the cursor must rest at the edge, so passing through to the menu bar
     /// does not pop the pill.

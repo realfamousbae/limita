@@ -38,7 +38,7 @@ struct CodexLimitsReader: Sendable {
     func read(now: Date = Date()) -> ServiceState {
         let files = sessionFilesNewestFirst()
         guard !files.isEmpty else {
-            return .unavailable(reason: "Codex CLI не найден или ещё не создал файлы сессий")
+            return .unavailable(reason: "Codex CLI not found or has no sessions yet")
         }
 
         for file in files {
@@ -46,7 +46,7 @@ struct CodexLimitsReader: Sendable {
                 return .from(snapshot, staleAfter: Self.staleAfter, now: now)
             }
         }
-        return .unavailable(reason: "В сессиях Codex ещё нет данных о лимитах")
+        return .unavailable(reason: "Codex sessions contain no limit data yet")
     }
 
     // MARK: - Locating the newest session

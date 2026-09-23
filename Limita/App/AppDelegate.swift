@@ -38,13 +38,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
 
         menu.delegate = self
-        menu.addItem(withTitle: "Показать лимиты", action: #selector(showLimits), keyEquivalent: "")
-        menu.addItem(withTitle: "Обновить данные", action: #selector(refreshData), keyEquivalent: "r")
+        menu.addItem(withTitle: "Show Limits", action: #selector(showLimits), keyEquivalent: "")
+        menu.addItem(withTitle: "Refresh", action: #selector(refreshData), keyEquivalent: "r")
         menu.addItem(.separator())
         claudeMenuItem.target = self
         menu.addItem(claudeMenuItem)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Выйти", action: #selector(quitApp), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Limita", action: #selector(quitApp), keyEquivalent: "q")
         for item in menu.items where item.action != nil {
             item.target = self
         }
@@ -69,10 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         if store.isClaudeConnected {
-            claudeMenuItem.title = "Отключить Claude Code"
+            claudeMenuItem.title = "Disconnect Claude Code"
             claudeMenuItem.action = #selector(disconnectClaude)
         } else {
-            claudeMenuItem.title = "Подключить Claude Code…"
+            claudeMenuItem.title = "Connect Claude Code…"
             claudeMenuItem.action = #selector(connectClaude)
         }
     }

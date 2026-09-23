@@ -11,6 +11,8 @@
 - лимиты Codex за 5 часов и 7 дней из локальных session-логов Codex;
 - лимиты Claude Code за 5 часов и 7 дней через официальный status-line JSON;
 - процент использования и время до сброса каждого окна;
+- под шкалами: доступные сбросы лимитов и кредиты Codex (в кредитах и $, по курсу $1 = 25 кредитов), usage credits и cloud session credits Claude — строка скрывается, если сервис не вернул значение;
+- интерфейс на английском;
 - признаки свежих, устаревших и недоступных данных;
 - свежие лимиты с серверов раз в 20 минут и по кнопке обновления, локальные источники — раз в минуту;
 - несколько мониторов и полноэкранные Space;
@@ -39,7 +41,7 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Debug build
 
 ### Codex
 
-Дополнительная настройка не нужна. Свежие данные запрашиваются у самого Codex CLI через официальный `codex app-server` (метод `account/rateLimits/read`) — авторизация остаётся внутри CLI. Между запросами и при ошибке Limita берёт последние `rate_limits` из:
+Дополнительная настройка не нужна. Из того же ответа берутся доступные сбросы лимитов (`rateLimitResetCredits.availableCount`) и баланс кредитов (`credits.balance`, в кредитах — так его показывает `/status` в Codex CLI). Свежие данные запрашиваются у самого Codex CLI через официальный `codex app-server` (метод `account/rateLimits/read`) — авторизация остаётся внутри CLI. Между запросами и при ошибке Limita берёт последние `rate_limits` из:
 
 - `~/.codex/sessions/**/rollout-*.jsonl`;
 - `~/.codex/archived_sessions/rollout-*.jsonl`.
@@ -49,6 +51,8 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Debug build
 ### Claude Code
 
 **Свежие данные** Limita получает из `GET https://api.anthropic.com/api/oauth/usage` — того же источника, что экран `/usage` в Claude Code. Это **недокументированный** эндпоинт: Anthropic может изменить его без предупреждения. Для запроса Limita читает OAuth-токен Claude Code из Keychain (элемент `Claude Code-credentials`); при первом запросе macOS спросит разрешение. Токен отправляется только на api.anthropic.com, не сохраняется и не обновляется Limita — если он истёк, откройте Claude Code. Debug-сборки подписываются заново при каждой сборке, поэтому macOS может спрашивать разрешение повторно; у копии в `/Applications` достаточно один раз нажать «Всегда разрешать».
+
+Из того же ответа берутся usage credits (блок `spend`) и cloud session credits (блок с внутренним кодовым именем `iguana_necktie`; если Anthropic его переименует, строка просто пропадёт). Счётчика сбросов лимитов Claude не отдаёт.
 
 **Status line** — запасной источник, работает без сети и Keychain, но обновляется только во время сессии Claude Code:
 
