@@ -56,7 +56,7 @@ struct ExpandedView: View {
             Spacer()
 
             Button {
-                store.refresh()
+                store.refresh(live: true)
             } label: {
                 ZStack {
                     Circle().fill(Color.white.opacity(0.08))
@@ -118,20 +118,25 @@ struct ExpandedView: View {
                         .tracking(0.45)
                         .foregroundStyle(.white.opacity(0.25))
                         .lineLimit(1)
-                    if service == .claude, !store.isClaudeConnected {
-                        Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                    if state.isStale, let error = store.liveErrors[service] {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.yellow)
+                            .help(error)
+                    } else if service == .claude, needsConnect {
                         connectButton(compact: true)
                     }
                 }
             } else {
                 VStack(alignment: .leading, spacing: 9) {
-                    Text(state.unavailableReason ?? "Нет данных")
+                    Text(store.liveErrors[service] ?? state.unavailableReason ?? "Нет данных")
                         .font(.system(size: 10, weight: .medium, design: .rounded))
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(.white.opacity(0.42))
 
-                    if service == .claude, !store.isClaudeConnected {
+                    if service == .claude, needsConnect {
                         connectButton(compact: false)
                     }
                 }
@@ -140,6 +145,11 @@ struct ExpandedView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// The status-line hook is only a fallback once the usage API works.
+    private var needsConnect: Bool {
+        !store.isClaudeConnected && !store.hasClaudeLiveData
     }
 
     private func statusLabel(_ state: ServiceState) -> String {

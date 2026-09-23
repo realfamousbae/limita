@@ -107,6 +107,31 @@ final class LimitaTests: XCTestCase {
         XCTAssertFalse(state.isStale)
     }
 
+    func testCodexAppServerResponsePrefersCodexBucket() throws {
+        let response = #"{"id":2,"result":{"rateLimits":{"limitId":"premium","primary":null,"secondary":null},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":3,"windowDurationMins":300,"resetsAt":1790215642},"secondary":{"usedPercent":98,"windowDurationMins":10080,"resetsAt":1790268541}}}}}"#
+        let now = Date(timeIntervalSince1970: 1_790_200_000)
+        let snapshot = try CodexLiveClient.snapshot(fromResponse: Data(response.utf8), capturedAt: now)
+        XCTAssertEqual(snapshot.fiveHour, LimitWindow(usedPercent: 3, resetsAt: Date(timeIntervalSince1970: 1_790_215_642)))
+        XCTAssertEqual(snapshot.sevenDay?.usedPercent, 98)
+        XCTAssertEqual(snapshot.capturedAt, now)
+
+        let error = #"{"id":2,"error":{"code":-32600,"message":"not logged in"}}"#
+        XCTAssertThrowsError(try CodexLiveClient.snapshot(fromResponse: Data(error.utf8), capturedAt: now))
+    }
+
+    func testClaudeUsageResponseIsParsedAsPercent() throws {
+        let response = #"{"five_hour":{"utilization":1.0,"resets_at":"2026-09-24T04:59:59.943648+00:00"},"seven_day":{"utilization":37.0,"resets_at":"2026-09-28T11:00:00+00:00"},"seven_day_opus":null}"#
+        let snapshot = try ClaudeLiveClient.snapshot(fromResponse: Data(response.utf8), capturedAt: Date())
+        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 1, "utilization is already a percentage")
+        XCTAssertEqual(
+            snapshot.fiveHour?.resetsAt?.timeIntervalSince1970 ?? 0,
+            ISO8601DateFormatter.parseFlexible("2026-09-24T04:59:59Z")!.timeIntervalSince1970,
+            accuracy: 1
+        )
+        XCTAssertEqual(snapshot.sevenDay?.usedPercent, 37)
+        XCTAssertThrowsError(try ClaudeLiveClient.snapshot(fromResponse: Data("{}".utf8), capturedAt: Date()))
+    }
+
     func testExpiredWindowDisplaysZero() {
         let window = LimitWindow(usedPercent: 80, resetsAt: Date(timeIntervalSince1970: 1000))
         XCTAssertEqual(window.displayPercent(at: Date(timeIntervalSince1970: 999)), 80)

@@ -24,7 +24,7 @@ final class PanelModel {
 /// The notch area is left alone on purpose — see `PanelLayout`.
 @MainActor
 final class BezelPanelController {
-    static let pillSize = CGSize(width: 188, height: 34)
+    static let pillSize = CGSize(width: 204, height: 34)
     static let expandedSize = CGSize(width: 520, height: 212)
 
     /// How long the cursor must rest at the edge, so passing through to the menu bar

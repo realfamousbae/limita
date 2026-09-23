@@ -4,75 +4,146 @@ import Observation
 @Observable
 @MainActor
 final class LimitsStore {
+    /// Local sources (Codex session logs, Claude status-line cache) are cheap and read
+    /// every minute; the network is asked every `liveInterval` or on manual refresh.
+    static let localInterval: TimeInterval = 60
+    static let liveInterval: TimeInterval = 20 * 60
+
     private(set) var codex: ServiceState = .unavailable(reason: "Данные Codex ещё не прочитаны")
     private(set) var claude: ServiceState = .unavailable(reason: "Данные Claude ещё не прочитаны")
-    /// Whether Limita's hook is in Claude Code's settings. Drives the "Connect" button,
-    /// independently of whether cached data exists.
+    /// Whether Limita's hook is in Claude Code's settings.
     private(set) var isClaudeConnected = false
+    /// Last network error per service, shown when the displayed data is stale.
+    private(set) var liveErrors: [Service: String] = [:]
     private(set) var isRefreshing = false
+    /// Newest snapshot fetched over the network per service.
+    private var liveSnapshots: [Service: LimitSnapshot] = [:]
     /// Result of the last connect/disconnect action, shown inline in the panel.
     var claudeSetupMessage: String?
 
     @ObservationIgnored private var refreshTimer: Timer?
     @ObservationIgnored private var lastRefresh: Date?
+    @ObservationIgnored private var lastLiveAttempt: Date?
+    @ObservationIgnored private var pendingLive = false
     @ObservationIgnored private let codexReader: CodexLimitsReader
     @ObservationIgnored private let claudeReader: ClaudeLimitsReader
+    @ObservationIgnored private let codexLive: CodexLiveClient
+    @ObservationIgnored private let claudeLive: ClaudeLiveClient
     @ObservationIgnored private let configurator: ClaudeStatusLineConfigurator
 
     init(
         codexReader: CodexLimitsReader = CodexLimitsReader(),
         claudeReader: ClaudeLimitsReader = ClaudeLimitsReader(),
+        codexLive: CodexLiveClient = CodexLiveClient(),
+        claudeLive: ClaudeLiveClient = ClaudeLiveClient(),
         configurator: ClaudeStatusLineConfigurator = ClaudeStatusLineConfigurator()
     ) {
         self.codexReader = codexReader
         self.claudeReader = claudeReader
+        self.codexLive = codexLive
+        self.claudeLive = claudeLive
         self.configurator = configurator
     }
 
-    func startAutoRefresh(interval: TimeInterval = 60) {
+    /// Claude data that does not depend on the status-line hook, so "Connect" is optional.
+    var hasClaudeLiveData: Bool { liveSnapshots[.claude] != nil }
+
+    func startAutoRefresh() {
         refreshTimer?.invalidate()
-        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: Self.localInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
-        timer.tolerance = interval / 6
+        timer.tolerance = Self.localInterval / 6
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
+        refresh(live: true)
+    }
+
+    /// Re-reads local sources unless that happened within `maxAge` — for opening the panel.
+    func refreshIfOlder(than maxAge: TimeInterval) {
+        if let lastRefresh, Date().timeIntervalSince(lastRefresh) < maxAge { return }
         refresh()
     }
 
-    /// Refreshes unless data was read within `maxAge` — for opening the panel.
-    func refreshIfOlder(than maxAge: TimeInterval) {
-        guard let lastRefresh, Date().timeIntervalSince(lastRefresh) < maxAge else {
-            refresh()
+    /// Reads local sources, and also asks the network when `live` is set or the last
+    /// network attempt is older than `liveInterval`.
+    func refresh(live forceLive: Bool = false) {
+        guard !isRefreshing else {
+            // A manual refresh during a background local read must not be lost.
+            if forceLive { pendingLive = true }
             return
         }
-    }
-
-    func refresh() {
-        guard !isRefreshing else { return }
+        let now = Date()
+        let live = forceLive || lastLiveAttempt.map { now.timeIntervalSince($0) >= Self.liveInterval } ?? true
         isRefreshing = true
+        if live { lastLiveAttempt = now }
+
         let codexReader = codexReader
         let claudeReader = claudeReader
+        let codexLive = codexLive
+        let claudeLive = claudeLive
         let configurator = configurator
 
         Task {
-            async let codexState = Task.detached(priority: .utility) {
+            async let codexLocal = Task.detached(priority: .utility) {
                 codexReader.read()
             }.value
-            async let claudeResult = Task.detached(priority: .utility) {
+            async let claudeLocal = Task.detached(priority: .utility) {
                 let connected: Bool
                 if case .installed = try? configurator.status() { connected = true } else { connected = false }
                 return (connected, claudeReader.read(isConnected: connected))
             }.value
+            async let codexRemote = live ? Self.fetch { try codexLive.fetch() } : nil
+            async let claudeRemote = live ? Self.fetch { try await claudeLive.fetch() } : nil
 
-            let (codex, (connected, claude)) = await (codexState, claudeResult)
-            self.codex = codex
-            self.claude = claude
-            self.isClaudeConnected = connected
-            self.lastRefresh = Date()
-            self.isRefreshing = false
+            let (codexState, (connected, claudeState)) = await (codexLocal, claudeLocal)
+            let (codexResult, claudeResult) = await (codexRemote, claudeRemote)
+
+            apply(codexResult, to: .codex)
+            apply(claudeResult, to: .claude)
+            codex = merge(codexState, live: liveSnapshots[.codex], staleAfter: CodexLimitsReader.staleAfter)
+            claude = merge(claudeState, live: liveSnapshots[.claude], staleAfter: ClaudeLimitsReader.staleAfter)
+            isClaudeConnected = connected
+            lastRefresh = Date()
+            isRefreshing = false
+
+            if pendingLive {
+                pendingLive = false
+                refresh(live: true)
+            }
         }
     }
+
+    private nonisolated static func fetch(
+        _ body: @escaping @Sendable () async throws -> LimitSnapshot
+    ) async -> Result<LimitSnapshot, Error> {
+        await Task.detached(priority: .utility) {
+            do { return .success(try await body()) } catch { return .failure(error) }
+        }.value
+    }
+
+    private func apply(_ result: Result<LimitSnapshot, Error>?, to service: Service) {
+        switch result {
+        case .success(let snapshot):
+            liveSnapshots[service] = snapshot
+            liveErrors[service] = nil
+        case .failure(let error):
+            liveErrors[service] = error.localizedDescription
+        case nil:
+            break
+        }
+    }
+
+    /// Shows whichever of the local and network snapshots is newer.
+    private func merge(_ local: ServiceState, live: LimitSnapshot?, staleAfter: TimeInterval) -> ServiceState {
+        guard let live else { return local }
+        if let localSnapshot = local.snapshot, localSnapshot.capturedAt >= live.capturedAt {
+            return local
+        }
+        return .from(live, staleAfter: staleAfter)
+    }
+
+    // MARK: - Claude status line
 
     func connectClaude() {
         do {

@@ -12,12 +12,12 @@
 - лимиты Claude Code за 5 часов и 7 дней через официальный status-line JSON;
 - процент использования и время до сброса каждого окна;
 - признаки свежих, устаревших и недоступных данных;
-- автоматическое обновление раз в минуту и ручное обновление;
+- свежие лимиты с серверов раз в 20 минут и по кнопке обновления, локальные источники — раз в минуту;
 - несколько мониторов и полноэкранные Space;
 - полностью кастомный чёрный dashboard без стандартного SwiftUI Material;
 - зелёный < 70 %, оранжевый 70–90 %, красный ≥ 90 %, жёлтый — устаревшие данные.
 
-Limita не использует закрытые web API, не хранит cookies и не просит логин/пароль.
+Limita не хранит cookies и не просит логин/пароль: для запросов используется вход, уже выполненный в Codex CLI и Claude Code.
 
 ## Требования
 
@@ -39,7 +39,7 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Debug build
 
 ### Codex
 
-Дополнительная настройка не нужна. Limita ищет последние `rate_limits` в:
+Дополнительная настройка не нужна. Свежие данные запрашиваются у самого Codex CLI через официальный `codex app-server` (метод `account/rateLimits/read`) — авторизация остаётся внутри CLI. Между запросами и при ошибке Limita берёт последние `rate_limits` из:
 
 - `~/.codex/sessions/**/rollout-*.jsonl`;
 - `~/.codex/archived_sessions/rollout-*.jsonl`.
@@ -47,6 +47,10 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Debug build
 Если данных ещё нет, запустите хотя бы одну сессию Codex. Limita читает файлы с конца и не загружает содержимое диалога в память целиком.
 
 ### Claude Code
+
+**Свежие данные** Limita получает из `GET https://api.anthropic.com/api/oauth/usage` — того же источника, что экран `/usage` в Claude Code. Это **недокументированный** эндпоинт: Anthropic может изменить его без предупреждения. Для запроса Limita читает OAuth-токен Claude Code из Keychain (элемент `Claude Code-credentials`); при первом запросе macOS спросит разрешение. Токен отправляется только на api.anthropic.com, не сохраняется и не обновляется Limita — если он истёк, откройте Claude Code. Debug-сборки подписываются заново при каждой сборке, поэтому macOS может спрашивать разрешение повторно; у копии в `/Applications` достаточно один раз нажать «Всегда разрешать».
+
+**Status line** — запасной источник, работает без сети и Keychain, но обновляется только во время сессии Claude Code:
 
 Выберите в меню (правый клик по иконке) **«Подключить Claude Code…»** или нажмите **Connect** в панели. Limita пропишет себя как status-line command в `~/.claude/settings.json`; данные появятся после следующего ответа Claude Code.
 
@@ -57,7 +61,7 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Debug build
 
 ## Приватность
 
-Для Codex обрабатывается только объект `rate_limits` из последней подходящей записи. Для Claude из status-line JSON сохраняются только:
+Для Codex обрабатывается только объект `rate_limits` из последней подходящей записи или ответа app-server. OAuth-токен Claude используется только для запроса лимитов и нигде не сохраняется. Для Claude из status-line JSON сохраняются только:
 
 - `five_hour.used_percentage` и `five_hour.resets_at`;
 - `seven_day.used_percentage` и `seven_day.resets_at`;

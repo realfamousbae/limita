@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func refreshData() {
-        store.refresh()
+        store.refresh(live: true)
     }
 
     @objc private func connectClaude() {
