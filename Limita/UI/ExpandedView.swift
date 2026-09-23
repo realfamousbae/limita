@@ -4,7 +4,7 @@ struct ExpandedView: View {
     let store: LimitsStore
 
     var body: some View {
-        // Relative times ("сброс через 2 ч") and expired windows must advance between
+        // Relative times ("resets in 2 hours") and expired windows must advance between
         // data refreshes.
         TimelineView(.periodic(from: .now, by: 30)) { context in
             VStack(spacing: 0) {
