@@ -31,6 +31,20 @@ struct LimitWindow: Codable, Sendable, Equatable {
         String(format: "%.0f%%", displayPercent(at: now))
     }
 
+    /// What is left of the window, 0...100.
+    func remainingPercent(at now: Date = Date()) -> Double {
+        min(max(100 - displayPercent(at: now), 0), 100)
+    }
+
+    /// The percentage a service is displayed with — see `Service.showsRemaining`.
+    func shownPercent(for service: Service, at now: Date = Date()) -> Double {
+        service.showsRemaining ? remainingPercent(at: now) : min(max(displayPercent(at: now), 0), 100)
+    }
+
+    func shownText(for service: Service, at now: Date = Date()) -> String {
+        String(format: "%.0f%%", shownPercent(for: service, at: now))
+    }
+
     func resetText(at now: Date = Date()) -> String? {
         guard let resetsAt else { return nil }
         if resetsAt <= now { return "window reset" }
@@ -102,6 +116,16 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
         case .codex: "Codex"
         case .claude: "Claude"
         }
+    }
+
+    /// Codex is shown as remaining quota, Claude as used quota — by user preference.
+    var showsRemaining: Bool {
+        self == .codex
+    }
+
+    /// Short word for what the percentage means.
+    var percentMeaning: String {
+        showsRemaining ? "left" : "used"
     }
 
     var symbolName: String {

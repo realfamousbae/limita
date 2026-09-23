@@ -30,7 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "gauge.with.dots.needle.50percent", accessibilityDescription: "Limita")
+            let image = NSImage(named: "StatusIcon")
+                ?? NSImage(systemSymbolName: "gauge.with.dots.needle.50percent", accessibilityDescription: "Limita")
+            image?.isTemplate = true
+            image?.size = NSSize(width: 18, height: 18)
+            image?.accessibilityDescription = "Limita"
+            button.image = image
             button.target = self
             button.action = #selector(statusItemClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -38,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
 
         menu.delegate = self
+        menu.font = AppFont.ns(13)
         menu.addItem(withTitle: "Show Limits", action: #selector(showLimits), keyEquivalent: "")
         menu.addItem(withTitle: "Refresh", action: #selector(refreshData), keyEquivalent: "r")
         menu.addItem(.separator())

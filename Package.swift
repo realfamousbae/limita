@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "Limita",
             path: "Limita",
-            exclude: ["Info.plist"],
+            exclude: ["Info.plist", "Resources"],
             resources: []
         ),
         .testTarget(name: "LimitaTests", dependencies: ["Limita"], path: "Tests/LimitaTests")

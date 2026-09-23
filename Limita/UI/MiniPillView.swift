@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Compact summary shown when the cursor rests at the top edge: each service's 5-hour
-/// window. The dot reflects both windows and freshness. Click to expand.
+/// window, as left (Codex) or used (Claude). The dot reflects both windows and
+/// freshness. Click to expand.
 struct MiniPillView: View {
     let store: LimitsStore
 
@@ -33,8 +34,8 @@ struct MiniPillView: View {
                 .fill(DashboardStyle.statusColor(state, now: now))
                 .frame(width: 6, height: 6)
             let fiveHour = state.snapshot?.fiveHour
-            Text(fiveHour.map { "5h \($0.percentText(at: now))" } ?? "5h —")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+            Text(fiveHour.map { "5h \($0.shownText(for: service, at: now)) \(service.percentMeaning)" } ?? "5h —")
+                .font(.app(11))
                 .monospacedDigit()
                 .foregroundStyle(DashboardStyle.pressureColor(fiveHour?.displayFraction(at: now) ?? 0, fallback: .white))
         }

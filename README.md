@@ -1,90 +1,89 @@
-# Limita
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.png">
+    <img src="docs/banner-light.png" alt="Limita" width="520">
+  </picture>
+</p>
 
-Нативный индикатор лимитов Codex и Claude Code для macOS.
+<p align="center">
+  <b>Codex and Claude Code rate limits, one glance from the top of your Mac.</b>
+</p>
 
-- **Пилюля по наведению**: задержите курсор у верхнего края любого экрана — появится компактная пилюля с процентами и цветными индикаторами. Клик по ней разворачивает полную панель, увод курсора — прячет.
-- **Menu bar**: левый клик по иконке открывает/закрывает панель, правый — меню. Клик вне панели её закрывает.
-- **Вырез камеры не трогается**: у выреза (плюс запас 80 pt с каждой стороны) пилюля не вызывается, и ни пилюля, ни панель туда не заезжают — эта зона оставлена другим приложениям.
+<p align="center">
+  <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-000?logo=apple">
+  <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white">
+  <img alt="Status" src="https://img.shields.io/badge/status-pre--release-7C3AED">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-22D3EE">
+</p>
 
-## Что работает
+---
 
-- лимиты Codex за 5 часов и 7 дней из локальных session-логов Codex;
-- лимиты Claude Code за 5 часов и 7 дней через официальный status-line JSON;
-- процент использования и время до сброса каждого окна;
-- под шкалами: доступные сбросы лимитов и кредиты Codex (в кредитах и $, по курсу $1 = 25 кредитов), usage credits и cloud session credits Claude — строка скрывается, если сервис не вернул значение;
-- интерфейс на английском;
-- признаки свежих, устаревших и недоступных данных;
-- свежие лимиты с серверов раз в 20 минут и по кнопке обновления, локальные источники — раз в минуту;
-- несколько мониторов и полноэкранные Space;
-- полностью кастомный чёрный dashboard без стандартного SwiftUI Material;
-- зелёный < 70 %, оранжевый 70–90 %, красный ≥ 90 %, жёлтый — устаревшие данные.
+Limita is a tiny native menu-bar app that shows how much of your **Codex** and **Claude** 5-hour and weekly limits you have, without opening a terminal.
 
-Limita не хранит cookies и не просит логин/пароль: для запросов используется вход, уже выполненный в Codex CLI и Claude Code.
+## Features
 
-## Требования
+- **Hover pill.** Rest the cursor at the top edge of any screen and a compact pill slides in with each service's 5-hour limit. Click it for the full dashboard.
+- **Stays away from the notch.** The camera housing plus 80 pt on each side is left to other apps: nothing triggers or draws there.
+- **Menu bar.** Left-click the icon for the dashboard, right-click for the menu. Clicking elsewhere closes it.
+- **Live numbers.** Both services are queried every 20 minutes and on **Refresh**; local sources are re-read every minute.
+- **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits); Claude usage credits and cloud session credits. Rows a service does not report are hidden.
+- **Readable at a glance.** Codex shows what is **left**, Claude what is **used**, and the dashboard labels which is which. Orange from 70 % usage, red from 90 %, yellow for stale data.
+- Multiple displays and full-screen Spaces. JetBrains Mono everywhere.
 
-- macOS 14 или новее;
-- Xcode 15 или новее для сборки;
-- установленный Codex CLI и/или Claude Code.
+## Install
 
-## Сборка
+1. Download `Limita-<version>.dmg` from [Releases](../../releases).
+2. Open it and drag **Limita** into **Applications**.
+3. The build is not notarized yet, so the first launch needs one extra step: right-click **Limita** in Applications → **Open** → **Open**. On recent macOS versions, use **System Settings → Privacy & Security → Open Anyway** instead.
+
+Limita lives in the menu bar only; it has no Dock icon.
+
+## Data sources
+
+| | Codex | Claude |
+|---|---|---|
+| **Live** | `codex app-server` → `account/rateLimits/read` (official; auth stays in the CLI) | `GET api.anthropic.com/api/oauth/usage` with Claude Code's OAuth token |
+| **Fallback** | Latest `rate_limits` in `~/.codex/sessions/**/rollout-*.jsonl` | Claude Code status line (**Connect** in the dashboard) |
+| **Extras** | Limit resets, credit balance | Usage credits, cloud session credits |
+
+**Claude usage API.** The endpoint is undocumented, the same one Claude Code's `/usage` uses, and it may change without notice. Limita reads the token from Claude Code's Keychain item `Claude Code-credentials`; macOS asks once. The token is only sent to `api.anthropic.com`. Limita never stores or refreshes it: if it expired, open Claude Code.
+
+**Claude status line.** Connecting adds Limita to `statusLine` in `~/.claude/settings.json`:
+
+- An existing status line is wrapped, not replaced. Limita saves the limits and runs your command with the same input, so its output is unchanged.
+- **Disconnect Claude Code** in the menu restores it. A backup is kept as `settings.json.limita-backup`.
+- Connect from `/Applications`: a build-folder path disappears after a clean build.
+
+## Privacy
+
+- No accounts, cookies or passwords, and no analytics.
+- Only rate-limit numbers and balances are read. Prompts, transcripts, project paths and session IDs are ignored.
+- The Claude status-line cache (`~/Library/Application Support/Limita/claude-status.json`) holds only the two windows and a timestamp.
+
+## Build from source
+
+Requires macOS 14+, Xcode 15+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
 swift test
 xcodegen generate
-xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Debug build
+xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Release build
 ```
 
-Или откройте `Limita.xcodeproj` в Xcode и запустите схему `Limita`. `Limita.xcodeproj` генерируется из `project.yml` — после добавления/удаления файлов запускайте `xcodegen generate`.
-
-## Источники данных
-
-### Codex
-
-Дополнительная настройка не нужна. Из того же ответа берутся доступные сбросы лимитов (`rateLimitResetCredits.availableCount`) и баланс кредитов (`credits.balance`, в кредитах — так его показывает `/status` в Codex CLI). Свежие данные запрашиваются у самого Codex CLI через официальный `codex app-server` (метод `account/rateLimits/read`) — авторизация остаётся внутри CLI. Между запросами и при ошибке Limita берёт последние `rate_limits` из:
-
-- `~/.codex/sessions/**/rollout-*.jsonl`;
-- `~/.codex/archived_sessions/rollout-*.jsonl`.
-
-Если данных ещё нет, запустите хотя бы одну сессию Codex. Limita читает файлы с конца и не загружает содержимое диалога в память целиком.
-
-### Claude Code
-
-**Свежие данные** Limita получает из `GET https://api.anthropic.com/api/oauth/usage` — того же источника, что экран `/usage` в Claude Code. Это **недокументированный** эндпоинт: Anthropic может изменить его без предупреждения. Для запроса Limita читает OAuth-токен Claude Code из Keychain (элемент `Claude Code-credentials`); при первом запросе macOS спросит разрешение. Токен отправляется только на api.anthropic.com, не сохраняется и не обновляется Limita — если он истёк, откройте Claude Code. Debug-сборки подписываются заново при каждой сборке, поэтому macOS может спрашивать разрешение повторно; у копии в `/Applications` достаточно один раз нажать «Всегда разрешать».
-
-Из того же ответа берутся usage credits (блок `spend`) и cloud session credits (блок с внутренним кодовым именем `iguana_necktie`; если Anthropic его переименует, строка просто пропадёт). Счётчика сбросов лимитов Claude не отдаёт.
-
-**Status line** — запасной источник, работает без сети и Keychain, но обновляется только во время сессии Claude Code:
-
-Выберите в меню (правый клик по иконке) **«Подключить Claude Code…»** или нажмите **Connect** в панели. Limita пропишет себя как status-line command в `~/.claude/settings.json`; данные появятся после следующего ответа Claude Code.
-
-- Если status line уже настроена, Limita её **оборачивает**: сохраняет лимиты и запускает вашу команду с тем же stdin, так что её вывод не меняется.
-- Если своей status line нет, Limita выводит краткую строку вида `5h 12% · 7d 40%`.
-- **«Отключить Claude Code»** в меню возвращает прежнюю status line. Перед первым изменением сохраняется копия `settings.json.limita-backup`.
-- Если приложение перенесли, при запуске Limita сама обновляет путь в хуке. Подключайте Limita из `/Applications`: путь сборки из DerivedData исчезает после очистки.
-
-## Приватность
-
-Для Codex обрабатывается только объект `rate_limits` из последней подходящей записи или ответа app-server. OAuth-токен Claude используется только для запроса лимитов и нигде не сохраняется. Для Claude из status-line JSON сохраняются только:
-
-- `five_hour.used_percentage` и `five_hour.resets_at`;
-- `seven_day.used_percentage` и `seven_day.resets_at`;
-- локальное время получения.
-
-Путь проекта, transcript, session ID, prompts, ответы и учётные данные не сохраняются. Кэш Claude находится в `~/Library/Application Support/Limita/claude-status.json`.
-
-## Структура
+`Limita.xcodeproj` is generated from `project.yml`. Run `xcodegen generate` after adding or removing files.
 
 ```text
 Limita/
-├── App/       # жизненный цикл и menu bar
-├── Data/      # локальные readers и Claude status-line capture
-├── Models/    # окна лимитов и состояния источников
-└── UI/        # Dynamic Bezel, pill и полная панель
-Tests/
-└── LimitaTests/
+├── App/        lifecycle, status item, CLI entry for the status-line hook
+├── Data/       readers, live clients, Claude status-line setup
+├── Models/     limit windows, service state, balances
+├── UI/         panel controller, pill, dashboard, layout, font
+└── Resources/  app icon, menu-bar icon, bundled font
+Tests/LimitaTests/
 ```
 
-## Лицензия
+## License
 
-MIT — см. [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). The bundled JetBrains Mono Nerd Font is under the SIL Open Font License 1.1, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Limita is not affiliated with OpenAI or Anthropic.

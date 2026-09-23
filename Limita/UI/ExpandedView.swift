@@ -38,17 +38,19 @@ struct ExpandedView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(Color.white.opacity(0.10))
-                Image(systemName: "gauge.with.dots.needle.50percent")
-                    .font(.system(size: 12, weight: .semibold))
+                Image("StatusIcon")
+                    .resizable()
+                    .renderingMode(.template)
+                    .frame(width: 16, height: 16)
             }
             .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 0) {
                 Text("LIMITA")
-                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .font(.app(12))
                     .tracking(1.2)
                 Text("AI USAGE MONITOR")
-                    .font(.system(size: 7, weight: .bold, design: .rounded))
+                    .font(.app(7))
                     .tracking(0.8)
                     .foregroundStyle(.white.opacity(0.38))
             }
@@ -92,11 +94,11 @@ struct ExpandedView: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(service.displayName)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.app(13))
                     HStack(spacing: 4) {
                         Circle().fill(DashboardStyle.statusColor(state, now: now)).frame(width: 5, height: 5)
-                        Text(statusLabel(state))
-                            .font(.system(size: 7, weight: .heavy, design: .rounded))
+                        Text("\(statusLabel(state)) · SHOWING \(service.percentMeaning.uppercased())")
+                            .font(.app(7))
                             .tracking(0.6)
                             .foregroundStyle(.white.opacity(0.38))
                     }
@@ -108,15 +110,15 @@ struct ExpandedView: View {
                 setupMessage(message)
             } else if let snapshot = state.snapshot {
                 HStack(spacing: 10) {
-                    metric("5 HOURS", window: snapshot.fiveHour, color: DashboardStyle.accent(for: service), now: now)
-                    metric("7 DAYS", window: snapshot.sevenDay, color: DashboardStyle.accent(for: service).opacity(0.72), now: now)
+                    metric("5 HOURS", service: service, window: snapshot.fiveHour, color: DashboardStyle.accent(for: service), now: now)
+                    metric("7 DAYS", service: service, window: snapshot.sevenDay, color: DashboardStyle.accent(for: service).opacity(0.72), now: now)
                 }
 
                 detailRows(for: service)
 
                 HStack(spacing: 6) {
                     Text("UPDATED \(snapshot.capturedAt.formatted(.relative(presentation: .numeric).locale(.english)).uppercased())")
-                        .font(.system(size: 7, weight: .bold, design: .rounded))
+                        .font(.app(7))
                         .tracking(0.45)
                         .foregroundStyle(.white.opacity(0.25))
                         .lineLimit(1)
@@ -133,7 +135,7 @@ struct ExpandedView: View {
             } else {
                 VStack(alignment: .leading, spacing: 9) {
                     Text(store.liveErrors[service] ?? state.unavailableReason ?? "No data")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .font(.app(10))
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(.white.opacity(0.42))
@@ -160,12 +162,12 @@ struct ExpandedView: View {
                 ForEach(rows, id: \.label) { row in
                     HStack(spacing: 6) {
                         Text(row.label)
-                            .font(.system(size: 7, weight: .heavy, design: .rounded))
+                            .font(.app(7))
                             .tracking(0.6)
                             .foregroundStyle(.white.opacity(0.35))
                         Spacer(minLength: 4)
                         Text(row.value)
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(.app(10))
                             .monospacedDigit()
                             .foregroundStyle(.white.opacity(0.85))
                             .lineLimit(1)
@@ -244,30 +246,34 @@ struct ExpandedView: View {
         return state.isStale ? "STALE DATA" : "LIVE DATA"
     }
 
-    private func metric(_ title: String, window: LimitWindow?, color: Color, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(.system(size: 7, weight: .heavy, design: .rounded))
+    /// One window's meter. The number and bar show what `service` is displayed as (left
+    /// or used); the colour always follows usage, so red still means "almost out".
+    private func metric(_ title: String, service: Service, window: LimitWindow?, color: Color, now: Date) -> some View {
+        let used = window?.displayFraction(at: now) ?? 0
+        let shown = (window?.shownPercent(for: service, at: now) ?? 0) / 100
+        return VStack(alignment: .leading, spacing: 5) {
+            Text("\(title) \(service.percentMeaning.uppercased())")
+                .font(.app(7))
                 .tracking(0.7)
                 .foregroundStyle(.white.opacity(0.35))
 
-            Text(window?.percentText(at: now) ?? "—")
-                .font(.system(size: 23, weight: .black, design: .rounded))
+            Text(window?.shownText(for: service, at: now) ?? "—")
+                .font(.app(23))
                 .monospacedDigit()
-                .foregroundStyle(DashboardStyle.pressureColor(window?.displayFraction(at: now) ?? 0, fallback: .white))
+                .foregroundStyle(DashboardStyle.pressureColor(used, fallback: .white))
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.09))
                     Capsule()
-                        .fill(DashboardStyle.pressureColor(window?.displayFraction(at: now) ?? 0, fallback: color))
-                        .frame(width: geometry.size.width * (window?.displayFraction(at: now) ?? 0))
+                        .fill(DashboardStyle.pressureColor(used, fallback: color))
+                        .frame(width: geometry.size.width * shown)
                 }
             }
             .frame(height: 4)
 
             Text(window?.resetText(at: now)?.uppercased() ?? "NO WINDOW")
-                .font(.system(size: 7, weight: .medium, design: .rounded))
+                .font(.app(7))
                 .lineLimit(1)
                 .foregroundStyle(.white.opacity(0.3))
         }
@@ -282,7 +288,7 @@ struct ExpandedView: View {
                 Image(systemName: "link")
                 Text(compact ? "RECONNECT" : "CONNECT")
             }
-            .font(.system(size: compact ? 7 : 8, weight: .heavy, design: .rounded))
+            .font(.app(compact ? 7 : 8))
             .tracking(0.5)
             .padding(.horizontal, compact ? 8 : 11)
             .frame(height: compact ? 18 : 27)
@@ -299,14 +305,14 @@ struct ExpandedView: View {
     private func setupMessage(_ message: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(message)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .font(.app(10))
                 .foregroundStyle(.white.opacity(0.7))
                 .lineLimit(5)
                 .minimumScaleFactor(0.8)
                 .fixedSize(horizontal: false, vertical: true)
             Button("OK") { store.claudeSetupMessage = nil }
                 .buttonStyle(.plain)
-                .font(.system(size: 8, weight: .heavy, design: .rounded))
+                .font(.app(8))
                 .padding(.horizontal, 11)
                 .frame(height: 20)
                 .background(Capsule().fill(Color.white.opacity(0.10)))

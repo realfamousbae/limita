@@ -15,15 +15,19 @@
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
+    <key>ATSApplicationFontsPath</key>
+    <string>.</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026. All rights reserved.</string>
+    <string>Copyright © 2026 Limita. MIT License.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>

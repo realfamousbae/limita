@@ -181,6 +181,16 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(ExpandedView.detailRows(for: .claude, details: AccountDetails()), [], "missing values hide rows")
     }
 
+    func testCodexShowsRemainingAndClaudeShowsUsed() {
+        let now = Date(timeIntervalSince1970: 0)
+        let window = LimitWindow(usedPercent: 3, resetsAt: Date(timeIntervalSince1970: 100))
+        XCTAssertEqual(window.shownText(for: .codex, at: now), "97%")
+        XCTAssertEqual(window.shownText(for: .claude, at: now), "3%")
+        XCTAssertEqual(LimitWindow(usedPercent: 120, resetsAt: nil).shownPercent(for: .codex), 0, "over the limit")
+        let expired = Date(timeIntervalSince1970: 200)
+        XCTAssertEqual(window.shownText(for: .codex, at: expired), "100%", "a reset window is full again")
+    }
+
     func testExpiredWindowDisplaysZero() {
         let window = LimitWindow(usedPercent: 80, resetsAt: Date(timeIntervalSince1970: 1000))
         XCTAssertEqual(window.displayPercent(at: Date(timeIntervalSince1970: 999)), 80)

@@ -21,7 +21,7 @@ struct ClaudeLiveClient: Sendable {
 
     var timeout: TimeInterval = 20
     /// Injectable so tests never touch the real Keychain.
-    var accessToken: @Sendable (Date) throws -> String = ClaudeLiveClient.accessToken(now:)
+    var accessToken: @Sendable (Date) throws -> String = { try ClaudeLiveClient.accessToken(now: $0) }
 
     func fetch(now: Date = Date()) async throws -> LiveReading {
         let token = try accessToken(now)
