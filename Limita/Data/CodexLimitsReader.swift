@@ -41,73 +41,69 @@ struct CodexLimitsReader: Sendable {
             return .unavailable(reason: "Codex CLI не найден или ещё не создал файлы сессий")
         }
 
-        var match: (URL, RateLimitsPayload)?
         for file in files {
-            if let payload = Self.lastRateLimits(in: file) {
-                match = (file, payload)
-                break
+            if let snapshot = Self.lastSnapshot(in: file.url, fallbackDate: file.modified ?? now) {
+                return .from(snapshot, staleAfter: Self.staleAfter, now: now)
             }
         }
-        guard let (file, payload) = match else {
-            return .unavailable(reason: "В сессиях Codex ещё нет данных о лимитах")
-        }
-
-        let snapshot = Self.snapshot(from: payload, capturedAt: modificationDate(of: file) ?? now)
-        guard !snapshot.isEmpty else {
-            return .unavailable(reason: "Codex вернул лимиты в незнакомом формате")
-        }
-        return .from(snapshot, staleAfter: Self.staleAfter, now: now)
+        return .unavailable(reason: "В сессиях Codex ещё нет данных о лимитах")
     }
 
     // MARK: - Locating the newest session
 
-    private func sessionFilesNewestFirst() -> [URL] {
-        var files: [URL] = []
+    private func sessionFilesNewestFirst() -> [(url: URL, modified: Date?)] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey]
+        var urls: [URL] = []
         if let enumerator = FileManager.default.enumerator(
             at: sessionsDirectory,
-            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
+            includingPropertiesForKeys: keys,
             options: [.skipsHiddenFiles]
         ) {
-            for case let file as URL in enumerator where isRollout(file) {
-                files.append(file)
+            for case let url as URL in enumerator where isRollout(url) {
+                urls.append(url)
             }
         }
 
         let archived = (try? FileManager.default.contentsOfDirectory(
             at: archivedSessionsDirectory,
-            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
+            includingPropertiesForKeys: keys,
             options: [.skipsHiddenFiles]
         )) ?? []
-        files.append(contentsOf: archived.filter(isRollout))
+        urls.append(contentsOf: archived.filter(isRollout))
 
-        return files.sorted {
-            (modificationDate(of: $0) ?? .distantPast) > (modificationDate(of: $1) ?? .distantPast)
-        }
+        return urls
+            .map { url in
+                (url, try? url.resourceValues(forKeys: Set(keys)).contentModificationDate)
+            }
+            .sorted { ($0.1 ?? .distantPast) > ($1.1 ?? .distantPast) }
     }
 
     private func isRollout(_ file: URL) -> Bool {
         file.lastPathComponent.hasPrefix("rollout-") && file.pathExtension == "jsonl"
     }
 
-    private func modificationDate(of url: URL) -> Date? {
-        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-    }
-
     // MARK: - Parsing
 
-    /// Scans `file` from the end and returns the first `rate_limits` object found.
+    /// Scans `file` from the end and returns the newest usable rate-limit snapshot.
     ///
     /// Rate limits are appended throughout the session, so the last one is the current
-    /// one and reading the tail avoids parsing megabytes of transcript.
-    static func lastRateLimits(in file: URL) -> RateLimitsPayload? {
+    /// one and reading the tail avoids parsing megabytes of transcript. Records without
+    /// any 5h/7d window are skipped: Codex also logs other buckets (e.g. `premium`)
+    /// whose `primary`/`secondary` are null.
+    static func lastSnapshot(in file: URL, fallbackDate: Date) -> LimitSnapshot? {
+        let decoder = JSONDecoder()
         for line in TailLineReader(url: file) {
-            guard let data = line.data(using: .utf8), !data.isEmpty else { continue }
+            // Cheap pre-filter: most lines are transcript, not rate limits.
+            guard line.contains("\"rate_limits\"") else { continue }
             // One malformed line must not abort the scan — transcripts can be truncated
             // mid-write if the CLI was killed.
-            guard let record = try? JSONDecoder().decode(RolloutRecord.self, from: data),
+            guard let record = try? decoder.decode(RolloutRecord.self, from: Data(line.utf8)),
                   let limits = record.payload?.rateLimits
             else { continue }
-            return limits
+
+            let capturedAt = record.timestamp.flatMap(ISO8601DateFormatter.parseFlexible) ?? fallbackDate
+            let snapshot = snapshot(from: limits, capturedAt: capturedAt)
+            if !snapshot.isEmpty { return snapshot }
         }
         return nil
     }
@@ -131,6 +127,7 @@ struct CodexLimitsReader: Sendable {
     // MARK: - Wire format
 
     struct RolloutRecord: Decodable {
+        let timestamp: String?
         let payload: Payload?
 
         struct Payload: Decodable {

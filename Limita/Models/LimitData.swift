@@ -10,34 +10,30 @@ struct LimitWindow: Codable, Sendable, Equatable {
     /// When the window resets. Absent if the source did not report it.
     let resetsAt: Date?
 
-    /// Clamped to 0...1 for progress bars.
-    var fraction: Double {
-        min(max(usedPercent / 100, 0), 1)
-    }
-
     /// A window whose reset time has passed carries a stale percentage: the CLI has not
     /// run since the reset, so its last reported number describes the previous window.
-    var isExpired: Bool {
+    func isExpired(at now: Date = Date()) -> Bool {
         guard let resetsAt else { return false }
-        return resetsAt <= Date()
+        return resetsAt <= now
     }
 
     /// The percentage to display: an expired window has started over at zero.
-    var displayPercent: Double {
-        isExpired ? 0 : usedPercent
+    func displayPercent(at now: Date = Date()) -> Double {
+        isExpired(at: now) ? 0 : usedPercent
     }
 
-    var displayFraction: Double {
-        isExpired ? 0 : fraction
+    /// Clamped to 0...1 for progress bars.
+    func displayFraction(at now: Date = Date()) -> Double {
+        min(max(displayPercent(at: now) / 100, 0), 1)
     }
 
-    var percentText: String {
-        String(format: "%.0f%%", displayPercent)
+    func percentText(at now: Date = Date()) -> String {
+        String(format: "%.0f%%", displayPercent(at: now))
     }
 
-    var resetText: String? {
+    func resetText(at now: Date = Date()) -> String? {
         guard let resetsAt else { return nil }
-        if resetsAt <= Date() { return "окно обновилось" }
+        if resetsAt <= now { return "окно обновилось" }
         return "сброс \(resetsAt.formatted(.relative(presentation: .numeric)))"
     }
 }
@@ -52,10 +48,10 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
         fiveHour == nil && sevenDay == nil
     }
 
-    /// Highest pressure across both windows, for the pill's status dot.
-    var peakFraction: Double {
+    /// Highest pressure across both windows, for status dots.
+    func peakFraction(at now: Date = Date()) -> Double {
         [fiveHour, sevenDay]
-            .compactMap { $0?.displayFraction }
+            .compactMap { $0?.displayFraction(at: now) }
             .max() ?? 0
     }
 }
@@ -82,8 +78,6 @@ enum ServiceState: Sendable, Equatable {
         return nil
     }
 
-    var capturedAt: Date? { snapshot?.capturedAt }
-
     var isStale: Bool {
         if case .stale = self { return true }
         return false
@@ -95,11 +89,6 @@ enum ServiceState: Sendable, Equatable {
             ? .stale(snapshot)
             : .fresh(snapshot)
     }
-}
-
-enum AppState: Equatable {
-    case hidden
-    case expanded
 }
 
 enum Service: String, CaseIterable, Identifiable, Sendable {
@@ -115,10 +104,10 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var icon: String {
+    var symbolName: String {
         switch self {
-        case .codex: "⚡"
-        case .claude: "🤖"
+        case .codex: "bolt.fill"
+        case .claude: "sparkles"
         }
     }
 }

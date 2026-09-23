@@ -24,3 +24,6 @@ Icon
 *~
 *.log
 /tmp/
+
+# Coverage
+*.profraw

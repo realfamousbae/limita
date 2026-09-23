@@ -1,21 +1,16 @@
 import SwiftUI
-#if canImport(Darwin)
-import Darwin
-#endif
 
 @main
 struct LimitaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     init() {
-        guard CommandLine.arguments.contains("--capture-claude-status") else { return }
-        do {
-            try ClaudeStatusCapture.capture()
-            exit(EXIT_SUCCESS)
-        } catch {
-            FileHandle.standardError.write(Data("Limita: \(error.localizedDescription)\n".utf8))
-            exit(EXIT_FAILURE)
-        }
+        // Claude Code runs this binary as its status-line command; handle that and exit
+        // before any UI is created.
+        let arguments = CommandLine.arguments
+        guard arguments.contains(ClaudeStatusLineCommand.flag) else { return }
+        let input = FileHandle.standardInput.readDataToEndOfFile()
+        exit(ClaudeStatusLineCommand.run(arguments: arguments, input: input))
     }
 
     var body: some Scene {

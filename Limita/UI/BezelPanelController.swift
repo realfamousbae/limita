@@ -1,187 +1,257 @@
 import AppKit
 import SwiftUI
 
-/// Owns the menu-bar panel. It deliberately avoids the camera/notch area.
+enum PanelState: Equatable {
+    case hidden
+    case pill
+    case expanded
+}
+
+/// Shared between the controller and the SwiftUI content, so state changes re-render
+/// without rebuilding the hosting view.
+@Observable
+@MainActor
+final class PanelModel {
+    var state: PanelState = .hidden
+}
+
+/// Owns the floating panel.
+///
+/// - Resting the cursor at the top edge of any screen shows a compact pill there;
+///   clicking it expands the full dashboard. Moving away hides it again.
+/// - The menu-bar icon opens the dashboard directly; a click outside closes it.
+///
+/// The notch area is left alone on purpose — see `PanelLayout`.
 @MainActor
 final class BezelPanelController {
-    private var panel: NSPanel?
-    private var hostingView: NSHostingView<BezelRootView>?
-    private var hideTimer: Timer?
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
-    private var screenObserver: NSObjectProtocol?
-    private var currentScreen: NSScreen?
+    static let pillSize = CGSize(width: 188, height: 34)
+    static let expandedSize = CGSize(width: 520, height: 212)
 
-    private var appState: AppState = .hidden {
-        didSet {
-            guard oldValue != appState else { return }
-            updatePanel()
-        }
-    }
+    /// How long the cursor must rest at the edge, so passing through to the menu bar
+    /// does not pop the pill.
+    private let dwellDelay: TimeInterval = 0.3
+    private let hideDelay: TimeInterval = 0.7
+    private let hoverSlop: CGFloat = 20
 
     private let store: LimitsStore
-    private let expandedWidth: CGFloat = 520
-    private let expandedHeight: CGFloat = 212
+    private let model = PanelModel()
+    private let panel: NSPanel
+    private var monitors: [Any] = []
+    private var screenObserver: NSObjectProtocol?
+    private var dwellTimer: Timer?
+    private var hideTimer: Timer?
+
+    /// Where the panel currently lives.
+    private var layout: PanelLayout?
+    private var anchorX: CGFloat = 0
+    /// Opened from the pill: follows the cursor. Opened from the menu bar: stays until
+    /// a click outside.
+    private var hoverDriven = false
 
     init(store: LimitsStore) {
         self.store = store
-        currentScreen = screen(containing: NSEvent.mouseLocation) ?? NSScreen.main
-        setupPanel()
-        setupMouseMonitors()
-        screenObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.updatePanel() }
-        }
-    }
-
-    deinit {
-        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
-        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
-        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
-    }
-
-    func showExpanded() {
-        cancelHideTimer()
-        currentScreen = screen(containing: NSEvent.mouseLocation) ?? NSScreen.main
-        if appState == .expanded {
-            updatePanel()
-            panel?.orderFrontRegardless()
-        } else {
-            appState = .expanded
-        }
-    }
-
-    private func setupPanel() {
-        guard let currentScreen else { return }
-        let panel = NSPanel(
-            contentRect: expandedRect(screen: currentScreen),
+        panel = NSPanel(
+            contentRect: CGRect(origin: .zero, size: Self.expandedSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
-            defer: false
+            defer: true
         )
         panel.level = .statusBar
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-        panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false
         panel.isMovable = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
 
-        let rootView = makeRootView()
-        let hosting = NSHostingView(rootView: rootView)
-        hosting.frame = panel.contentView?.bounds ?? .zero
+        let hosting = NSHostingView(rootView: PanelRootView(store: store, model: model) { [weak self] in
+            self?.expandFromPill()
+        })
+        // The controller sizes the window; SwiftUI must not resize it.
+        hosting.sizingOptions = []
         hosting.autoresizingMask = [.width, .height]
-        panel.contentView?.addSubview(hosting)
+        panel.contentView = hosting
 
-        hostingView = hosting
-        self.panel = panel
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
+        installMonitors()
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hide() }
+        }
     }
 
-    private func setupMouseMonitors() {
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.handleMouseMove(NSEvent.mouseLocation) }
+    var isExpanded: Bool { model.state == .expanded }
+
+    /// Opens the dashboard under `anchor` (a menu-bar item frame), or under the cursor.
+    func showExpanded(below anchor: CGRect? = nil, on screen: NSScreen? = nil) {
+        guard let screen = screen ?? screenContaining(NSEvent.mouseLocation) ?? NSScreen.main else { return }
+        layout = PanelLayout(screen: screen)
+        anchorX = anchor?.midX ?? NSEvent.mouseLocation.x
+        hoverDriven = false
+        transition(to: .expanded)
+    }
+
+    func hide() {
+        transition(to: .hidden)
+    }
+
+    // MARK: - Mouse tracking
+
+    private func installMonitors() {
+        let moved: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: moved, handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.mouseMoved(to: NSEvent.mouseLocation) }
+        }) {
+            monitors.append(global)
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
-            Task { @MainActor [weak self] in self?.handleMouseMove(NSEvent.mouseLocation) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: moved, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.mouseMoved(to: NSEvent.mouseLocation) }
             return event
+        }) {
+            monitors.append(local)
+        }
+        // Clicks in other apps close the panel. Clicks inside Limita arrive locally and
+        // are handled by the panel or the status item.
+        if let clicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.hide() }
+        }) {
+            monitors.append(clicks)
         }
     }
 
-    private func handleMouseMove(_ location: NSPoint) {
-        switch appState {
+    private func mouseMoved(to point: CGPoint) {
+        switch model.state {
         case .hidden:
+            updateDwell(at: point)
+        case .pill:
+            trackHover(at: point)
+        case .expanded:
+            if hoverDriven { trackHover(at: point) }
+        }
+    }
+
+    private func updateDwell(at point: CGPoint) {
+        let atEdge = screenContaining(point).map { PanelLayout(screen: $0).isTrigger(point) } ?? false
+        guard atEdge else {
+            cancel(&dwellTimer)
             return
-        case .expanded:
-            guard let panel else { return }
-            let hitArea = panel.frame.insetBy(dx: -20, dy: -20)
-            if hitArea.contains(location) {
-                cancelHideTimer()
-            } else {
-                scheduleHide()
+        }
+        guard dwellTimer == nil else { return }
+        dwellTimer = Timer.scheduledTimer(withTimeInterval: dwellDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dwellElapsed() }
+        }
+    }
+
+    private func dwellElapsed() {
+        dwellTimer = nil
+        let point = NSEvent.mouseLocation
+        guard model.state == .hidden,
+              let screen = screenContaining(point)
+        else { return }
+        let layout = PanelLayout(screen: screen)
+        guard layout.isTrigger(point) else { return }
+
+        self.layout = layout
+        anchorX = point.x
+        hoverDriven = true
+        transition(to: .pill)
+    }
+
+    /// Keeps the panel open while the cursor is over it or on the way to it from the edge.
+    private func trackHover(at point: CGPoint) {
+        guard let layout else { return }
+        var zone = panel.frame
+        // Include the strip between the top edge and the pill, which the cursor crosses.
+        zone = zone.union(CGRect(x: zone.minX, y: zone.maxY, width: zone.width, height: layout.screenFrame.maxY - zone.maxY))
+        if zone.insetBy(dx: -hoverSlop, dy: -hoverSlop).contains(point) {
+            cancel(&hideTimer)
+        } else if hideTimer == nil {
+            hideTimer = Timer.scheduledTimer(withTimeInterval: hideDelay, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.hideTimer = nil
+                    self?.hide()
+                }
             }
         }
     }
 
-    private func scheduleHide() {
-        guard hideTimer == nil else { return }
-        hideTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.hideTimer = nil
-                self?.appState = .hidden
-            }
+    private func expandFromPill() {
+        guard model.state == .pill else { return }
+        transition(to: .expanded)
+    }
+
+    // MARK: - Presentation
+
+    private func transition(to state: PanelState) {
+        cancel(&hideTimer)
+        cancel(&dwellTimer)
+        guard state != model.state else {
+            if state != .hidden { panel.orderFrontRegardless() }
+            return
         }
-    }
 
-    private func cancelHideTimer() {
-        hideTimer?.invalidate()
-        hideTimer = nil
-    }
-
-    private func expandedRect(screen: NSScreen) -> NSRect {
-        let frame = screen.frame
-        let menuBarHeight = max(screen.safeAreaInsets.top, frame.maxY - screen.visibleFrame.maxY)
-        return NSRect(
-            x: frame.maxX - expandedWidth - 14,
-            y: frame.maxY - menuBarHeight - expandedHeight - 10,
-            width: expandedWidth,
-            height: expandedHeight
-        )
-    }
-
-    private func updatePanel() {
-        guard let panel, let currentScreen = currentScreen ?? NSScreen.main else { return }
-        self.currentScreen = currentScreen
-
-        let targetRect: NSRect
-        let targetAlpha: CGFloat
-        switch appState {
+        switch state {
         case .hidden:
-            targetRect = expandedRect(screen: currentScreen)
-            targetAlpha = 0
-            panel.ignoresMouseEvents = true
-        case .expanded:
-            targetRect = expandedRect(screen: currentScreen)
-            targetAlpha = 1
-            panel.ignoresMouseEvents = false
-        }
+            model.state = .hidden
+            store.claudeSetupMessage = nil
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.15
+                panel.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.model.state == .hidden else { return }
+                    self.panel.orderOut(nil)
+                }
+            })
 
-        hostingView?.rootView = makeRootView()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().setFrame(targetRect, display: true)
-            panel.animator().alphaValue = targetAlpha
+        case .pill, .expanded:
+            guard let layout else { return }
+            let size = state == .pill ? Self.pillSize : Self.expandedSize
+            let wasHidden = model.state == .hidden
+            panel.setFrame(layout.frame(size: size, anchorX: anchorX), display: false)
+            model.state = state
+            if wasHidden { panel.alphaValue = 0 }
+            panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                panel.animator().alphaValue = 1
+            }
+            store.refreshIfOlder(than: 15)
         }
     }
 
-    private func makeRootView() -> BezelRootView {
-        BezelRootView(store: store, appState: appState) { [weak self] state in
-            self?.appState = state
-        }
+    private func cancel(_ timer: inout Timer?) {
+        timer?.invalidate()
+        timer = nil
     }
 
-    private func screen(containing point: NSPoint) -> NSScreen? {
+    private func screenContaining(_ point: CGPoint) -> NSScreen? {
         NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) }
     }
 }
 
-struct BezelRootView: View {
-    var store: LimitsStore
-    var appState: AppState
-    var onStateChange: (AppState) -> Void
+struct PanelRootView: View {
+    let store: LimitsStore
+    let model: PanelModel
+    let onExpand: () -> Void
 
     var body: some View {
-        ZStack {
-            if appState == .expanded {
+        ZStack(alignment: .top) {
+            switch model.state {
+            case .hidden:
+                Color.clear
+            case .pill:
+                MiniPillView(store: store)
+                    .onTapGesture(perform: onExpand)
+                    .transition(.scale(scale: 0.9, anchor: .top).combined(with: .opacity))
+            case .expanded:
                 ExpandedView(store: store)
-                    .transition(.scale(scale: 0.96, anchor: .topTrailing).combined(with: .opacity))
+                    .transition(.scale(scale: 0.96, anchor: .top).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: appState)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(.spring(response: 0.28, dampingFraction: 0.85), value: model.state)
     }
 }

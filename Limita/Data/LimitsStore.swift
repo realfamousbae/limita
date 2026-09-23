@@ -6,67 +6,107 @@ import Observation
 final class LimitsStore {
     private(set) var codex: ServiceState = .unavailable(reason: "Данные Codex ещё не прочитаны")
     private(set) var claude: ServiceState = .unavailable(reason: "Данные Claude ещё не прочитаны")
+    /// Whether Limita's hook is in Claude Code's settings. Drives the "Connect" button,
+    /// independently of whether cached data exists.
+    private(set) var isClaudeConnected = false
     private(set) var isRefreshing = false
+    /// Result of the last connect/disconnect action, shown inline in the panel.
+    var claudeSetupMessage: String?
 
     @ObservationIgnored private var refreshTimer: Timer?
+    @ObservationIgnored private var lastRefresh: Date?
     @ObservationIgnored private let codexReader: CodexLimitsReader
     @ObservationIgnored private let claudeReader: ClaudeLimitsReader
+    @ObservationIgnored private let configurator: ClaudeStatusLineConfigurator
 
     init(
         codexReader: CodexLimitsReader = CodexLimitsReader(),
-        claudeReader: ClaudeLimitsReader = ClaudeLimitsReader()
+        claudeReader: ClaudeLimitsReader = ClaudeLimitsReader(),
+        configurator: ClaudeStatusLineConfigurator = ClaudeStatusLineConfigurator()
     ) {
         self.codexReader = codexReader
         self.claudeReader = claudeReader
-        scheduleRefresh()
+        self.configurator = configurator
     }
 
-    private func scheduleRefresh() {
+    func startAutoRefresh(interval: TimeInterval = 60) {
         refreshTimer?.invalidate()
-        refreshTimer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                await self?.refresh()
-            }
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
         }
-        if let refreshTimer {
-            RunLoop.main.add(refreshTimer, forMode: .common)
+        timer.tolerance = interval / 6
+        RunLoop.main.add(timer, forMode: .common)
+        refreshTimer = timer
+        refresh()
+    }
+
+    /// Refreshes unless data was read within `maxAge` — for opening the panel.
+    func refreshIfOlder(than maxAge: TimeInterval) {
+        guard let lastRefresh, Date().timeIntervalSince(lastRefresh) < maxAge else {
+            refresh()
+            return
         }
     }
 
-    func refresh() async {
+    func refresh() {
         guard !isRefreshing else { return }
         isRefreshing = true
-        defer { isRefreshing = false }
+        let codexReader = codexReader
+        let claudeReader = claudeReader
+        let configurator = configurator
 
-        let codexReader = self.codexReader
-        let claudeReader = self.claudeReader
+        Task {
+            async let codexState = Task.detached(priority: .utility) {
+                codexReader.read()
+            }.value
+            async let claudeResult = Task.detached(priority: .utility) {
+                let connected: Bool
+                if case .installed = try? configurator.status() { connected = true } else { connected = false }
+                return (connected, claudeReader.read(isConnected: connected))
+            }.value
 
-        async let codexState = Task.detached(priority: .utility) {
-            codexReader.read()
-        }.value
-        async let claudeState = Task.detached(priority: .utility) {
-            claudeReader.read()
-        }.value
-
-        let results = await (codexState, claudeState)
-        codex = results.0
-        claude = results.1
+            let (codex, (connected, claude)) = await (codexState, claudeResult)
+            self.codex = codex
+            self.claude = claude
+            self.isClaudeConnected = connected
+            self.lastRefresh = Date()
+            self.isRefreshing = false
+        }
     }
 
-    func configureClaudeStatusLine() -> String {
+    func connectClaude() {
         do {
-            let outcome = try ClaudeStatusLineConfigurator().configure()
-            switch outcome {
+            let hint = configurator.isRunningFromBuildDirectory
+                ? "\nLimita запущена из папки сборки: перенесите её в /Applications и подключите заново."
+                : ""
+            switch try configurator.install() {
             case .installed:
-                claude = .unavailable(reason: "Готово. Запустите Claude Code: данные появятся после обновления status line.")
-                return "Limita подключена к Claude Code. Запустите или продолжите сессию — после обновления status line появятся лимиты."
+                claudeSetupMessage = "Подключено. Лимиты появятся после следующего ответа Claude Code." + hint
+            case .wrapped:
+                claudeSetupMessage = "Подключено. Ваша status line сохранена и работает как раньше." + hint
             case .updated:
-                return "Путь к Limita в настройках Claude Code обновлён."
+                claudeSetupMessage = "Путь к Limita в настройках Claude Code обновлён." + hint
             case .alreadyConfigured:
-                return "Limita уже подключена к Claude Code."
+                claudeSetupMessage = "Limita уже подключена к Claude Code."
             }
         } catch {
-            return error.localizedDescription
+            claudeSetupMessage = error.localizedDescription
         }
+        refresh()
+    }
+
+    func disconnectClaude() {
+        do {
+            try configurator.uninstall()
+            claudeSetupMessage = "Limita отключена от Claude Code, прежняя status line восстановлена."
+        } catch {
+            claudeSetupMessage = error.localizedDescription
+        }
+        refresh()
+    }
+
+    /// Silently fixes a hook left pointing at a moved or deleted copy of the app.
+    func repairClaudeHookIfNeeded() {
+        _ = try? configurator.repairIfNeeded()
     }
 }
