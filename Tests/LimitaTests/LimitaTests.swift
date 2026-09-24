@@ -439,6 +439,13 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(makeStore().enabledServices, [.codex])
     }
 
+    func testUpdatedTextNeverSaysInTheFuture() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertEqual(ExpandedView.updatedText(now.addingTimeInterval(0.4), now: now), "just now")
+        XCTAssertEqual(ExpandedView.updatedText(now.addingTimeInterval(-3), now: now), "just now")
+        XCTAssertEqual(ExpandedView.updatedText(now.addingTimeInterval(-7200), now: now), "2 hours ago")
+    }
+
     @MainActor
     func testMenuTitles() {
         XCTAssertEqual(AppDelegate.menuTitle(for: .claude, connected: true), "Disconnect Claude Code")

@@ -26,7 +26,8 @@ final class PanelModel {
 final class BezelPanelController {
     /// Width of one service column in the dashboard.
     static let columnWidth: CGFloat = 272
-    static let expandedHeight: CGFloat = 292
+    /// First guess only; the dashboard reports its real height once laid out.
+    static let estimatedExpandedHeight: CGFloat = 268
 
     /// Sizes depend on how many services are connected: no empty columns, and a
     /// prompt to connect one when there are none.
@@ -41,7 +42,7 @@ final class BezelPanelController {
     static func expandedSize(services: Int) -> CGSize {
         services == 0
             ? CGSize(width: 300, height: 210)
-            : CGSize(width: columnWidth * CGFloat(services), height: expandedHeight)
+            : CGSize(width: columnWidth * CGFloat(services), height: estimatedExpandedHeight)
     }
 
     /// How long the cursor must rest at the edge, so passing through to the menu bar
@@ -84,9 +85,12 @@ final class BezelPanelController {
         // including full-screen Spaces. `.canJoinAllSpaces` left it stuck on one desktop.
         panel.collectionBehavior = [.moveToActiveSpace, .ignoresCycle, .fullScreenAuxiliary]
 
-        let hosting = NSHostingView(rootView: PanelRootView(store: store, model: model) { [weak self] in
-            self?.expandFromPill()
-        })
+        let hosting = NSHostingView(rootView: PanelRootView(
+            store: store,
+            model: model,
+            onExpand: { [weak self] in self?.expandFromPill() },
+            onDashboardHeight: { [weak self] in self?.dashboardHeightChanged($0) }
+        ))
         // The controller sizes the window; SwiftUI must not resize it.
         hosting.sizingOptions = []
         hosting.autoresizingMask = [.width, .height]
@@ -129,7 +133,20 @@ final class BezelPanelController {
 
     private func size(for state: PanelState) -> CGSize {
         let count = store.enabledServices.count
-        return state == .pill ? Self.pillSize(services: count) : Self.expandedSize(services: count)
+        if state == .pill { return Self.pillSize(services: count) }
+        var size = Self.expandedSize(services: count)
+        if let measuredHeight { size.height = measuredHeight }
+        return size
+    }
+
+    /// Height the dashboard content actually needs, as last reported by SwiftUI.
+    private var measuredHeight: CGFloat?
+
+    private func dashboardHeightChanged(_ height: CGFloat) {
+        let height = height.rounded(.up)
+        guard height > 0, height != measuredHeight else { return }
+        measuredHeight = height
+        relayout()
     }
 
     /// Resizes the open panel when a service is connected or disconnected.
@@ -309,6 +326,7 @@ struct PanelRootView: View {
     let store: LimitsStore
     let model: PanelModel
     let onExpand: () -> Void
+    let onDashboardHeight: (CGFloat) -> Void
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -321,10 +339,22 @@ struct PanelRootView: View {
                     .transition(.scale(scale: 0.9, anchor: .top).combined(with: .opacity))
             case .expanded:
                 ExpandedView(store: store)
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: DashboardHeightKey.self, value: geometry.size.height)
+                    })
                     .transition(.scale(scale: 0.96, anchor: .top).combined(with: .opacity))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onPreferenceChange(DashboardHeightKey.self, perform: onDashboardHeight)
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: model.state)
+    }
+}
+
+private struct DashboardHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

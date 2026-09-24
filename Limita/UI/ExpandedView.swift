@@ -19,20 +19,23 @@ struct ExpandedView: View {
                     HStack(spacing: 0) {
                         ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
                             if index > 0 {
-                                divider.frame(width: 1).padding(.vertical, 14)
+                                divider.frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 14)
                             }
                             serviceDashboard(service, state: store.state(for: service), now: context.date)
                         }
                     }
-                    .frame(maxHeight: .infinity)
+                    // Columns and the divider take the height of the tallest column.
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Height follows the content; the panel controller sizes the window to it.
+        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
         .foregroundStyle(.white)
-        .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color.black))
+        .background(RoundedRectangle(cornerRadius: DashboardStyle.cornerRadius, style: .continuous).fill(Color.black))
         .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: DashboardStyle.cornerRadius, style: .continuous)
                 .stroke(Color.white.opacity(0.06), lineWidth: 1)
         }
     }
@@ -98,14 +101,20 @@ struct ExpandedView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(service.displayName)
                         .font(.app(14))
-                    HStack(spacing: 5) {
-                        Circle().fill(DashboardStyle.statusColor(state, now: now)).frame(width: 6, height: 6)
-                        Text("\(statusLabel(state)) · SHOWING \(service.percentMeaning.uppercased())")
-                            .caption()
+                    // Codex has no status line: its meters already say "left", and
+                    // staleness still shows as dimmed numbers and "UPDATED …".
+                    if service == .claude {
+                        HStack(spacing: 5) {
+                            Circle().fill(DashboardStyle.statusColor(state, now: now)).frame(width: 6, height: 6)
+                            Text("\(statusLabel(state)) · SHOWING \(service.percentMeaning.uppercased())")
+                                .caption()
+                        }
                     }
                 }
                 Spacer(minLength: 0)
             }
+            // Same height with or without the status line, so both columns' meters line up.
+            .frame(height: 36)
 
             if let message = store.setupMessage, message.service == service {
                 SetupMessage(text: message.text) { store.setupMessage = nil }
@@ -119,8 +128,7 @@ struct ExpandedView: View {
 
                 detailRows(for: service)
 
-                // The timeline tick can predate a just-fetched snapshot; never say "in 0 seconds".
-                Text("UPDATED \(min(snapshot.capturedAt, now).relativeText(to: now).uppercased())")
+                Text("UPDATED \(Self.updatedText(snapshot.capturedAt, now: now).uppercased())")
                     .caption(faint: true)
                     .lineLimit(1)
 
@@ -138,6 +146,12 @@ struct ExpandedView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// "just now" for fresh data. The timeline tick can predate a just-fetched snapshot,
+    /// which would otherwise read "in 0 seconds".
+    static func updatedText(_ capturedAt: Date, now: Date) -> String {
+        now.timeIntervalSince(capturedAt) < 10 ? "just now" : capturedAt.relativeText(to: now)
     }
 
     private func statusLabel(_ state: ServiceState) -> String {
@@ -357,6 +371,7 @@ private struct ConnectPrompt: View {
 
 enum DashboardStyle {
     static let healthy = Color(red: 0.32, green: 0.92, blue: 0.58)
+    static let cornerRadius: CGFloat = 20
 
     /// Small uppercase labels. Sized and tinted for ~4.5:1 contrast on black.
     static let captionSize: CGFloat = 9.5
