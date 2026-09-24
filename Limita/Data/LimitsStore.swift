@@ -6,9 +6,16 @@ import os
 @MainActor
 final class LimitsStore {
     /// Local sources (Codex session logs, Claude status-line cache) are cheap and read
-    /// every minute; the network is asked every `liveInterval` or on manual refresh.
+    /// every minute; each service's network API is asked every `liveInterval(for:)`
+    /// or on manual refresh.
     static let localInterval: TimeInterval = 60
-    static let liveInterval: TimeInterval = 20 * 60
+
+    static func liveInterval(for service: Service) -> TimeInterval {
+        switch service {
+        case .claude: 3 * 60
+        case .codex: 5 * 60
+        }
+    }
 
     /// Services the user tracks, in display order. Only these are read, fetched and shown.
     private(set) var enabledServices: [Service]
@@ -25,7 +32,7 @@ final class LimitsStore {
     @ObservationIgnored private var liveSnapshots: [Service: LimitSnapshot] = [:]
     @ObservationIgnored private var refreshTimer: Timer?
     @ObservationIgnored private var lastRefresh: Date?
-    @ObservationIgnored private var lastLiveAttempt: Date?
+    @ObservationIgnored private var lastLiveAttempt: [Service: Date] = [:]
     @ObservationIgnored private var pendingLive = false
     @ObservationIgnored private let codexReader: CodexLimitsReader
     @ObservationIgnored private let claudeReader: ClaudeLimitsReader
@@ -84,8 +91,8 @@ final class LimitsStore {
         refresh()
     }
 
-    /// Reads local sources, and also asks the network when `live` is set or the last
-    /// network attempt is older than `liveInterval`. Disabled services are skipped.
+    /// Reads local sources, and also asks the network for each service when `live` is set
+    /// or its last network attempt is older than its `liveInterval`. Disabled services are skipped.
     func refresh(live forceLive: Bool = false) {
         guard !isRefreshing else {
             // A manual refresh during a background local read must not be lost.
@@ -93,17 +100,27 @@ final class LimitsStore {
             return
         }
         let now = Date()
-        let live = forceLive || lastLiveAttempt.map { now.timeIntervalSince($0) >= Self.liveInterval } ?? true
+        // Timer ticks drift by up to their tolerance, so allow half a tick of slack
+        // to keep an interval from slipping by a whole tick.
+        let slack = Self.localInterval / 2
+        func isDue(_ service: Service) -> Bool {
+            forceLive || lastLiveAttempt[service].map {
+                now.timeIntervalSince($0) >= Self.liveInterval(for: service) - slack
+            } ?? true
+        }
+        let codexOn = isEnabled(.codex)
+        let claudeOn = isEnabled(.claude)
+        let codexLiveDue = codexOn && isDue(.codex)
+        let claudeLiveDue = claudeOn && isDue(.claude)
         isRefreshing = true
-        if live { lastLiveAttempt = now }
+        if codexLiveDue { lastLiveAttempt[.codex] = now }
+        if claudeLiveDue { lastLiveAttempt[.claude] = now }
 
         let codexReader = codexReader
         let claudeReader = claudeReader
         let codexLive = codexLive
         let claudeLive = claudeLive
         let configurator = configurator
-        let codexOn = isEnabled(.codex)
-        let claudeOn = isEnabled(.claude)
 
         Task {
             async let codexLocal = codexOn
@@ -116,8 +133,8 @@ final class LimitsStore {
                     return claudeReader.read(isConnected: hooked)
                 }.value
                 : nil
-            async let codexRemote = live && codexOn ? Self.fetch { try codexLive.fetch() } : nil
-            async let claudeRemote = live && claudeOn ? Self.fetch { try await claudeLive.fetch() } : nil
+            async let codexRemote = codexLiveDue ? Self.fetch { try codexLive.fetch() } : nil
+            async let claudeRemote = claudeLiveDue ? Self.fetch { try await claudeLive.fetch() } : nil
 
             let (codexState, claudeState) = await (codexLocal, claudeLocal)
             let (codexResult, claudeResult) = await (codexRemote, claudeRemote)
