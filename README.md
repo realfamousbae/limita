@@ -39,6 +39,21 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 
 Limita lives in the menu bar only; it has no Dock icon.
 
+On the first Claude refresh, macOS asks whether Limita may read `Claude Code-credentials` from the Keychain. Choose **Always Allow**.
+
+## Keeping Claude up to date
+
+Claude Code's login token is **short-lived**, and only Claude Code itself renews it, while it is running. Limita reads that token but never renews it, because renewing it from outside could sign Claude Code out.
+
+So after a long break from Claude Code, typically several hours, Claude's numbers stop updating:
+
+- the dashboard shows **"Claude Code login expired … — open Claude Code to renew it"**;
+- the last known numbers stay visible, dimmed and marked **STALE DATA**.
+
+**To fix it, start Claude Code** (run `claude` in a terminal, or open it in your editor), then press **↻** in Limita or wait for the next refresh. Live data comes back as soon as Claude Code has renewed the login. Codex is not affected.
+
+A long-lived token from `claude setup-token` does not help here: it only allows model requests, not reading usage limits.
+
 ## Data sources
 
 | | Claude | Codex |
@@ -47,7 +62,7 @@ Limita lives in the menu bar only; it has no Dock icon.
 | **Fallback** | Claude Code status line, set up when you connect Claude Code | Latest `rate_limits` in `~/.codex/sessions/**/rollout-*.jsonl` |
 | **Extras** | Usage credits, cloud session credits | Limit resets, credit balance |
 
-**Claude usage API.** The endpoint is undocumented, the same one Claude Code's `/usage` uses, and it may change without notice. Limita reads the token from Claude Code's Keychain item `Claude Code-credentials`; macOS asks once. The token is only sent to `api.anthropic.com`. Limita never stores or refreshes it: Claude Code renews it only while it runs, so after a long break the dashboard says the login expired until you open Claude Code again. Meanwhile the last known numbers are shown, dimmed.
+**Claude usage API.** The endpoint is undocumented, the same one Claude Code's `/usage` uses, and it may change without notice. Limita reads the token from Claude Code's Keychain item `Claude Code-credentials`; macOS asks once. The token is only sent to `api.anthropic.com`. Limita never stores or refreshes it; see [Keeping Claude up to date](#keeping-claude-up-to-date).
 
 **Claude status line.** **Connect Claude Code** in the menu adds Limita to `statusLine` in `~/.claude/settings.json`:
 
