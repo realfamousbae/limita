@@ -12,9 +12,11 @@ struct CodexLiveClient: Sendable {
     }
 
     var timeout: TimeInterval = 20
+    /// Injectable so tests never start the real CLI.
+    var findExecutable: @Sendable () -> URL? = { CLILocator.find("codex") }
 
     func fetch(now: Date = Date()) throws -> LiveReading {
-        guard let executable = CLILocator.find("codex") else {
+        guard let executable = findExecutable() else {
             throw FetchError(message: "Codex CLI not found")
         }
         let response = try JSONRPCSession.request(

@@ -24,8 +24,25 @@ final class PanelModel {
 /// The notch area is left alone on purpose — see `PanelLayout`.
 @MainActor
 final class BezelPanelController {
-    static let pillSize = CGSize(width: 262, height: 34)
-    static let expandedSize = CGSize(width: 520, height: 256)
+    /// Width of one service column in the dashboard.
+    static let columnWidth: CGFloat = 272
+    static let expandedHeight: CGFloat = 292
+
+    /// Sizes depend on how many services are connected: no empty columns, and a
+    /// prompt to connect one when there are none.
+    static func pillSize(services: Int) -> CGSize {
+        switch services {
+        case 0: CGSize(width: 184, height: 34)
+        case 1: CGSize(width: 150, height: 34)
+        default: CGSize(width: 138 * CGFloat(services) - 6, height: 34)
+        }
+    }
+
+    static func expandedSize(services: Int) -> CGSize {
+        services == 0
+            ? CGSize(width: 300, height: 210)
+            : CGSize(width: columnWidth * CGFloat(services), height: expandedHeight)
+    }
 
     /// How long the cursor must rest at the edge, so passing through to the menu bar
     /// does not pop the pill.
@@ -38,6 +55,7 @@ final class BezelPanelController {
     private let panel: NSPanel
     private var monitors: [Any] = []
     private var screenObserver: NSObjectProtocol?
+    private var spaceObserver: NSObjectProtocol?
     private var dwellTimer: Timer?
     private var hideTimer: Timer?
 
@@ -51,10 +69,10 @@ final class BezelPanelController {
     init(store: LimitsStore) {
         self.store = store
         panel = NSPanel(
-            contentRect: CGRect(origin: .zero, size: Self.expandedSize),
+            contentRect: CGRect(origin: .zero, size: Self.expandedSize(services: 2)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
-            defer: true
+            defer: false
         )
         panel.level = .statusBar
         panel.isOpaque = false
@@ -62,7 +80,9 @@ final class BezelPanelController {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isMovable = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        // Shown on demand, so it moves to whichever Space is active when ordered front,
+        // including full-screen Spaces. `.canJoinAllSpaces` left it stuck on one desktop.
+        panel.collectionBehavior = [.moveToActiveSpace, .ignoresCycle, .fullScreenAuxiliary]
 
         let hosting = NSHostingView(rootView: PanelRootView(store: store, model: model) { [weak self] in
             self?.expandFromPill()
@@ -80,9 +100,54 @@ final class BezelPanelController {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.hide() }
         }
+        // Switching desktops by gesture or shortcut involves no click, so without this
+        // the panel would count as open on a Space the user has left.
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hide(animated: false) }
+        }
+        observeServices()
     }
 
-    var isExpanded: Bool { model.state == .expanded }
+    var isExpanded: Bool { model.state == .expanded && isOnScreen }
+
+    /// Whether the panel can actually be seen, whatever `model.state` says.
+    private var isOnScreen: Bool {
+        panel.isVisible && panel.isOnActiveSpace
+    }
+
+    /// A panel left on another Space, or ordered out behind our back, is hidden in
+    /// practice. Treat it so, or hovering and clicking would act on a panel nobody sees.
+    private func forgetOffscreenPanel() {
+        if model.state != .hidden, !isOnScreen {
+            model.state = .hidden
+        }
+    }
+
+    private func size(for state: PanelState) -> CGSize {
+        let count = store.enabledServices.count
+        return state == .pill ? Self.pillSize(services: count) : Self.expandedSize(services: count)
+    }
+
+    /// Resizes the open panel when a service is connected or disconnected.
+    private func observeServices() {
+        withObservationTracking {
+            _ = store.enabledServices
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.relayout()
+                self?.observeServices()
+            }
+        }
+    }
+
+    private func relayout() {
+        guard model.state != .hidden, let layout else { return }
+        panel.setFrame(layout.frame(size: size(for: model.state), anchorX: anchorX), display: true)
+    }
 
     /// Opens the dashboard under `anchor` (a menu-bar item frame), or under the cursor.
     func showExpanded(below anchor: CGRect? = nil, on screen: NSScreen? = nil) {
@@ -93,8 +158,8 @@ final class BezelPanelController {
         transition(to: .expanded)
     }
 
-    func hide() {
-        transition(to: .hidden)
+    func hide(animated: Bool = true) {
+        transition(to: .hidden, animated: animated)
     }
 
     // MARK: - Mouse tracking
@@ -122,6 +187,7 @@ final class BezelPanelController {
     }
 
     private func mouseMoved(to point: CGPoint) {
+        forgetOffscreenPanel()
         switch model.state {
         case .hidden:
             updateDwell(at: point)
@@ -146,6 +212,7 @@ final class BezelPanelController {
 
     private func dwellElapsed() {
         dwellTimer = nil
+        forgetOffscreenPanel()
         let point = NSEvent.mouseLocation
         guard model.state == .hidden,
               let screen = screenContaining(point)
@@ -184,9 +251,10 @@ final class BezelPanelController {
 
     // MARK: - Presentation
 
-    private func transition(to state: PanelState) {
+    private func transition(to state: PanelState, animated: Bool = true) {
         cancel(&hideTimer)
         cancel(&dwellTimer)
+        forgetOffscreenPanel()
         guard state != model.state else {
             if state != .hidden { panel.orderFrontRegardless() }
             return
@@ -195,7 +263,12 @@ final class BezelPanelController {
         switch state {
         case .hidden:
             model.state = .hidden
-            store.claudeSetupMessage = nil
+            store.setupMessage = nil
+            guard animated else {
+                panel.alphaValue = 0
+                panel.orderOut(nil)
+                return
+            }
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.15
                 panel.animator().alphaValue = 0
@@ -208,7 +281,7 @@ final class BezelPanelController {
 
         case .pill, .expanded:
             guard let layout else { return }
-            let size = state == .pill ? Self.pillSize : Self.expandedSize
+            let size = size(for: state)
             let wasHidden = model.state == .hidden
             panel.setFrame(layout.frame(size: size, anchorX: anchorX), display: false)
             model.state = state

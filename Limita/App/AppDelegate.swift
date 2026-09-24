@@ -6,7 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panelController: BezelPanelController?
     private var statusItem: NSStatusItem?
     private let menu = NSMenu()
-    private let claudeMenuItem = NSMenuItem()
+    /// One Connect/Disconnect row per service, in display order.
+    private var serviceMenuItems: [Service: NSMenuItem] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -47,8 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "Show Limits", action: #selector(showLimits), keyEquivalent: "")
         menu.addItem(withTitle: "Refresh", action: #selector(refreshData), keyEquivalent: "r")
         menu.addItem(.separator())
-        claudeMenuItem.target = self
-        menu.addItem(claudeMenuItem)
+        for service in Service.allCases {
+            let item = NSMenuItem(title: "", action: #selector(toggleService(_:)), keyEquivalent: "")
+            item.representedObject = service.rawValue
+            serviceMenuItems[service] = item
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Limita", action: #selector(quitApp), keyEquivalent: "q")
         for item in menu.items where item.action != nil {
@@ -74,13 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        if store.isClaudeConnected {
-            claudeMenuItem.title = "Disconnect Claude Code"
-            claudeMenuItem.action = #selector(disconnectClaude)
-        } else {
-            claudeMenuItem.title = "Connect Claude Code…"
-            claudeMenuItem.action = #selector(connectClaude)
+        for (service, item) in serviceMenuItems {
+            item.title = Self.menuTitle(for: service, connected: store.isEnabled(service))
         }
+    }
+
+    static func menuTitle(for service: Service, connected: Bool) -> String {
+        "\(connected ? "Disconnect" : "Connect") \(service.productName)"
     }
 
     // MARK: - Actions
@@ -96,24 +101,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.refresh(live: true)
     }
 
-    @objc private func connectClaude() {
-        store.connectClaude()
+    @objc private func toggleService(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let service = Service(rawValue: raw) else { return }
+        if store.isEnabled(service) {
+            store.disconnect(service)
+        } else {
+            store.connect(service)
+        }
         presentSetupMessage()
     }
 
-    @objc private func disconnectClaude() {
-        store.disconnectClaude()
-        presentSetupMessage()
-    }
-
+    /// From the menu there is no panel to show the outcome in, so use an alert.
     private func presentSetupMessage() {
-        guard let message = store.claudeSetupMessage else { return }
-        store.claudeSetupMessage = nil
+        guard let message = store.setupMessage else { return }
+        store.setupMessage = nil
         // An accessory app's alert opens behind other windows unless we activate first.
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "Claude Code"
-        alert.informativeText = message
+        alert.messageText = message.service.productName
+        alert.informativeText = message.text
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }

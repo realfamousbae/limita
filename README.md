@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <b>Codex and Claude Code rate limits, one glance from the top of your Mac.</b>
+  <b>Claude Code and Codex rate limits, one glance from the top of your Mac.</b>
 </p>
 
 <p align="center">
@@ -18,16 +18,17 @@
 
 ---
 
-Limita is a tiny native menu-bar app that shows how much of your **Codex** and **Claude** 5-hour and weekly limits you have, without opening a terminal.
+Limita is a tiny native menu-bar app that shows how much of your **Claude** and **Codex** 5-hour and weekly limits you have, without opening a terminal.
 
 ## Features
 
 - **Hover pill.** Rest the cursor at the top edge of any screen and a compact pill slides in with each service's 5-hour limit. Click it for the full dashboard.
 - **Stays away from the notch.** The camera housing plus 80 pt on each side is left to other apps: nothing triggers or draws there.
 - **Menu bar.** Left-click the icon for the dashboard, right-click for the menu. Clicking elsewhere closes it.
+- **Only what you use.** Connect or disconnect Claude Code and Codex from the menu; disconnected services are neither shown nor queried. On first launch Limita connects whatever it finds installed.
 - **Live numbers.** Both services are queried every 20 minutes and on **Refresh**; local sources are re-read every minute.
 - **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits); Claude usage credits and cloud session credits. Rows a service does not report are hidden.
-- **Readable at a glance.** Codex shows what is **left**, Claude what is **used**, and the dashboard labels which is which. Orange from 70 % usage, red from 90 %, yellow for stale data.
+- **Readable at a glance.** Claude shows what is **used**, Codex what is **left**, and the dashboard labels which is which. Orange from 70 % usage, red from 90 %, yellow for stale data; if a live update fails, the reason is shown right in the dashboard.
 - Multiple displays and full-screen Spaces. JetBrains Mono everywhere.
 
 ## Install
@@ -40,18 +41,18 @@ Limita lives in the menu bar only; it has no Dock icon.
 
 ## Data sources
 
-| | Codex | Claude |
+| | Claude | Codex |
 |---|---|---|
-| **Live** | `codex app-server` → `account/rateLimits/read` (official; auth stays in the CLI) | `GET api.anthropic.com/api/oauth/usage` with Claude Code's OAuth token |
-| **Fallback** | Latest `rate_limits` in `~/.codex/sessions/**/rollout-*.jsonl` | Claude Code status line (**Connect** in the dashboard) |
-| **Extras** | Limit resets, credit balance | Usage credits, cloud session credits |
+| **Live** | `GET api.anthropic.com/api/oauth/usage` with Claude Code's OAuth token | `codex app-server` → `account/rateLimits/read` (official; auth stays in the CLI) |
+| **Fallback** | Claude Code status line, set up when you connect Claude Code | Latest `rate_limits` in `~/.codex/sessions/**/rollout-*.jsonl` |
+| **Extras** | Usage credits, cloud session credits | Limit resets, credit balance |
 
-**Claude usage API.** The endpoint is undocumented, the same one Claude Code's `/usage` uses, and it may change without notice. Limita reads the token from Claude Code's Keychain item `Claude Code-credentials`; macOS asks once. The token is only sent to `api.anthropic.com`. Limita never stores or refreshes it: if it expired, open Claude Code.
+**Claude usage API.** The endpoint is undocumented, the same one Claude Code's `/usage` uses, and it may change without notice. Limita reads the token from Claude Code's Keychain item `Claude Code-credentials`; macOS asks once. The token is only sent to `api.anthropic.com`. Limita never stores or refreshes it: Claude Code renews it only while it runs, so after a long break the dashboard says the login expired until you open Claude Code again. Meanwhile the last known numbers are shown, dimmed.
 
-**Claude status line.** Connecting adds Limita to `statusLine` in `~/.claude/settings.json`:
+**Claude status line.** **Connect Claude Code** in the menu adds Limita to `statusLine` in `~/.claude/settings.json`:
 
 - An existing status line is wrapped, not replaced. Limita saves the limits and runs your command with the same input, so its output is unchanged.
-- **Disconnect Claude Code** in the menu restores it. A backup is kept as `settings.json.limita-backup`.
+- **Disconnect Claude Code** restores it. A backup is kept as `settings.json.limita-backup`.
 - Connect from `/Applications`: a build-folder path disappears after a clean build.
 
 ## Privacy
@@ -71,6 +72,8 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Release build
 ```
 
 `Limita.xcodeproj` is generated from `project.yml`. Run `xcodegen generate` after adding or removing files.
+
+Live-update failures are logged: `log show --predicate 'subsystem == "com.limita.app"' --last 1h`.
 
 ```text
 Limita/

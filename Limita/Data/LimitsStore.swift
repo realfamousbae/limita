@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 @Observable
 @MainActor
@@ -9,20 +10,19 @@ final class LimitsStore {
     static let localInterval: TimeInterval = 60
     static let liveInterval: TimeInterval = 20 * 60
 
-    private(set) var codex: ServiceState = .unavailable(reason: "Codex data not read yet")
-    private(set) var claude: ServiceState = .unavailable(reason: "Claude data not read yet")
-    /// Whether Limita's hook is in Claude Code's settings.
-    private(set) var isClaudeConnected = false
-    /// Last network error per service, shown when the displayed data is stale.
+    /// Services the user tracks, in display order. Only these are read, fetched and shown.
+    private(set) var enabledServices: [Service]
+    private(set) var states: [Service: ServiceState] = [:]
+    /// Last network error per service; cleared by the next successful fetch.
     private(set) var liveErrors: [Service: String] = [:]
-    private(set) var isRefreshing = false
-    /// Newest snapshot fetched over the network per service.
-    private var liveSnapshots: [Service: LimitSnapshot] = [:]
     /// Balances and extras from the last successful network read.
     private(set) var details: [Service: AccountDetails] = [:]
-    /// Result of the last connect/disconnect action, shown inline in the panel.
-    var claudeSetupMessage: String?
+    private(set) var isRefreshing = false
+    /// Result of the last connect/disconnect, for the service it concerns.
+    var setupMessage: (service: Service, text: String)?
 
+    /// Newest snapshot fetched over the network per service.
+    @ObservationIgnored private var liveSnapshots: [Service: LimitSnapshot] = [:]
     @ObservationIgnored private var refreshTimer: Timer?
     @ObservationIgnored private var lastRefresh: Date?
     @ObservationIgnored private var lastLiveAttempt: Date?
@@ -32,23 +32,40 @@ final class LimitsStore {
     @ObservationIgnored private let codexLive: CodexLiveClient
     @ObservationIgnored private let claudeLive: ClaudeLiveClient
     @ObservationIgnored private let configurator: ClaudeStatusLineConfigurator
+    @ObservationIgnored private let settings: ServiceSettings
+    @ObservationIgnored private let log = Logger(subsystem: "com.limita.app", category: "refresh")
 
     init(
         codexReader: CodexLimitsReader = CodexLimitsReader(),
         claudeReader: ClaudeLimitsReader = ClaudeLimitsReader(),
         codexLive: CodexLiveClient = CodexLiveClient(),
         claudeLive: ClaudeLiveClient = ClaudeLiveClient(),
-        configurator: ClaudeStatusLineConfigurator = ClaudeStatusLineConfigurator()
+        configurator: ClaudeStatusLineConfigurator = ClaudeStatusLineConfigurator(),
+        settings: ServiceSettings = ServiceSettings(),
+        detectInstalled: () -> Set<Service> = { ServiceSettings.detectInstalled() }
     ) {
         self.codexReader = codexReader
         self.claudeReader = claudeReader
         self.codexLive = codexLive
         self.claudeLive = claudeLive
         self.configurator = configurator
+        self.settings = settings
+        let enabled = settings.load {
+            var detected = detectInstalled()
+            // An existing status-line hook means the user already chose Claude.
+            if case .installed = try? configurator.status() { detected.insert(.claude) }
+            return detected
+        }
+        enabledServices = Service.allCases.filter(enabled.contains)
     }
 
-    /// Claude data that does not depend on the status-line hook, so "Connect" is optional.
-    var hasClaudeLiveData: Bool { liveSnapshots[.claude] != nil }
+    func isEnabled(_ service: Service) -> Bool {
+        enabledServices.contains(service)
+    }
+
+    func state(for service: Service) -> ServiceState {
+        states[service] ?? .unavailable(reason: "\(service.displayName) data not read yet")
+    }
 
     func startAutoRefresh() {
         refreshTimer?.invalidate()
@@ -68,7 +85,7 @@ final class LimitsStore {
     }
 
     /// Reads local sources, and also asks the network when `live` is set or the last
-    /// network attempt is older than `liveInterval`.
+    /// network attempt is older than `liveInterval`. Disabled services are skipped.
     func refresh(live forceLive: Bool = false) {
         guard !isRefreshing else {
             // A manual refresh during a background local read must not be lost.
@@ -85,27 +102,39 @@ final class LimitsStore {
         let codexLive = codexLive
         let claudeLive = claudeLive
         let configurator = configurator
+        let codexOn = isEnabled(.codex)
+        let claudeOn = isEnabled(.claude)
 
         Task {
-            async let codexLocal = Task.detached(priority: .utility) {
-                codexReader.read()
-            }.value
-            async let claudeLocal = Task.detached(priority: .utility) {
-                let connected: Bool
-                if case .installed = try? configurator.status() { connected = true } else { connected = false }
-                return (connected, claudeReader.read(isConnected: connected))
-            }.value
-            async let codexRemote = live ? Self.fetch { try codexLive.fetch() } : nil
-            async let claudeRemote = live ? Self.fetch { try await claudeLive.fetch() } : nil
+            async let codexLocal = codexOn
+                ? Task.detached(priority: .utility) { codexReader.read() }.value
+                : nil
+            async let claudeLocal = claudeOn
+                ? Task.detached(priority: .utility) {
+                    let hooked: Bool
+                    if case .installed = try? configurator.status() { hooked = true } else { hooked = false }
+                    return claudeReader.read(isConnected: hooked)
+                }.value
+                : nil
+            async let codexRemote = live && codexOn ? Self.fetch { try codexLive.fetch() } : nil
+            async let claudeRemote = live && claudeOn ? Self.fetch { try await claudeLive.fetch() } : nil
 
-            let (codexState, (connected, claudeState)) = await (codexLocal, claudeLocal)
+            let (codexState, claudeState) = await (codexLocal, claudeLocal)
             let (codexResult, claudeResult) = await (codexRemote, claudeRemote)
 
-            apply(codexResult, to: .codex)
-            apply(claudeResult, to: .claude)
-            codex = merge(codexState, live: liveSnapshots[.codex], staleAfter: CodexLimitsReader.staleAfter)
-            claude = merge(claudeState, live: liveSnapshots[.claude], staleAfter: ClaudeLimitsReader.staleAfter)
-            isClaudeConnected = connected
+            // A service disconnected while this refresh ran must stay cleared.
+            if isEnabled(.codex) {
+                apply(codexResult, to: .codex)
+                if let codexState {
+                    states[.codex] = merge(codexState, live: liveSnapshots[.codex], staleAfter: CodexLimitsReader.staleAfter)
+                }
+            }
+            if isEnabled(.claude) {
+                apply(claudeResult, to: .claude)
+                if let claudeState {
+                    states[.claude] = merge(claudeState, live: liveSnapshots[.claude], staleAfter: ClaudeLimitsReader.staleAfter)
+                }
+            }
             lastRefresh = Date()
             isRefreshing = false
 
@@ -131,7 +160,10 @@ final class LimitsStore {
             details[service] = reading.details
             liveErrors[service] = nil
         case .failure(let error):
-            liveErrors[service] = error.localizedDescription
+            // Keep the last good snapshot and extras; only record why this fetch failed.
+            let message = error.localizedDescription
+            liveErrors[service] = message
+            log.error("\(service.rawValue, privacy: .public) live fetch failed: \(message, privacy: .public)")
         case nil:
             break
         }
@@ -146,41 +178,67 @@ final class LimitsStore {
         return .from(live, staleAfter: staleAfter)
     }
 
-    // MARK: - Claude status line
+    // MARK: - Connecting services
 
-    func connectClaude() {
-        do {
-            let hint = configurator.isRunningFromStableLocation
-                ? ""
-                : "\nLimita is not running from /Applications: move it there and connect again."
-            switch try configurator.install() {
-            case .installed:
-                claudeSetupMessage = "Connected. Limits appear after the next Claude Code response." + hint
-            case .wrapped:
-                claudeSetupMessage = "Connected. Your status line is kept and works as before." + hint
-            case .updated:
-                claudeSetupMessage = "Updated the Limita path in Claude Code settings." + hint
-            case .alreadyConfigured:
-                claudeSetupMessage = "Limita is already connected to Claude Code."
-            }
-        } catch {
-            claudeSetupMessage = error.localizedDescription
+    /// Starts tracking `service`. For Claude this also installs the status-line hook,
+    /// which wraps any existing status line; its outcome is left in `setupMessage`.
+    func connect(_ service: Service) {
+        guard !isEnabled(service) else { return }
+        if service == .claude {
+            setupMessage = (.claude, installClaudeHook())
         }
-        refresh()
+        setEnabled(service, true)
+        refresh(live: true)
     }
 
-    func disconnectClaude() {
-        do {
-            try configurator.uninstall()
-            claudeSetupMessage = "Disconnected from Claude Code; your previous status line is restored."
-        } catch {
-            claudeSetupMessage = error.localizedDescription
+    /// Stops tracking `service` and drops its data. For Claude this also removes the
+    /// status-line hook and restores the previous status line.
+    func disconnect(_ service: Service) {
+        guard isEnabled(service) else { return }
+        if service == .claude {
+            do {
+                try configurator.uninstall()
+            } catch {
+                setupMessage = (.claude, "Could not restore the Claude Code status line: \(error.localizedDescription)")
+            }
         }
-        refresh()
+        setEnabled(service, false)
+        states[service] = nil
+        liveErrors[service] = nil
+        details[service] = nil
+        liveSnapshots[service] = nil
+    }
+
+    private func setEnabled(_ service: Service, _ enabled: Bool) {
+        var set = Set(enabledServices)
+        if enabled { set.insert(service) } else { set.remove(service) }
+        enabledServices = Service.allCases.filter(set.contains)
+        settings.save(set)
+    }
+
+    private func installClaudeHook() -> String {
+        let hint = configurator.isRunningFromStableLocation
+            ? ""
+            : "\nLimita is not running from /Applications: move it there and connect again."
+        do {
+            switch try configurator.install() {
+            case .installed:
+                return "Connected. Limits appear right away; the status line adds a fallback." + hint
+            case .wrapped:
+                return "Connected. Your Claude Code status line is kept and works as before." + hint
+            case .updated:
+                return "Connected. Updated the Limita path in Claude Code settings." + hint
+            case .alreadyConfigured:
+                return "Connected."
+            }
+        } catch {
+            return "Connected, but the status line was not set up: \(error.localizedDescription)"
+        }
     }
 
     /// Silently fixes a hook left pointing at a moved or deleted copy of the app.
     func repairClaudeHookIfNeeded() {
+        guard isEnabled(.claude) else { return }
         _ = try? configurator.repairIfNeeded()
     }
 }

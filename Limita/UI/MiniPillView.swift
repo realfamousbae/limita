@@ -1,19 +1,30 @@
 import SwiftUI
 
-/// Compact summary shown when the cursor rests at the top edge: each service's 5-hour
-/// window, as left (Codex) or used (Claude). The dot reflects both windows and
-/// freshness. Click to expand.
+/// Compact summary shown when the cursor rests at the top edge: each connected
+/// service's 5-hour window, as left (Codex) or used (Claude). The dot reflects both
+/// windows and freshness. Click to expand.
 struct MiniPillView: View {
     let store: LimitsStore
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             HStack(spacing: 12) {
-                indicator(.codex, state: store.codex, now: context.date)
-                Rectangle()
-                    .fill(Color.white.opacity(0.14))
-                    .frame(width: 1, height: 14)
-                indicator(.claude, state: store.claude, now: context.date)
+                if store.enabledServices.isEmpty {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text("Connect a service")
+                        .font(.app(11))
+                } else {
+                    ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
+                        if index > 0 {
+                            Rectangle()
+                                .fill(Color.white.opacity(0.14))
+                                .frame(width: 1, height: 14)
+                        }
+                        indicator(service, state: store.state(for: service), now: context.date)
+                    }
+                }
             }
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -22,7 +33,6 @@ struct MiniPillView: View {
             .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
             .contentShape(Capsule())
         }
-        .help("Click to open Limita")
     }
 
     private func indicator(_ service: Service, state: ServiceState, now: Date) -> some View {

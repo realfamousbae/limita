@@ -37,7 +37,7 @@ struct ClaudeLiveClient: Sendable {
         case 200:
             return try Self.reading(fromResponse: data, capturedAt: now)
         case 401, 403:
-            throw FetchError(message: "Claude rejected the token — open Claude Code to refresh the login")
+            throw FetchError(message: "Claude rejected the login (\(status)) — open Claude Code to renew it")
         case 429:
             throw FetchError(message: "Claude is rate-limiting usage requests")
         default:
@@ -65,22 +65,30 @@ struct ClaudeLiveClient: Sendable {
     // MARK: - Credentials
 
     static func accessToken(now: Date) throws -> String {
-        guard let data = keychainCredentials() ?? fileCredentials() else {
+        guard let data = try keychainCredentials() ?? fileCredentials() else {
             throw FetchError(message: "Not signed in to Claude Code — sign in there first")
         }
+        return try accessToken(fromCredentials: data, now: now)
+    }
+
+    static func accessToken(fromCredentials data: Data, now: Date) throws -> String {
         guard let credentials = try? JSONDecoder().decode(Credentials.self, from: data),
               let oauth = credentials.claudeAiOauth,
               !oauth.accessToken.isEmpty
         else {
             throw FetchError(message: "Could not read the Claude Code login")
         }
-        if let expiresAt = oauth.expiresAt, Date(timeIntervalSince1970: expiresAt / 1000) <= now {
-            throw FetchError(message: "Claude Code login expired — open Claude Code to refresh it")
+        if let expiresAt = oauth.expiresAt.map({ Date(timeIntervalSince1970: $0 / 1000) }), expiresAt <= now {
+            // Claude Code renews the token only while it runs; Limita never refreshes it,
+            // since that could invalidate Claude Code's own copy.
+            let ago = expiresAt.relativeText(to: now)
+            throw FetchError(message: "Claude Code login expired \(ago) — open Claude Code to renew it")
         }
         return oauth.accessToken
     }
 
-    private static func keychainCredentials() -> Data? {
+    /// `nil` when there is no item; throws when there is one but it cannot be read.
+    private static func keychainCredentials() throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -88,8 +96,20 @@ struct ClaudeLiveClient: Sendable {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if let error = keychainError(status) { throw error }
         return item as? Data
+    }
+
+    static func keychainError(_ status: OSStatus) -> FetchError? {
+        switch status {
+        case errSecSuccess, errSecItemNotFound:
+            return nil
+        case errSecUserCanceled, errSecAuthFailed, errSecInteractionNotAllowed:
+            return FetchError(message: "Keychain access to the Claude Code login was denied — press Refresh and choose Always Allow")
+        default:
+            return FetchError(message: "Keychain error \(status) reading the Claude Code login")
+        }
     }
 
     /// Claude Code falls back to a file where no Keychain is available.

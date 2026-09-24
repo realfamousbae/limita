@@ -27,6 +27,7 @@
 		C52279ABD99B4FE0D06EBA47 /* ClaudeLiveClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E92BA3B28C2A304530DD3B4F /* ClaudeLiveClient.swift */; };
 		CE560AF28A8DA7E0D318ADA4 /* LimitData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 597AA6F50B34A3D5C5B2FBEF /* LimitData.swift */; };
 		E310C5B496E7266D16576583 /* CodexLimitsReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6295DA81A65D70795B72DA9 /* CodexLimitsReader.swift */; };
+		F773247584DCE531A6F11F21 /* ServiceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB08A24AA0A1DAE282E2D206 /* ServiceSettings.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +53,7 @@
 		A80FCA4381FCE7D920A56645 /* LimitaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LimitaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B37A349072A6F933C9F03DCC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		C451434F61CC4D86D765ECC0 /* PanelLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLayout.swift; sourceTree = "<group>"; };
+		CB08A24AA0A1DAE282E2D206 /* ServiceSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceSettings.swift; sourceTree = "<group>"; };
 		D265E71959CEAE29EED96271 /* ClaudeStatusLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeStatusLine.swift; sourceTree = "<group>"; };
 		DADC5EAEDBA151AA15A121E9 /* ClaudeLimitsReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeLimitsReader.swift; sourceTree = "<group>"; };
 		DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitsStore.swift; sourceTree = "<group>"; };
@@ -141,6 +143,7 @@
 				4F5FB063C0035DB21B9EE9BC /* CodexLiveClient.swift */,
 				EE4D46FD1D7B60B7CE213162 /* DateParsing.swift */,
 				DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */,
+				CB08A24AA0A1DAE282E2D206 /* ServiceSettings.swift */,
 				5835DDCBD37DB19D625A0446 /* TailLineReader.swift */,
 			);
 			path = Data;
@@ -274,6 +277,7 @@
 				43C1CB71110D3B3917E3575E /* LimitsStore.swift in Sources */,
 				198D43F3F9A2905D654DFD2C /* MiniPillView.swift in Sources */,
 				0F5B44B77D4F53CFC3CCE664 /* PanelLayout.swift in Sources */,
+				F773247584DCE531A6F11F21 /* ServiceSettings.swift in Sources */,
 				61B11378717DC64DB9E74DA2 /* TailLineReader.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

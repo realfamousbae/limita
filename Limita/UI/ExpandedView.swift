@@ -1,5 +1,6 @@
 import SwiftUI
 
+/// The dashboard: one column per connected service, or a prompt to connect one.
 struct ExpandedView: View {
     let store: LimitsStore
 
@@ -12,12 +13,19 @@ struct ExpandedView: View {
 
                 divider.frame(height: 1).padding(.horizontal, 18)
 
-                HStack(spacing: 0) {
-                    serviceDashboard(.codex, state: store.codex, now: context.date)
-                    divider.frame(width: 1).padding(.vertical, 14)
-                    serviceDashboard(.claude, state: store.claude, now: context.date)
+                if store.enabledServices.isEmpty {
+                    ConnectPrompt(store: store)
+                } else {
+                    HStack(spacing: 0) {
+                        ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
+                            if index > 0 {
+                                divider.frame(width: 1).padding(.vertical, 14)
+                            }
+                            serviceDashboard(service, state: store.state(for: service), now: context.date)
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
                 }
-                .frame(maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -45,200 +53,91 @@ struct ExpandedView: View {
             }
             .frame(width: 28, height: 28)
 
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("LIMITA")
-                    .font(.app(12))
+                    .font(.app(13))
                     .tracking(1.2)
                 Text("AI USAGE MONITOR")
-                    .font(.app(7))
-                    .tracking(0.8)
-                    .foregroundStyle(.white.opacity(0.38))
+                    .caption()
             }
 
             Spacer()
 
-            Button {
-                store.refresh(live: true)
-            } label: {
-                ZStack {
-                    Circle().fill(Color.white.opacity(0.08))
-                    if store.isRefreshing {
-                        ProgressView().controlSize(.mini).tint(.white)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 10, weight: .bold))
+            if !store.enabledServices.isEmpty {
+                Button {
+                    store.refresh(live: true)
+                } label: {
+                    ZStack {
+                        Circle().fill(Color.white.opacity(0.08))
+                        if store.isRefreshing {
+                            ProgressView().controlSize(.mini).tint(.white)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10, weight: .bold))
+                        }
                     }
+                    .frame(width: 27, height: 27)
                 }
-                .frame(width: 27, height: 27)
+                .buttonStyle(.plain)
+                .disabled(store.isRefreshing)
+                .accessibilityLabel("Refresh")
             }
-            .buttonStyle(.plain)
-            .disabled(store.isRefreshing)
-            .help("Refresh")
         }
         .padding(.horizontal, 18)
         .padding(.top, 9)
         .padding(.bottom, 8)
     }
 
+    // MARK: - Service column
+
     private func serviceDashboard(_ service: Service, state: ServiceState, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(DashboardStyle.accent(for: service).opacity(0.14))
-                    Image(systemName: service.symbolName)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(DashboardStyle.accent(for: service))
-                }
-                .frame(width: 29, height: 29)
+                ServiceBadge(service: service)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(service.displayName)
-                        .font(.app(13))
-                    HStack(spacing: 4) {
-                        Circle().fill(DashboardStyle.statusColor(state, now: now)).frame(width: 5, height: 5)
+                        .font(.app(14))
+                    HStack(spacing: 5) {
+                        Circle().fill(DashboardStyle.statusColor(state, now: now)).frame(width: 6, height: 6)
                         Text("\(statusLabel(state)) · SHOWING \(service.percentMeaning.uppercased())")
-                            .font(.app(7))
-                            .tracking(0.6)
-                            .foregroundStyle(.white.opacity(0.38))
+                            .caption()
                     }
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
 
-            if service == .claude, let message = store.claudeSetupMessage {
-                setupMessage(message)
+            if let message = store.setupMessage, message.service == service {
+                SetupMessage(text: message.text) { store.setupMessage = nil }
             } else if let snapshot = state.snapshot {
                 HStack(spacing: 10) {
-                    metric("5 HOURS", service: service, window: snapshot.fiveHour, color: DashboardStyle.accent(for: service), now: now)
-                    metric("7 DAYS", service: service, window: snapshot.sevenDay, color: DashboardStyle.accent(for: service).opacity(0.72), now: now)
+                    metric("5 HOURS", service: service, window: snapshot.fiveHour,
+                           color: DashboardStyle.accent(for: service), stale: state.isStale, now: now)
+                    metric("7 DAYS", service: service, window: snapshot.sevenDay,
+                           color: DashboardStyle.accent(for: service).opacity(0.72), stale: state.isStale, now: now)
                 }
 
                 detailRows(for: service)
 
-                HStack(spacing: 6) {
-                    Text("UPDATED \(snapshot.capturedAt.formatted(.relative(presentation: .numeric).locale(.english)).uppercased())")
-                        .font(.app(7))
-                        .tracking(0.45)
-                        .foregroundStyle(.white.opacity(0.25))
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    if state.isStale, let error = store.liveErrors[service] {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.yellow)
-                            .help(error)
-                    } else if service == .claude, needsConnect {
-                        connectButton(compact: true)
-                    }
+                // The timeline tick can predate a just-fetched snapshot; never say "in 0 seconds".
+                Text("UPDATED \(min(snapshot.capturedAt, now).relativeText(to: now).uppercased())")
+                    .caption(faint: true)
+                    .lineLimit(1)
+
+                if let error = store.liveErrors[service] {
+                    ErrorLine(text: error)
                 }
             } else {
-                VStack(alignment: .leading, spacing: 9) {
-                    Text(store.liveErrors[service] ?? state.unavailableReason ?? "No data")
-                        .font(.app(10))
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(.white.opacity(0.42))
-
-                    if service == .claude, needsConnect {
-                        connectButton(compact: false)
-                    }
-                }
+                Text(store.liveErrors[service] ?? state.unavailableReason ?? "No data")
+                    .font(.app(DashboardStyle.valueSize))
+                    .foregroundStyle(DashboardStyle.caption)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    // MARK: - Balances
-
-    /// Rows under the meters. A row is hidden when the service did not report its value.
-    @ViewBuilder
-    private func detailRows(for service: Service) -> some View {
-        let rows = Self.detailRows(for: service, details: store.details[service] ?? AccountDetails())
-        if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(rows, id: \.label) { row in
-                    HStack(spacing: 6) {
-                        Text(row.label)
-                            .font(.app(7))
-                            .tracking(0.6)
-                            .foregroundStyle(.white.opacity(0.35))
-                        Spacer(minLength: 4)
-                        Text(row.value)
-                            .font(.app(10))
-                            .monospacedDigit()
-                            .foregroundStyle(.white.opacity(0.85))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .help(row.help ?? "")
-                }
-            }
-        }
-    }
-
-    struct DetailRow: Equatable {
-        let label: String
-        let value: String
-        var help: String?
-    }
-
-    static func detailRows(for service: Service, details: AccountDetails) -> [DetailRow] {
-        var rows: [DetailRow] = []
-        if let resets = details.limitResets {
-            rows.append(DetailRow(label: "LIMIT RESETS", value: "\(resets)", help: "Rate-limit resets available to redeem"))
-        }
-        switch service {
-        case .codex:
-            if details.codexCreditsUnlimited {
-                rows.append(DetailRow(label: "CREDITS", value: "Unlimited"))
-            } else if let credits = details.codexCredits {
-                let dollars = credits / AccountDetails.codexCreditsPerDollar
-                rows.append(DetailRow(
-                    label: "CREDITS",
-                    value: "\(credits.formatted(.number.precision(.fractionLength(0...2)).locale(.english))) credits · \(usd(dollars))",
-                    help: "Codex credits, $1 = \(Int(AccountDetails.codexCreditsPerDollar)) credits"
-                ))
-            }
-        case .claude:
-            switch details.claudeUsageCredits {
-            case .off:
-                rows.append(DetailRow(label: "USAGE CREDITS", value: "Off", help: "Credits that cover usage past the plan limits"))
-            case .balance(let dollars):
-                rows.append(DetailRow(label: "USAGE CREDITS", value: usd(dollars), help: "Credits that cover usage past the plan limits"))
-            case .spent(let dollars, let limit):
-                rows.append(DetailRow(
-                    label: "USAGE CREDITS",
-                    value: limit.map { "\(usd(dollars)) of \(usd($0)) used" } ?? "\(usd(dollars)) used",
-                    help: "Credits that cover usage past the plan limits"
-                ))
-            case nil:
-                break
-            }
-            if let cloud = details.cloudCredits {
-                var value = usd(cloud.remaining)
-                if let limit = cloud.limit { value += " / \(usd(limit))" }
-                rows.append(DetailRow(
-                    label: "CLOUD CREDITS",
-                    value: value,
-                    help: cloud.expiresAt.map {
-                        "Cloud session credits left, expire \($0.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(.english)))"
-                    } ?? "Cloud session credits left"
-                ))
-            }
-        }
-        return rows
-    }
-
-    private static func usd(_ value: Double) -> String {
-        value.formatted(.currency(code: "USD").locale(.english))
-    }
-
-    /// The status-line hook is only a fallback once the usage API works.
-    private var needsConnect: Bool {
-        !store.isClaudeConnected && !store.hasClaudeLiveData
     }
 
     private func statusLabel(_ state: ServiceState) -> String {
@@ -248,19 +147,21 @@ struct ExpandedView: View {
 
     /// One window's meter. The number and bar show what `service` is displayed as (left
     /// or used); the colour always follows usage, so red still means "almost out".
-    private func metric(_ title: String, service: Service, window: LimitWindow?, color: Color, now: Date) -> some View {
+    /// Stale numbers are dimmed so they don't read as current.
+    private func metric(
+        _ title: String, service: Service, window: LimitWindow?, color: Color, stale: Bool, now: Date
+    ) -> some View {
         let used = window?.displayFraction(at: now) ?? 0
         let shown = (window?.shownPercent(for: service, at: now) ?? 0) / 100
         return VStack(alignment: .leading, spacing: 5) {
             Text("\(title) \(service.percentMeaning.uppercased())")
-                .font(.app(7))
-                .tracking(0.7)
-                .foregroundStyle(.white.opacity(0.35))
+                .caption()
 
             Text(window?.shownText(for: service, at: now) ?? "—")
-                .font(.app(23))
+                .font(.app(24))
                 .monospacedDigit()
                 .foregroundStyle(DashboardStyle.pressureColor(used, fallback: .white))
+                .opacity(stale ? 0.55 : 1)
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
@@ -268,60 +169,203 @@ struct ExpandedView: View {
                     Capsule()
                         .fill(DashboardStyle.pressureColor(used, fallback: color))
                         .frame(width: geometry.size.width * shown)
+                        .opacity(stale ? 0.55 : 1)
                 }
             }
             .frame(height: 4)
 
             Text(window?.resetText(at: now)?.uppercased() ?? "NO WINDOW")
-                .font(.app(7))
+                .caption()
                 .lineLimit(1)
-                .foregroundStyle(.white.opacity(0.3))
+                .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func connectButton(compact: Bool) -> some View {
-        Button {
-            store.connectClaude()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "link")
-                Text(compact ? "RECONNECT" : "CONNECT")
+    // MARK: - Balances
+
+    /// Rows under the meters. A row is hidden when the service did not report its value.
+    @ViewBuilder
+    private func detailRows(for service: Service) -> some View {
+        let rows = Self.detailRows(for: service, details: store.details[service] ?? AccountDetails())
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(rows, id: \.label) { row in
+                    HStack(spacing: 6) {
+                        Text(row.label)
+                            .caption()
+                        Spacer(minLength: 4)
+                        Text(row.value)
+                            .font(.app(DashboardStyle.valueSize))
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.9))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
             }
-            .font(.app(compact ? 7 : 8))
-            .tracking(0.5)
-            .padding(.horizontal, compact ? 8 : 11)
-            .frame(height: compact ? 18 : 27)
-            .background(
-                Capsule()
-                    .fill(Color.white.opacity(0.10))
-                    .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
-            )
         }
-        .buttonStyle(.plain)
-        .help("Add Limita to the Claude Code status line")
     }
 
-    private func setupMessage(_ message: String) -> some View {
+    struct DetailRow: Equatable {
+        let label: String
+        let value: String
+    }
+
+    static func detailRows(for service: Service, details: AccountDetails) -> [DetailRow] {
+        var rows: [DetailRow] = []
+        if let resets = details.limitResets {
+            rows.append(DetailRow(label: "LIMIT RESETS", value: "\(resets)"))
+        }
+        switch service {
+        case .codex:
+            if details.codexCreditsUnlimited {
+                rows.append(DetailRow(label: "CREDITS", value: "Unlimited"))
+            } else if let credits = details.codexCredits {
+                let dollars = credits / AccountDetails.codexCreditsPerDollar
+                rows.append(DetailRow(
+                    label: "CREDITS",
+                    value: "\(credits.formatted(.number.precision(.fractionLength(0...2)).locale(.english))) credits · \(usd(dollars))"
+                ))
+            }
+        case .claude:
+            switch details.claudeUsageCredits {
+            case .off:
+                rows.append(DetailRow(label: "USAGE CREDITS", value: "Off"))
+            case .balance(let dollars):
+                rows.append(DetailRow(label: "USAGE CREDITS", value: usd(dollars)))
+            case .spent(let dollars, let limit):
+                rows.append(DetailRow(
+                    label: "USAGE CREDITS",
+                    value: limit.map { "\(usd(dollars)) of \(usd($0)) used" } ?? "\(usd(dollars)) used"
+                ))
+            case nil:
+                break
+            }
+            if let cloud = details.cloudCredits {
+                var value = usd(cloud.remaining)
+                if let limit = cloud.limit { value += " / \(usd(limit))" }
+                rows.append(DetailRow(label: "CLOUD CREDITS", value: value))
+            }
+        }
+        return rows
+    }
+
+    private static func usd(_ value: Double) -> String {
+        value.formatted(.currency(code: "USD").locale(.english))
+    }
+}
+
+// MARK: - Pieces
+
+struct ServiceBadge: View {
+    let service: Service
+    var size: CGFloat = 30
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(DashboardStyle.accent(for: service).opacity(0.14))
+            Image(systemName: service.symbolName)
+                .font(.system(size: size * 0.42, weight: .bold))
+                .foregroundStyle(DashboardStyle.accent(for: service))
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+/// Why the last live fetch failed, shown inline: tooltips never appear in a panel that
+/// does not activate the app.
+private struct ErrorLine: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9))
+            Text(text)
+                .font(.app(DashboardStyle.captionSize))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Color.yellow.opacity(0.9))
+    }
+}
+
+private struct SetupMessage: View {
+    let text: String
+    let dismiss: () -> Void
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(message)
-                .font(.app(10))
-                .foregroundStyle(.white.opacity(0.7))
-                .lineLimit(5)
+            Text(text)
+                .font(.app(DashboardStyle.valueSize))
+                .foregroundStyle(.white.opacity(0.8))
+                .lineLimit(6)
                 .minimumScaleFactor(0.8)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("OK") { store.claudeSetupMessage = nil }
+            Button("OK", action: dismiss)
                 .buttonStyle(.plain)
-                .font(.app(8))
-                .padding(.horizontal, 11)
-                .frame(height: 20)
-                .background(Capsule().fill(Color.white.opacity(0.10)))
+                .font(.app(DashboardStyle.captionSize))
+                .padding(.horizontal, 12)
+                .frame(height: 22)
+                .background(Capsule().fill(Color.white.opacity(0.12)))
         }
     }
 }
 
+/// Shown when no service is connected.
+private struct ConnectPrompt: View {
+    let store: LimitsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Connect a service to see its limits.")
+                .font(.app(DashboardStyle.valueSize))
+                .foregroundStyle(.white.opacity(0.8))
+            ForEach(Service.allCases) { service in
+                Button {
+                    store.connect(service)
+                } label: {
+                    HStack(spacing: 10) {
+                        ServiceBadge(service: service, size: 26)
+                        Text("Connect \(service.productName)")
+                            .font(.app(DashboardStyle.valueSize))
+                        Spacer(minLength: 0)
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.07))
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+// MARK: - Style
+
 enum DashboardStyle {
     static let healthy = Color(red: 0.32, green: 0.92, blue: 0.58)
+
+    /// Small uppercase labels. Sized and tinted for ~4.5:1 contrast on black.
+    static let captionSize: CGFloat = 9.5
+    static let caption = Color.white.opacity(0.62)
+    /// The least important line, e.g. "UPDATED …".
+    static let faintCaption = Color.white.opacity(0.48)
+    static let captionTracking: CGFloat = 0.3
+    /// Values next to captions, e.g. balances.
+    static let valueSize: CGFloat = 11
 
     static func accent(for service: Service) -> Color {
         service == .codex
@@ -340,5 +384,14 @@ enum DashboardStyle {
         guard let snapshot = state.snapshot else { return .white.opacity(0.32) }
         if state.isStale { return .yellow }
         return pressureColor(snapshot.peakFraction(at: now), fallback: healthy)
+    }
+}
+
+extension Text {
+    /// The shared caption style for small labels.
+    func caption(faint: Bool = false) -> some View {
+        font(.app(DashboardStyle.captionSize))
+            .tracking(DashboardStyle.captionTracking)
+            .foregroundStyle(faint ? DashboardStyle.faintCaption : DashboardStyle.caption)
     }
 }

@@ -372,6 +372,104 @@ final class LimitaTests: XCTestCase {
         XCTAssertTrue(layout.isTrigger(CGPoint(x: 2472, y: 1079)))
     }
 
+    // MARK: - Connected services
+
+    func testServiceSettingsDetectOnceThenKeepChoice() {
+        let defaults = UserDefaults(suiteName: "limita-tests-\(UUID().uuidString)")!
+        let settings = ServiceSettings(defaults: defaults)
+        var detections = 0
+        XCTAssertEqual(settings.load { detections += 1; return [.codex] }, [.codex])
+        XCTAssertEqual(settings.load { detections += 1; return [.claude, .codex] }, [.codex], "detection runs only once")
+        XCTAssertEqual(detections, 1)
+
+        settings.save([])
+        XCTAssertEqual(settings.load { [.claude] }, [], "an empty choice is kept, not re-detected")
+    }
+
+    func testDetectInstalledUsesCLIOrConfigFolder() throws {
+        let home = try temporaryDirectory()
+        XCTAssertEqual(ServiceSettings.detectInstalled(home: home, findCLI: { _ in nil }), [])
+
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".claude"), withIntermediateDirectories: true)
+        XCTAssertEqual(ServiceSettings.detectInstalled(home: home, findCLI: { _ in nil }), [.claude])
+
+        let withCodex = ServiceSettings.detectInstalled(home: home, findCLI: { $0 == "codex" ? URL(fileURLWithPath: "/x/codex") : nil })
+        XCTAssertEqual(withCodex, [.claude, .codex])
+    }
+
+    @MainActor
+    func testConnectAndDisconnectPersistAndKeepClaudeFirst() throws {
+        let root = try temporaryDirectory()
+        let suite = "limita-tests-\(UUID().uuidString)"
+        let settingsFile = root.appendingPathComponent("settings.json")
+        func makeStore() -> LimitsStore {
+            var codex = CodexLiveClient()
+            codex.findExecutable = { nil }
+            var claude = ClaudeLiveClient()
+            claude.accessToken = { _ in throw ClaudeLiveClient.FetchError(message: "no token in tests") }
+            return LimitsStore(
+                codexReader: CodexLimitsReader(sessionsDirectory: root, archivedSessionsDirectory: root),
+                claudeReader: ClaudeLimitsReader(cacheFile: root.appendingPathComponent("claude.json")),
+                codexLive: codex,
+                claudeLive: claude,
+                configurator: ClaudeStatusLineConfigurator(
+                    settingsFile: settingsFile,
+                    executableURL: URL(fileURLWithPath: "/Applications/Limita.app/Contents/MacOS/Limita")
+                ),
+                settings: ServiceSettings(defaults: UserDefaults(suiteName: suite)!),
+                detectInstalled: { [] }
+            )
+        }
+
+        let store = makeStore()
+        XCTAssertEqual(store.enabledServices, [])
+
+        store.connect(.codex)
+        store.connect(.claude)
+        XCTAssertEqual(store.enabledServices, [.claude, .codex], "Claude is always first")
+        XCTAssertEqual(try ClaudeStatusLineConfigurator(settingsFile: settingsFile, executableURL: URL(fileURLWithPath: "/x")).status(),
+                       .installed(executablePath: "/Applications/Limita.app/Contents/MacOS/Limita", wrapped: nil),
+                       "connecting Claude installs the status-line hook")
+        XCTAssertEqual(makeStore().enabledServices, [.claude, .codex], "the choice survives a relaunch")
+
+        store.disconnect(.claude)
+        XCTAssertEqual(store.enabledServices, [.codex])
+        XCTAssertEqual(try ClaudeStatusLineConfigurator(settingsFile: settingsFile, executableURL: URL(fileURLWithPath: "/x")).status(),
+                       .notConfigured, "disconnecting Claude removes the hook")
+        XCTAssertEqual(makeStore().enabledServices, [.codex])
+    }
+
+    @MainActor
+    func testMenuTitles() {
+        XCTAssertEqual(AppDelegate.menuTitle(for: .claude, connected: true), "Disconnect Claude Code")
+        XCTAssertEqual(AppDelegate.menuTitle(for: .codex, connected: false), "Connect Codex")
+    }
+
+    @MainActor
+    func testPanelSizesFollowConnectedServices() {
+        XCTAssertEqual(BezelPanelController.expandedSize(services: 2).width, 2 * BezelPanelController.expandedSize(services: 1).width)
+        XCTAssertLessThan(BezelPanelController.pillSize(services: 1).width, BezelPanelController.pillSize(services: 2).width)
+        XCTAssertGreaterThan(BezelPanelController.expandedSize(services: 0).width, 0)
+    }
+
+    // MARK: - Claude login errors
+
+    func testKeychainStatusesMapToSpecificMessages() {
+        XCTAssertNil(ClaudeLiveClient.keychainError(errSecItemNotFound), "missing item means not signed in, handled elsewhere")
+        XCTAssertTrue(ClaudeLiveClient.keychainError(errSecUserCanceled)?.message.contains("denied") ?? false)
+        XCTAssertTrue(ClaudeLiveClient.keychainError(-99)?.message.contains("-99") ?? false)
+    }
+
+    func testExpiredTokenSaysWhen() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let expired = #"{"claudeAiOauth":{"accessToken":"t","expiresAt":\#((now.timeIntervalSince1970 - 3 * 3600) * 1000)}}"#
+        XCTAssertThrowsError(try ClaudeLiveClient.accessToken(fromCredentials: Data(expired.utf8), now: now)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("3 hours ago"), error.localizedDescription)
+        }
+        let valid = #"{"claudeAiOauth":{"accessToken":"t","expiresAt":\#((now.timeIntervalSince1970 + 60) * 1000)}}"#
+        XCTAssertEqual(try ClaudeLiveClient.accessToken(fromCredentials: Data(valid.utf8), now: now), "t")
+    }
+
     // MARK: - Helpers
 
     private func settingsObject(_ url: URL) throws -> [String: Any] {

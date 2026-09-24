@@ -48,7 +48,7 @@ struct LimitWindow: Codable, Sendable, Equatable {
     func resetText(at now: Date = Date()) -> String? {
         guard let resetsAt else { return nil }
         if resetsAt <= now { return "window reset" }
-        return "resets \(resetsAt.formatted(.relative(presentation: .numeric).locale(.english)))"
+        return "resets \(resetsAt.relativeText(to: now))"
     }
 }
 
@@ -105,9 +105,10 @@ enum ServiceState: Sendable, Equatable {
     }
 }
 
+/// Declaration order is display order: Claude first, then Codex, everywhere.
 enum Service: String, CaseIterable, Identifiable, Sendable {
-    case codex
     case claude
+    case codex
 
     var id: String { rawValue }
 
@@ -115,6 +116,14 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .codex: "Codex"
         case .claude: "Claude"
+        }
+    }
+
+    /// Name of the product the user connects, as shown in the menu.
+    var productName: String {
+        switch self {
+        case .codex: "Codex"
+        case .claude: "Claude Code"
         }
     }
 
@@ -180,4 +189,15 @@ struct LiveReading: Sendable, Equatable {
 extension Locale {
     /// The UI is English regardless of the system language.
     static let english = Locale(identifier: "en_US")
+}
+
+extension Date {
+    /// "in 3 hours" / "3 hours ago", measured from `now` rather than the wall clock, so
+    /// it agrees with the rest of a view rendered for `now` (and is testable).
+    func relativeText(to now: Date = Date()) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = .english
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: self, relativeTo: now)
+    }
 }
