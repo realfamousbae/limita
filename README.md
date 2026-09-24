@@ -26,7 +26,7 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 - **Stays away from the notch.** The camera housing plus 80 pt on each side is left to other apps: nothing triggers or draws there.
 - **Menu bar.** Left-click the icon for the dashboard, right-click for the menu. Clicking elsewhere closes it.
 - **Only what you use.** Connect or disconnect Claude Code and Codex from the menu; disconnected services are neither shown nor queried. On first launch Limita connects whatever it finds installed.
-- **Live numbers.** Both services are queried every 20 minutes and on **Refresh**; local sources are re-read every minute.
+- **Live numbers.** Claude is queried every 3 minutes, Codex every 5 minutes, and both on **Refresh**; local sources are re-read every minute.
 - **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits); Claude usage credits and cloud session credits. Rows a service does not report are hidden.
 - **Readable at a glance.** Claude shows what is **used**, Codex what is **left**, and the dashboard labels which is which. Orange from 70 % usage, red from 90 %, yellow for stale data; if a live update fails, the reason is shown right in the dashboard.
 - Multiple displays and full-screen Spaces. JetBrains Mono everywhere.
@@ -87,6 +87,8 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Release build
 ```
 
 `Limita.xcodeproj` is generated from `project.yml`. Run `xcodegen generate` after adding or removing files.
+
+`scripts/make-dmg.sh` builds a Release copy and packages it as `build/Limita-<version>.dmg` with the drag-to-install window. Its background is rendered from `design/dmg-background-source.webp` by `scripts/dmg-background.py` (needs Pillow); rerun that after changing the layout.
 
 Live-update failures are logged: `log show --predicate 'subsystem == "com.limita.app"' --last 1h`.
 
