@@ -121,7 +121,15 @@ struct CodexLimitsReader: Sendable {
             }
         }
 
-        return LimitSnapshot(fiveHour: fiveHour, sevenDay: sevenDay, capturedAt: capturedAt)
+        // Codex puts the shortest window in `primary`. A weekly `primary` with no
+        // `secondary` is how it reports a plan without a 5-hour limit.
+        let weeklyOnly = payload.primary?.scale == .sevenDay && payload.secondary == nil
+        return LimitSnapshot(
+            fiveHour: fiveHour,
+            sevenDay: sevenDay,
+            capturedAt: capturedAt,
+            hasNoFiveHourLimit: weeklyOnly
+        )
     }
 
     // MARK: - Wire format

@@ -57,16 +57,46 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
     let fiveHour: LimitWindow?
     let sevenDay: LimitWindow?
     let capturedAt: Date
+    /// The source said outright that the plan has no 5-hour limit (Codex on a Team plan
+    /// puts the weekly window where the 5-hour one goes). A merely missing `fiveHour`
+    /// means "unknown", never "no limit".
+    let hasNoFiveHourLimit: Bool
+
+    init(fiveHour: LimitWindow?, sevenDay: LimitWindow?, capturedAt: Date, hasNoFiveHourLimit: Bool = false) {
+        self.fiveHour = fiveHour
+        self.sevenDay = sevenDay
+        self.capturedAt = capturedAt
+        self.hasNoFiveHourLimit = hasNoFiveHourLimit && fiveHour == nil && sevenDay != nil
+    }
 
     var isEmpty: Bool {
         fiveHour == nil && sevenDay == nil
     }
 
-    /// Highest pressure across both windows, for status dots.
-    func peakFraction(at now: Date = Date()) -> Double {
-        [fiveHour, sevenDay]
-            .compactMap { $0?.displayFraction(at: now) }
-            .max() ?? 0
+    /// The window the pill and the traffic light follow: the 5-hour one, or the weekly
+    /// one only when the plan has no 5-hour limit. `nil` while the 5-hour window is unknown.
+    var headline: (label: String, window: LimitWindow)? {
+        if let fiveHour { return ("5h", fiveHour) }
+        if hasNoFiveHourLimit, let sevenDay { return ("7d", sevenDay) }
+        return nil
+    }
+}
+
+/// Traffic-light level of a window, by usage. On a threshold the more severe level wins:
+/// Claude used 70 % (Codex left 30 %) is `warning`, used 90 % (left 10 %) is `critical`.
+enum LimitLevel: Sendable, Equatable {
+    case normal
+    case warning
+    case critical
+
+    init(usedPercent: Double) {
+        if usedPercent >= 90 {
+            self = .critical
+        } else if usedPercent >= 70 {
+            self = .warning
+        } else {
+            self = .normal
+        }
     }
 }
 
@@ -95,6 +125,11 @@ enum ServiceState: Sendable, Equatable {
     var isStale: Bool {
         if case .stale = self { return true }
         return false
+    }
+
+    /// Traffic-light level of the headline window; `nil` without data.
+    func level(at now: Date = Date()) -> LimitLevel? {
+        snapshot?.headline.map { LimitLevel(usedPercent: $0.window.displayPercent(at: now)) }
     }
 
     /// Builds a state from a snapshot, deciding freshness by age.

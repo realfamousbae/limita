@@ -198,6 +198,114 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(window.resetText(at: Date(timeIntervalSince1970: 2000)), "window reset")
     }
 
+    // MARK: - Traffic light and plans without a 5-hour limit
+
+    func testLevelThresholdsTakeTheMoreSevereColourOnTheBoundary() {
+        let cases: [(used: Double, level: LimitLevel)] = [
+            (0, .normal), (69.9, .normal), (70, .warning), (89.9, .warning), (90, .critical), (100, .critical),
+        ]
+        for (used, level) in cases {
+            XCTAssertEqual(LimitLevel(usedPercent: used), level, "used \(used) %")
+        }
+    }
+
+    func testCodexLevelFollowsTheSameThresholdsAsLeft() {
+        let now = Date(timeIntervalSince1970: 0)
+        func level(left: Double) -> LimitLevel? {
+            let window = LimitWindow(usedPercent: 100 - left, resetsAt: nil)
+            return ServiceState.fresh(LimitSnapshot(fiveHour: window, sevenDay: nil, capturedAt: now)).level(at: now)
+        }
+        XCTAssertEqual(level(left: 100), .normal)
+        XCTAssertEqual(level(left: 30.1), .normal)
+        XCTAssertEqual(level(left: 30), .warning)
+        XCTAssertEqual(level(left: 10.1), .warning)
+        XCTAssertEqual(level(left: 10), .critical)
+        XCTAssertEqual(level(left: 0), .critical)
+    }
+
+    func testLevelFollowsFiveHourWindowOnlyAndStaleKeepsIt() {
+        let now = Date(timeIntervalSince1970: 0)
+        let snapshot = LimitSnapshot(
+            fiveHour: LimitWindow(usedPercent: 20, resetsAt: nil),
+            sevenDay: LimitWindow(usedPercent: 95, resetsAt: nil),
+            capturedAt: now
+        )
+        XCTAssertEqual(ServiceState.fresh(snapshot).level(at: now), .normal, "the weekly window does not count")
+        XCTAssertEqual(ServiceState.stale(snapshot).level(at: now), .normal)
+        XCTAssertNil(ServiceState.unavailable(reason: "x").level(at: now))
+    }
+
+    func testTeamPlanReportsOnlyTheWeeklyWindow() throws {
+        // As logged by Codex on a Team plan: the weekly window is `primary`, no `secondary`.
+        let root = try temporaryDirectory()
+        let file = root.appendingPathComponent("rollout-team.jsonl")
+        let line = #"{"timestamp":"2026-09-13T16:30:00Z","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","limit_name":null,"primary":{"used_percent":34.0,"window_minutes":10080,"resets_at":1789897438},"secondary":null,"plan_type":"team"}}}"#
+        try Data(line.utf8).write(to: file)
+
+        let snapshot = try XCTUnwrap(CodexLimitsReader.lastSnapshot(in: file, fallbackDate: Date()))
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertEqual(snapshot.sevenDay?.usedPercent, 34)
+        XCTAssertTrue(snapshot.hasNoFiveHourLimit)
+
+        let now = Date(timeIntervalSince1970: 1_789_800_000)
+        let state = ServiceState.fresh(snapshot)
+        XCTAssertEqual(MiniPillView.label(for: .codex, state: state, now: now), "7d 66% left")
+        XCTAssertEqual(state.level(at: now), .normal)
+        let nearlyOut = LimitSnapshot(
+            fiveHour: nil, sevenDay: LimitWindow(usedPercent: 92, resetsAt: nil), capturedAt: now, hasNoFiveHourLimit: true
+        )
+        XCTAssertEqual(ServiceState.fresh(nearlyOut).level(at: now), .critical, "the dot follows the weekly window")
+    }
+
+    func testTeamPlanShapeFromAppServer() throws {
+        let response = #"{"id":2,"result":{"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":34,"windowDurationMins":10080,"resetsAt":1789897438},"secondary":null}}}}"#
+        let snapshot = try CodexLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: Date()).snapshot
+        XCTAssertTrue(snapshot.hasNoFiveHourLimit)
+        XCTAssertEqual(snapshot.headline?.label, "7d")
+    }
+
+    func testMissingFiveHourWindowIsUnknownUnlessTheSourceSaysSo() throws {
+        let now = Date(timeIntervalSince1970: 0)
+        // Weekly window reported in `secondary` with `primary` missing: not proof of "no limit".
+        let payload = CodexLimitsReader.RateLimitsPayload(
+            primary: nil,
+            secondary: .init(usedPercent: 40, windowMinutes: 10080, resetsAt: nil)
+        )
+        let codex = CodexLimitsReader.snapshot(from: payload, capturedAt: now)
+        XCTAssertFalse(codex.hasNoFiveHourLimit)
+        XCTAssertEqual(MiniPillView.label(for: .codex, state: .fresh(codex), now: now), "5h —")
+        XCTAssertNil(ServiceState.fresh(codex).level(at: now))
+
+        // Claude never reports "no 5-hour limit"; a missing window stays unknown.
+        let claude = LimitSnapshot(fiveHour: nil, sevenDay: LimitWindow(usedPercent: 40, resetsAt: nil), capturedAt: now)
+        XCTAssertFalse(claude.hasNoFiveHourLimit)
+        XCTAssertEqual(MiniPillView.label(for: .claude, state: .fresh(claude), now: now), "5h —")
+
+        // The flag cannot be set when a 5-hour window exists.
+        let both = LimitSnapshot(
+            fiveHour: LimitWindow(usedPercent: 1, resetsAt: nil), sevenDay: LimitWindow(usedPercent: 2, resetsAt: nil),
+            capturedAt: now, hasNoFiveHourLimit: true
+        )
+        XCTAssertFalse(both.hasNoFiveHourLimit)
+    }
+
+    func testNoDataIsNotNoLimit() {
+        let now = Date(timeIntervalSince1970: 0)
+        let empty = LimitSnapshot(fiveHour: nil, sevenDay: nil, capturedAt: now)
+        XCTAssertFalse(empty.hasNoFiveHourLimit)
+        XCTAssertEqual(MiniPillView.label(for: .codex, state: .fresh(empty), now: now), "5h —")
+        XCTAssertNil(ServiceState.fresh(empty).level(at: now))
+        XCTAssertEqual(MiniPillView.label(for: .claude, state: .unavailable(reason: "x"), now: now), "5h —")
+
+        let both = LimitSnapshot(
+            fiveHour: LimitWindow(usedPercent: 12, resetsAt: nil),
+            sevenDay: LimitWindow(usedPercent: 40, resetsAt: nil),
+            capturedAt: now
+        )
+        XCTAssertFalse(both.hasNoFiveHourLimit)
+        XCTAssertEqual(MiniPillView.label(for: .claude, state: .fresh(both), now: now), "5h 12% used")
+    }
+
     // MARK: - Claude status line
 
     func testConfiguratorWrapsExistingStatusLineAndRestoresIt() throws {

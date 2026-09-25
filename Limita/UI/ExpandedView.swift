@@ -99,16 +99,16 @@ struct ExpandedView: View {
                 ServiceBadge(service: service)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(service.displayName)
-                        .font(.app(14))
+                    HStack(spacing: 6) {
+                        Text(service.displayName)
+                            .font(.app(14))
+                        LevelDot(state: state, now: now)
+                    }
                     // Codex has no status line: its meters already say "left", and
                     // staleness still shows as dimmed numbers and "UPDATED …".
                     if service == .claude {
-                        HStack(spacing: 5) {
-                            Circle().fill(DashboardStyle.statusColor(state, now: now)).frame(width: 6, height: 6)
-                            Text("\(statusLabel(state)) · SHOWING \(service.percentMeaning.uppercased())")
-                                .caption()
-                        }
+                        Text("\(statusLabel(state)) · SHOWING \(service.percentMeaning.uppercased())")
+                            .caption()
                     }
                 }
                 Spacer(minLength: 0)
@@ -120,8 +120,12 @@ struct ExpandedView: View {
                 SetupMessage(text: message.text) { store.setupMessage = nil }
             } else if let snapshot = state.snapshot {
                 HStack(spacing: 10) {
-                    metric("5 HOURS", service: service, window: snapshot.fiveHour,
-                           color: DashboardStyle.accent(for: service), stale: state.isStale, now: now)
+                    if snapshot.hasNoFiveHourLimit {
+                        unlimitedMetric("5 HOURS")
+                    } else {
+                        metric("5 HOURS", service: service, window: snapshot.fiveHour,
+                               color: DashboardStyle.accent(for: service), stale: state.isStale, now: now)
+                    }
                     metric("7 DAYS", service: service, window: snapshot.sevenDay,
                            color: DashboardStyle.accent(for: service).opacity(0.72), stale: state.isStale, now: now)
                 }
@@ -160,8 +164,8 @@ struct ExpandedView: View {
     }
 
     /// One window's meter. The number and bar show what `service` is displayed as (left
-    /// or used); the colour always follows usage, so red still means "almost out".
-    /// Stale numbers are dimmed so they don't read as current.
+    /// or used). The number stays white; the bar's colour follows usage, so red still
+    /// means "almost out". Stale numbers are dimmed so they don't read as current.
     private func metric(
         _ title: String, service: Service, window: LimitWindow?, color: Color, stale: Bool, now: Date
     ) -> some View {
@@ -174,7 +178,6 @@ struct ExpandedView: View {
             Text(window?.shownText(for: service, at: now) ?? "—")
                 .font(.app(24))
                 .monospacedDigit()
-                .foregroundStyle(DashboardStyle.pressureColor(used, fallback: .white))
                 .opacity(stale ? 0.55 : 1)
 
             GeometryReader { geometry in
@@ -189,6 +192,23 @@ struct ExpandedView: View {
             .frame(height: 4)
 
             Text(window?.resetText(at: now)?.uppercased() ?? "NO WINDOW")
+                .caption()
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Stands in for the 5-hour meter when the plan has no 5-hour limit.
+    private func unlimitedMetric(_ title: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .caption()
+            Text("∞")
+                .font(.app(24))
+            Capsule().fill(Color.white.opacity(0.09))
+                .frame(height: 4)
+            Text("NO 5-HOUR LIMIT")
                 .caption()
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
@@ -271,6 +291,20 @@ struct ExpandedView: View {
 }
 
 // MARK: - Pieces
+
+/// Traffic light for a service's headline window. Stale data keeps its colour, dimmed;
+/// no data is grey.
+struct LevelDot: View {
+    let state: ServiceState
+    let now: Date
+
+    var body: some View {
+        Circle()
+            .fill(DashboardStyle.levelColor(state.level(at: now)))
+            .opacity(state.isStale ? 0.4 : 1)
+            .frame(width: 6, height: 6)
+    }
+}
 
 struct ServiceBadge: View {
     let service: Service
@@ -395,10 +429,13 @@ enum DashboardStyle {
         return fallback
     }
 
-    static func statusColor(_ state: ServiceState, now: Date) -> Color {
-        guard let snapshot = state.snapshot else { return .white.opacity(0.32) }
-        if state.isStale { return .yellow }
-        return pressureColor(snapshot.peakFraction(at: now), fallback: healthy)
+    static func levelColor(_ level: LimitLevel?) -> Color {
+        switch level {
+        case .normal: healthy
+        case .warning: .yellow
+        case .critical: .red
+        case nil: .white.opacity(0.32)
+        }
     }
 }
 
