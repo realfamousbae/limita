@@ -24,8 +24,11 @@ final class PanelModel {
 /// The notch area is left alone on purpose — see `PanelLayout`.
 @MainActor
 final class BezelPanelController {
-    /// Width of one service column in the dashboard.
-    static let columnWidth: CGFloat = 272
+    /// Width of one service column in the dashboard: both meters, the gap between them
+    /// and the padding.
+    nonisolated static var columnWidth: CGFloat {
+        2 * ExpandedView.meterWidth + ExpandedView.meterSpacing + 2 * ExpandedView.columnPadding
+    }
     /// First guess only; the dashboard reports its real height once laid out.
     static let estimatedExpandedHeight: CGFloat = 268
 

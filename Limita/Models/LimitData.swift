@@ -48,8 +48,32 @@ struct LimitWindow: Codable, Sendable, Equatable {
     func resetText(at now: Date = Date()) -> String? {
         guard let resetsAt else { return nil }
         if resetsAt <= now { return "window reset" }
-        return "resets \(resetsAt.relativeText(to: now))"
+        return "resets in \(Self.durationText(resetsAt.timeIntervalSince(now)))"
     }
+
+    /// "2 days 4 hours 5 min", "4 hours 5 min" or "42 min". Rounded up to the minute, so
+    /// it never reads "0 min" before the reset; the value changes exactly on
+    /// `resetsAt` minus whole minutes (see `ResetTicks`).
+    static func durationText(_ interval: TimeInterval) -> String {
+        // The epsilon keeps an exact minute boundary from rounding up to the next one.
+        let total = max(Int(((interval - 0.001) / 60).rounded(.up)), 1)
+        let days = total / 1440
+        let hours = total % 1440 / 60
+        let minutes = total % 60
+        func count(_ value: Int, _ one: String, _ many: String) -> String {
+            "\(value) \(value == 1 ? one : many)"
+        }
+        if days > 0 {
+            return "\(count(days, "day", "days")) \(count(hours, "hour", "hours")) \(minutes) min"
+        }
+        if hours > 0 {
+            return "\(count(hours, "hour", "hours")) \(minutes) min"
+        }
+        return "\(minutes) min"
+    }
+
+    /// The longest `resetText` a window can produce (a 7-day one), for sizing the dashboard.
+    static let longestResetText = "resets in 6 days 23 hours 59 min"
 }
 
 /// The pair of windows a service reports, plus when we read them.

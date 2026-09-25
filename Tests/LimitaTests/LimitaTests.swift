@@ -306,6 +306,55 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(MiniPillView.label(for: .claude, state: .fresh(both), now: now), "5h 12% used")
     }
 
+    // MARK: - Reset countdown
+
+    func testResetCountdownFormat() {
+        let minute: TimeInterval = 60
+        let hour: TimeInterval = 3600
+        let day: TimeInterval = 86400
+        var cases: [(TimeInterval, String)] = []
+        cases.append((1, "1 min"))
+        cases.append((59, "1 min"))
+        cases.append((minute, "1 min"))
+        cases.append((minute + 1, "2 min"))
+        cases.append((59 * minute, "59 min"))
+        cases.append((59 * minute + 1, "1 hour 0 min"))
+        cases.append((hour, "1 hour 0 min"))
+        cases.append((hour + 42 * minute, "1 hour 42 min"))
+        cases.append((4 * hour + 59 * minute + 59, "5 hours 0 min"))
+        cases.append((23 * hour + 59 * minute, "23 hours 59 min"))
+        cases.append((day, "1 day 0 hours 0 min"))
+        cases.append((day + 1, "1 day 0 hours 1 min"))
+        cases.append((4 * day + 2 * hour + 5 * minute, "4 days 2 hours 5 min"))
+        cases.append((7 * day - minute, "6 days 23 hours 59 min"))
+        for (interval, text) in cases {
+            XCTAssertEqual(LimitWindow.durationText(interval), text, "\(interval) s")
+        }
+        let now = Date(timeIntervalSince1970: 0)
+        let window = LimitWindow(usedPercent: 10, resetsAt: Date(timeIntervalSince1970: 90 * 60))
+        XCTAssertEqual(window.resetText(at: now), "resets in 1 hour 30 min")
+        XCTAssertEqual(window.resetText(at: Date(timeIntervalSince1970: 90 * 60)), "window reset")
+        XCTAssertEqual(LimitWindow.longestResetText, "resets in \(LimitWindow.durationText(7 * 86400 - 60))")
+    }
+
+    func testResetTicksLandWhenTheMinuteChanges() {
+        let reset = Date(timeIntervalSince1970: 1000)
+        let ticks = ResetTicks(resets: [reset])
+        // 1000 - 10 = 990 s left: shows 17 min until 960 s left, i.e. t = 40.
+        XCTAssertEqual(ticks.next(after: Date(timeIntervalSince1970: 10)), Date(timeIntervalSince1970: 40))
+        XCTAssertEqual(ticks.next(after: Date(timeIntervalSince1970: 40)), Date(timeIntervalSince1970: 70), "on a boundary, the next minute")
+        XCTAssertEqual(ticks.next(after: Date(timeIntervalSince1970: 980)), Date(timeIntervalSince1970: 1000), "the reset itself")
+        XCTAssertEqual(ticks.next(after: Date(timeIntervalSince1970: 1000)), Date(timeIntervalSince1970: 1030), "only the 30 s tick after it")
+        for start in stride(from: 0.0, to: 1000, by: 7) {
+            let now = Date(timeIntervalSince1970: start)
+            let next = ticks.next(after: now)
+            let before = LimitWindow.durationText(reset.timeIntervalSince(now))
+            let justBefore = next.addingTimeInterval(-0.01)
+            XCTAssertEqual(LimitWindow.durationText(reset.timeIntervalSince(justBefore)), before, "no change is missed before \(next)")
+        }
+        XCTAssertGreaterThan(BezelPanelController.columnWidth, 272, "wide enough for the longest countdown")
+    }
+
     // MARK: - Claude status line
 
     func testConfiguratorWrapsExistingStatusLineAndRestoresIt() throws {

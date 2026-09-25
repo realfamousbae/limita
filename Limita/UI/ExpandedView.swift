@@ -4,10 +4,21 @@ import SwiftUI
 struct ExpandedView: View {
     let store: LimitsStore
 
+    static let columnPadding: CGFloat = 18
+    static let meterSpacing: CGFloat = 10
+    /// Both meters share one width: that of the longest reset caption, so the countdown
+    /// always fits on one line and the bars are the same length.
+    static let meterWidth: CGFloat = {
+        let caption = NSAttributedString(
+            string: LimitWindow.longestResetText.uppercased(),
+            attributes: [.font: AppFont.ns(DashboardStyle.captionSize), .kern: DashboardStyle.captionTracking]
+        )
+        return ceil(caption.size().width) + 4
+    }()
+
     var body: some View {
-        // Relative times ("resets in 2 hours") and expired windows must advance between
-        // data refreshes.
-        TimelineView(.periodic(from: .now, by: 30)) { context in
+        // Countdowns, "UPDATED …" and expired windows must advance between data refreshes.
+        TimelineView(ResetTicks(resets: resetDates)) { context in
             VStack(spacing: 0) {
                 header
 
@@ -37,6 +48,13 @@ struct ExpandedView: View {
         .overlay {
             RoundedRectangle(cornerRadius: DashboardStyle.cornerRadius, style: .continuous)
                 .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        }
+    }
+
+    private var resetDates: [Date] {
+        store.enabledServices.flatMap { service -> [Date] in
+            guard let snapshot = store.state(for: service).snapshot else { return [] }
+            return [snapshot.fiveHour?.resetsAt, snapshot.sevenDay?.resetsAt].compactMap { $0 }
         }
     }
 
@@ -119,15 +137,19 @@ struct ExpandedView: View {
             if let message = store.setupMessage, message.service == service {
                 SetupMessage(text: message.text) { store.setupMessage = nil }
             } else if let snapshot = state.snapshot {
-                HStack(spacing: 10) {
-                    if snapshot.hasNoFiveHourLimit {
-                        unlimitedMetric("5 HOURS")
-                    } else {
-                        metric("5 HOURS", service: service, window: snapshot.fiveHour,
-                               color: DashboardStyle.accent(for: service), stale: state.isStale, now: now)
+                HStack(spacing: Self.meterSpacing) {
+                    Group {
+                        if snapshot.hasNoFiveHourLimit {
+                            unlimitedMetric("5 HOURS")
+                        } else {
+                            metric("5 HOURS", service: service, window: snapshot.fiveHour,
+                                   color: DashboardStyle.accent(for: service), stale: state.isStale, now: now)
+                        }
                     }
+                    .frame(width: Self.meterWidth)
                     metric("7 DAYS", service: service, window: snapshot.sevenDay,
                            color: DashboardStyle.accent(for: service).opacity(0.72), stale: state.isStale, now: now)
+                        .frame(width: Self.meterWidth)
                 }
 
                 detailRows(for: service)
@@ -147,7 +169,7 @@ struct ExpandedView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, Self.columnPadding)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -291,6 +313,29 @@ struct ExpandedView: View {
 }
 
 // MARK: - Pieces
+
+/// Redraws when a countdown's minute changes and every 30 s for "UPDATED …", instead of
+/// polling every second. `durationText` rounds up, so a countdown to `reset` changes at
+/// `reset` minus whole minutes.
+struct ResetTicks: TimelineSchedule {
+    let resets: [Date]
+    var interval: TimeInterval = 30
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnySequence<Date> {
+        AnySequence(sequence(first: startDate) { next(after: $0) })
+    }
+
+    func next(after date: Date) -> Date {
+        var next = date.addingTimeInterval(interval)
+        for reset in resets where reset > date {
+            let minutes = (reset.timeIntervalSince(date) / 60).rounded(.down)
+            var tick = reset.addingTimeInterval(-minutes * 60)
+            if tick <= date { tick = tick.addingTimeInterval(60) }
+            next = min(next, tick)
+        }
+        return next
+    }
+}
 
 /// Traffic light for a service's headline window. Stale data keeps its colour, dimmed;
 /// no data is grey.
