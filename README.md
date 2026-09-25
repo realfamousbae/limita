@@ -31,6 +31,23 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 - **Readable at a glance.** Claude shows what is **used**, Codex what is **left**, and the dashboard labels which is which. Orange from 70 % usage, red from 90 %, yellow for stale data; if a live update fails, the reason is shown right in the dashboard.
 - Multiple displays and full-screen Spaces. JetBrains Mono everywhere.
 
+# Screenshots
+
+This is how Limita looks on your Mac.
+
+<p align="center">
+  <img src="docs/screenshots/pill-claude-desktop.png" alt="Pill with Claude on the desktop" width="303">
+  <img src="docs/screenshots/pill-menu-bar.png" alt="Pill with both services under the menu bar" width="512">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/dashboard-claude-desktop.png" alt="Dashboard with Claude only" width="820">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/dashboard-both.png" alt="Dashboard with Claude and Codex under the menu bar" width="820">
+</p>
+
 ## Install
 
 1. Download `Limita-<version>.dmg` from [Releases](../../releases).
