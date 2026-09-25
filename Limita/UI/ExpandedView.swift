@@ -38,6 +38,10 @@ struct ExpandedView: View {
                     // Columns and the divider take the height of the tallest column.
                     .fixedSize(horizontal: false, vertical: true)
                 }
+
+                if !store.showsMenuBarIcon {
+                    hiddenIconTip
+                }
             }
         }
         // Height follows the content; the panel controller sizes the window to it.
@@ -56,6 +60,25 @@ struct ExpandedView: View {
             guard let snapshot = store.state(for: service).snapshot else { return [] }
             return [snapshot.fiveHour?.resetsAt, snapshot.sevenDay?.resetsAt].compactMap { $0 }
         }
+    }
+
+    /// The menu (Connect, Disconnect, Quit) lives on the menu-bar icon.
+    private var hiddenIconTip: some View {
+        VStack(spacing: 0) {
+            divider.frame(height: 1)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 9))
+                Text("MENU BAR ICON IS HIDDEN. SHOW IT WITH THE BUTTON ABOVE TO CONNECT OR DISCONNECT SERVICES, OR TO QUIT LIMITA.")
+                    .font(.app(DashboardStyle.captionSize))
+                    .tracking(DashboardStyle.captionTracking)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(DashboardStyle.caption)
+            .padding(.vertical, 11)
+        }
+        .padding(.horizontal, Self.columnPadding)
     }
 
     private var divider: some View {
@@ -83,6 +106,18 @@ struct ExpandedView: View {
             }
 
             Spacer()
+
+            Button {
+                store.showsMenuBarIcon.toggle()
+            } label: {
+                ZStack {
+                    Circle().fill(Color.white.opacity(0.08))
+                    MenuBarIconGlyph(crossedOut: store.showsMenuBarIcon)
+                }
+                .frame(width: 27, height: 27)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(store.showsMenuBarIcon ? "Hide menu bar icon" : "Show menu bar icon")
 
             if !store.enabledServices.isEmpty {
                 Button {
@@ -143,7 +178,7 @@ struct ExpandedView: View {
                             unlimitedMetric("5 HOURS")
                         } else {
                             metric("5 HOURS", service: service, window: snapshot.fiveHour,
-                                   color: DashboardStyle.accent(for: service), stale: state.isStale, now: now)
+                                   color: DashboardStyle.fiveHourBar(for: service), stale: state.isStale, now: now)
                         }
                     }
                     .frame(width: Self.meterWidth)
@@ -314,6 +349,32 @@ struct ExpandedView: View {
 
 // MARK: - Pieces
 
+/// The app glyph on the menu-bar toggle: crossed out while the icon is shown (the button
+/// hides it), plain while it is hidden (the button brings it back).
+struct MenuBarIconGlyph: View {
+    let crossedOut: Bool
+
+    var body: some View {
+        ZStack {
+            Image("StatusIcon")
+                .resizable()
+                .renderingMode(.template)
+                .frame(width: 13, height: 13)
+            if crossedOut {
+                // The dark rim cuts the glyph so the slash reads at this size.
+                Capsule()
+                    .fill(Color(white: 0.08))
+                    .frame(width: 4, height: 19)
+                    .rotationEffect(.degrees(-45))
+                Capsule()
+                    .fill(Color.white)
+                    .frame(width: 1.6, height: 18)
+                    .rotationEffect(.degrees(-45))
+            }
+        }
+    }
+}
+
 /// Redraws when a countdown's minute changes and every 30 s for "UPDATED …", instead of
 /// polling every second. `durationText` rounds up, so a countdown to `reset` changes at
 /// `reset` minus whole minutes.
@@ -465,6 +526,11 @@ enum DashboardStyle {
         service == .codex
             ? Color(red: 0.31, green: 0.67, blue: 1)
             : Color(red: 1, green: 0.58, blue: 0.30)
+    }
+
+    /// Claude's two bars share the softer weekly tone; Codex keeps a brighter 5-hour bar.
+    static func fiveHourBar(for service: Service) -> Color {
+        service == .claude ? accent(for: service).opacity(0.72) : accent(for: service)
     }
 
     /// Orange from 70 %, red from 90 %.

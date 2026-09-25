@@ -24,11 +24,11 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 
 - **Hover pill.** Rest the cursor at the top edge of any screen and a compact pill slides in with each service's 5-hour limit. Click it for the full dashboard.
 - **Stays away from the notch.** The camera housing plus 80 pt on each side is left to other apps: nothing triggers or draws there.
-- **Menu bar.** Left-click the icon for the dashboard, right-click for the menu. Clicking elsewhere closes it.
+- **Menu bar.** Left-click the icon for the dashboard, right-click for the menu. Clicking elsewhere closes it. The button next to **↻** in the dashboard hides or shows the icon until Limita quits; the icon is back on every launch. While it is hidden, the menu is out of reach, so show the icon again to connect or disconnect a service or to quit.
 - **Only what you use.** Connect or disconnect Claude Code and Codex from the menu; disconnected services are neither shown nor queried. On first launch Limita connects whatever it finds installed.
 - **Live numbers.** Claude is queried every 3 minutes, Codex every 5 minutes, and both on **Refresh**; local sources are re-read every minute.
 - **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits); Claude usage credits and cloud session credits. Rows a service does not report are hidden.
-- **Readable at a glance.** Claude shows what is **used**, Codex what is **left**, and the dashboard labels which is which. Orange from 70 % usage, red from 90 %, yellow for stale data; if a live update fails, the reason is shown right in the dashboard.
+- **Readable at a glance.** Claude shows what is **used**, Codex what is **left**, and the dashboard labels which is which. Each service's dot follows its 5-hour limit: green, yellow from 70 % used (30 % left), red from 90 %; stale data keeps its colour, dimmed. Percentages stay plain white, and the dashboard counts down to each reset to the minute. If a live update fails, the reason is shown right in the dashboard.
 - Multiple displays and full-screen Spaces. JetBrains Mono everywhere.
 
 # Screenshots

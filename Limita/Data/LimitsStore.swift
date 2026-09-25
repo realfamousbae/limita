@@ -27,6 +27,12 @@ final class LimitsStore {
     private(set) var isRefreshing = false
     /// Result of the last connect/disconnect, for the service it concerns.
     var setupMessage: (service: Service, text: String)?
+    /// Whether the menu-bar icon is shown. Not saved: every launch starts with the icon,
+    /// so its menu (Connect, Quit) is always reachable after a restart.
+    var showsMenuBarIcon = true {
+        didSet { onMenuBarIconChange?(showsMenuBarIcon) }
+    }
+    @ObservationIgnored var onMenuBarIconChange: ((Bool) -> Void)?
 
     /// Newest snapshot fetched over the network per service.
     @ObservationIgnored private var liveSnapshots: [Service: LimitSnapshot] = [:]

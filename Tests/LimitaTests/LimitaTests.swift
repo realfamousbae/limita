@@ -306,6 +306,22 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(MiniPillView.label(for: .claude, state: .fresh(both), now: now), "5h 12% used")
     }
 
+    // MARK: - Menu-bar icon
+
+    @MainActor
+    func testMenuBarIconToggleStartsVisibleAndNotifies() {
+        let store = LimitsStore(
+            settings: ServiceSettings(defaults: UserDefaults(suiteName: "limita-tests-\(UUID().uuidString)")!),
+            detectInstalled: { [] }
+        )
+        XCTAssertTrue(store.showsMenuBarIcon, "every launch starts with the icon")
+        var seen: [Bool] = []
+        store.onMenuBarIconChange = { seen.append($0) }
+        store.showsMenuBarIcon.toggle()
+        store.showsMenuBarIcon.toggle()
+        XCTAssertEqual(seen, [false, true])
+    }
+
     // MARK: - Reset countdown
 
     func testResetCountdownFormat() {

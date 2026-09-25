@@ -42,6 +42,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         statusItem = item
+        // macOS remembers a hidden status item across launches; Limita always starts with it.
+        item.isVisible = true
+        store.onMenuBarIconChange = { [weak self] visible in
+            self?.statusItem?.isVisible = visible
+        }
 
         menu.delegate = self
         menu.font = AppFont.ns(13)
