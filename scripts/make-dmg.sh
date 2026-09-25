@@ -47,10 +47,15 @@ tell application "Finder"
         set arrangement of viewOptions to not arranged
         set icon size of viewOptions to $ICON
         set text size of viewOptions to 13
-        -- Finder picks the label colour from the background colour, not the picture:
-        -- a dark colour here keeps the labels white.
-        set background color of viewOptions to {2048, 2560, 7168}
         set background picture of viewOptions to file ".background:background.tiff"
+        -- With hidden files shown (Cmd-Shift-.), Finder lists these too and shifts the
+        -- layout around them; parking them outside the window keeps it intact, also
+        -- for users who show hidden files.
+        repeat with hiddenName in {".background", ".fseventsd"}
+            try
+                set position of item hiddenName of container window to {$WIDTH + 200, $HEIGHT + 200}
+            end try
+        end repeat
         set position of item "Limita.app" of container window to {$APP_X, $ICON_Y}
         set position of item "Applications" of container window to {$APPS_X, $ICON_Y}
         close
@@ -61,6 +66,13 @@ tell application "Finder"
     end tell
 end tell
 APPLESCRIPT
+
+# Finder occasionally ignores or shifts a position; never ship such a layout.
+LAYOUT="$(osascript -e "tell application \"Finder\" to get {position of item \"Limita.app\", position of item \"Applications\"} of disk \"$VOLUME\"")"
+if [ "$LAYOUT" != "$APP_X, $ICON_Y, $APPS_X, $ICON_Y" ]; then
+    echo "DMG layout is wrong: icons at $LAYOUT, expected $APP_X, $ICON_Y, $APPS_X, $ICON_Y" >&2
+    exit 1
+fi
 
 chmod -Rf go-w "/Volumes/$VOLUME" || true
 sync
