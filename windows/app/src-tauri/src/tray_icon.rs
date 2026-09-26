@@ -13,7 +13,7 @@ pub fn render(level: Option<LimitLevel>, stale: bool, light_taskbar: bool) -> Ve
     let glyph = tauri::image::Image::from_bytes(GLYPH_PNG).expect("bundled glyph is a PNG");
     let mut pixels = downscale(glyph.rgba(), glyph.width(), glyph.height(), SIZE);
     let ink = if light_taskbar { [0, 0, 0] } else { [255, 255, 255] };
-    for pixel in pixels.chunks_exact_mut(4) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
         pixel[..3].copy_from_slice(&ink);
     }
     if let Some(level) = level {
@@ -153,8 +153,8 @@ mod tests {
         };
         let c = SIZE - (SIZE as f64 * 0.22) as u32 - 1;
         assert_eq!(at(c, c), [255, 69, 58, 255], "solid red dot");
-        assert!(pixels.chunks_exact(4).any(|p| p == [255, 255, 255, 255]), "white glyph on a dark taskbar");
+        assert!(pixels.as_chunks::<4>().0.contains(&[255, 255, 255, 255]), "white glyph on a dark taskbar");
         let plain = render(None, false, true);
-        assert!(plain.chunks_exact(4).all(|p| p[3] == 0 || p[..3] == [0, 0, 0]), "black glyph, no dot");
+        assert!(plain.as_chunks::<4>().0.iter().all(|p| p[3] == 0 || p[..3] == [0, 0, 0]), "black glyph, no dot");
     }
 }

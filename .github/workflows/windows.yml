@@ -48,7 +48,8 @@ jobs:
       # The app crate needs the frontend and the limita-cli sidecar to exist to compile.
       - run: npm run sidecar && npm run build
         working-directory: windows/app
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # Reported, not enforced: a lint added in a newer Rust must not block the installer.
+      - run: cargo clippy --workspace --all-targets
       - run: cargo test -p limita
       - run: npm run tauri build
         working-directory: windows/app
