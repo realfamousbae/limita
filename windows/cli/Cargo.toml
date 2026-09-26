@@ -1,0 +1,11 @@
+[package]
+name = "limita-cli"
+description = "Limita's console helper: Claude Code status-line capture and diagnostics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+limita-core = { path = "../core" }
+serde_json.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }

@@ -1,0 +1,32 @@
+name: Windows release
+
+# Push a tag like `windows-v0.1.0` to build the installer and publish it as a
+# pre-release. The version in windows/app/src-tauri/tauri.conf.json should match.
+on:
+  push:
+    tags: ["windows-v*"]
+
+jobs:
+  build:
+    uses: ./.github/workflows/windows.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: limita-windows-installer
+          path: installer
+      - name: Publish the installer
+        working-directory: installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" *.exe \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Limita for Windows ${GITHUB_REF_NAME#windows-v}" \
+            --notes "Windows build. The installer is not signed yet: on the SmartScreen warning choose More info → Run anyway." \
+            --prerelease

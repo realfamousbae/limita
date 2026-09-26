@@ -119,6 +119,11 @@ Limita/
 Tests/LimitaTests/
 ```
 
+## Windows
+
+A Windows version (tray icon, dashboard and hover pill; Tauri + Rust) lives in
+[`windows/`](windows/README.md). It is a pre-release, published under `windows-v*` tags.
+
 ## License
 
 MIT, see [LICENSE](LICENSE). The bundled JetBrains Mono Nerd Font is under the SIL Open Font License 1.1, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

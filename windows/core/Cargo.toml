@@ -1,0 +1,26 @@
+[package]
+name = "limita-core"
+description = "Claude Code and Codex rate-limit sources for Limita"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+dirs = "6"
+ureq = { version = "2", default-features = false, features = ["native-tls"] }
+native-tls = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+filetime = "0.2"

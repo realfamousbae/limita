@@ -1,0 +1,27 @@
+[package]
+name = "limita"
+description = "Claude Code and Codex rate limits, one glance from the tray"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name,
+# see https://github.com/rust-lang/cargo/issues/8519
+name = "limita_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+limita-core = { path = "../../core" }
+tauri = { version = "2", features = ["image-png", "macos-private-api", "tray-icon"] }
+serde.workspace = true
+serde_json.workspace = true
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Registry"] }

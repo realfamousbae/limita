@@ -1,0 +1,402 @@
+/* Ported from DashboardStyle in ExpandedView.swift. */
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMonoNerdFontMono-Regular.ttf") format("truetype");
+}
+
+:root {
+  color-scheme: dark;
+  --meter: 200px;
+  --claude: rgb(255, 148, 77);
+  --claude-soft: rgba(255, 148, 77, 0.72);
+  --codex: rgb(79, 171, 255);
+  --codex-soft: rgba(79, 171, 255, 0.72);
+  --healthy: rgb(82, 235, 148);
+  --yellow: #ffd60a;
+  --orange: #ff9f0a;
+  --red: #ff453a;
+  --caption: rgba(255, 255, 255, 0.62);
+  --faint: rgba(255, 255, 255, 0.48);
+  --line: rgba(255, 255, 255, 0.08);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: #fff;
+}
+
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* Laid out at its natural size whatever the window's current size; Rust then fits the
+   window to it. */
+#app {
+  display: inline-block;
+  width: max-content;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.icon {
+  display: inline-flex;
+  width: 1em;
+  height: 1em;
+}
+
+.icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.muted {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.digits {
+  font-variant-numeric: tabular-nums;
+}
+
+.caption {
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  color: var(--caption);
+}
+
+.caption.faint {
+  color: var(--faint);
+}
+
+.nowrap,
+.probe {
+  white-space: nowrap;
+}
+
+.probe {
+  position: absolute;
+  visibility: hidden;
+}
+
+.value {
+  font-size: 11px;
+  margin: 0;
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.dot.normal { background: var(--healthy); }
+.dot.warning { background: var(--yellow); }
+.dot.critical { background: var(--red); }
+.dot.stale { opacity: 0.4; }
+
+/* Pill */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 11px;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.pill-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pill-icon {
+  font-size: 11px;
+  display: inline-flex;
+}
+
+.pill-icon.claude { color: var(--claude); }
+.pill-icon.codex { color: var(--codex); }
+
+.pill-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Dashboard */
+
+.dashboard {
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 18px 8px;
+}
+
+.app-glyph {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  position: relative;
+  flex: none;
+}
+
+/* The glyph is black; invert it to white on the dark badge. */
+.app-glyph::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("/status.png") center / 16px 16px no-repeat;
+  filter: invert(1);
+}
+
+.app-name {
+  font-size: 13px;
+  letter-spacing: 1.2px;
+}
+
+.titles {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.round {
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+
+.round:disabled {
+  cursor: default;
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.divider {
+  background: var(--line);
+}
+
+.divider.horizontal {
+  height: 1px;
+  margin: 0 18px;
+}
+
+.divider.vertical {
+  width: 1px;
+  margin: 14px 0;
+}
+
+.columns {
+  display: flex;
+  align-items: stretch;
+}
+
+.column {
+  flex: none;
+  width: calc(2 * var(--meter) + 10px);
+  padding: 13px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.column-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+}
+
+.column-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.service-name {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  flex: none;
+}
+
+.badge.large {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+}
+
+.badge.small {
+  width: 26px;
+  height: 26px;
+  font-size: 11px;
+}
+
+.badge.claude { color: var(--claude); background: rgba(255, 148, 77, 0.14); }
+.badge.codex { color: var(--codex); background: rgba(79, 171, 255, 0.14); }
+
+.meters {
+  display: flex;
+  gap: 10px;
+}
+
+.meter {
+  width: var(--meter);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.big {
+  font-size: 24px;
+}
+
+.meter.stale .big,
+.meter.stale .fill {
+  opacity: 0.55;
+}
+
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.claude .fill.accent { background: var(--claude); }
+.claude .fill.accentSoft { background: var(--claude-soft); }
+.codex .fill.accent { background: var(--codex); }
+.codex .fill.accentSoft { background: var(--codex-soft); }
+.fill.warning { background: var(--orange); }
+.fill.critical { background: var(--red); }
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.detail {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.detail .value {
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+}
+
+.error {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 9.5px;
+  color: rgba(255, 214, 10, 0.9);
+}
+
+.error .icon {
+  font-size: 9px;
+  flex: none;
+}
+
+.setup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.setup .value {
+  color: rgba(255, 255, 255, 0.8);
+  white-space: pre-line;
+}
+
+.ok {
+  font-size: 9.5px;
+  height: 22px;
+  padding: 0 12px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.connect {
+  width: 264px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.connect-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 10px;
+  font-size: 11px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+}
