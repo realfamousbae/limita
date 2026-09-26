@@ -1,7 +1,7 @@
 name: Windows release
 
-# Push a tag like `windows-v0.1.0` to build the installer and publish it as a
-# pre-release. The version in windows/app/src-tauri/tauri.conf.json should match.
+# Push a tag like `windows-v0.1.0` to build the installer and publish it with the notes
+# in windows/release-notes.md. The tag must match the version in tauri.conf.json.
 on:
   push:
     tags: ["windows-v*"]
@@ -16,17 +16,25 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches the app version
+        run: |
+          version=$(jq -r .version windows/app/src-tauri/tauri.conf.json)
+          if [ "windows-v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $version in tauri.conf.json"
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
           name: limita-windows-installer
           path: installer
+      # Not marked latest: /releases/latest keeps pointing at the macOS app.
       - name: Publish the installer
-        working-directory: installer
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" *.exe \
+          gh release create "$GITHUB_REF_NAME" installer/*.exe \
             --repo "$GITHUB_REPOSITORY" \
             --title "Limita for Windows ${GITHUB_REF_NAME#windows-v}" \
-            --notes "Windows build. The installer is not signed yet: on the SmartScreen warning choose More info → Run anyway." \
-            --prerelease
+            --notes-file windows/release-notes.md \
+            --latest=false

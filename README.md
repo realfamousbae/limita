@@ -6,11 +6,12 @@
 </p>
 
 <p align="center">
-  <b>Claude Code and Codex rate limits, one glance from the top of your Mac.</b>
+  <b>Claude Code and Codex rate limits, one glance from the top of your Mac — or from the Windows tray.</b>
 </p>
 
 <p align="center">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-000?logo=apple">
+  <img alt="Windows 10+" src="https://img.shields.io/badge/Windows-10%2B-0078D4?logo=windows">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white">
   <img alt="Status" src="https://img.shields.io/badge/status-pre--release-7C3AED">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22D3EE">
@@ -121,8 +122,16 @@ Tests/LimitaTests/
 
 ## Windows
 
-A Windows version (tray icon, dashboard and hover pill; Tauri + Rust) lives in
-[`windows/`](windows/README.md). It is a pre-release, published under `windows-v*` tags.
+Limita also runs on Windows 10 and 11: a tray icon with the traffic-light dot, the same
+dashboard next to it, and the hover pill along the top edge of any screen.
+
+1. Download `Limita_<version>_x64-setup.exe` from the latest **Limita for Windows**
+   release on the [Releases](../../releases) page (tags `windows-v*`).
+2. Run it; it installs for your user, no administrator rights needed. The installer is not
+   signed yet: on the SmartScreen warning choose **More info → Run anyway**.
+
+The Windows app is built with Tauri and Rust in [`windows/`](windows/README.md), which
+covers the differences from macOS, troubleshooting and building from source.
 
 ## License
 

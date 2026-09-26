@@ -3,7 +3,7 @@
 A port of Limita to Windows 10/11: Claude Code and Codex rate limits in the tray, a
 dashboard next to the tray icon, and the hover pill at the top edge of the screen.
 Built with [Tauri 2](https://tauri.app) (Rust + WebView2); the macOS app in the repository
-root stays native Swift. Status: pre-release, not yet tried on real Windows machines.
+root stays native Swift. Windows 10 and 11, x64.
 
 ## Install
 
@@ -77,4 +77,12 @@ formatting are unit-tested in Rust. `npm run sidecar` builds `limita-cli` into
 `app/src-tauri/binaries/`, where the installer picks it up.
 
 CI (`.github/workflows/windows.yml`) tests the core on Windows and builds the installer
-as an artifact. Pushing a `windows-v<version>` tag publishes it as a pre-release.
+as an artifact.
+
+## Releasing
+
+1. Bump the version in `app/src-tauri/tauri.conf.json`, `app/package.json` and
+   `Cargo.toml` (`[workspace.package]`), and update `release-notes.md`.
+2. Push a tag `windows-v<version>`. `windows-release.yml` builds the installer and
+   publishes the release with those notes. It is not marked **Latest**, so
+   `/releases/latest` keeps pointing at the macOS app.
