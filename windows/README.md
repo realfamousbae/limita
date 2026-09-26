@@ -76,5 +76,5 @@ The webview only renders what `core/src/view.rs` produces, so wording, threshold
 formatting are unit-tested in Rust. `npm run sidecar` builds `limita-cli` into
 `app/src-tauri/binaries/`, where the installer picks it up.
 
-CI (`.github/workflows/windows.yml`) tests the core on Windows and macOS and builds the
-installer as an artifact. Pushing a `windows-v<version>` tag publishes it as a pre-release.
+CI (`.github/workflows/windows.yml`) tests the core on Windows and builds the installer
+as an artifact. Pushing a `windows-v<version>` tag publishes it as a pre-release.
