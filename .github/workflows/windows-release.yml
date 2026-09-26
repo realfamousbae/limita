@@ -2,7 +2,7 @@ name: Windows installer for a release
 
 # One version for every platform. Pushing a tag like `v0.3.0` builds the Windows
 # installer and attaches it to that release, next to the macOS DMG. The release itself,
-# with its notes and the DMG, is created by hand (see the README); this job waits for it.
+# with its notes and the DMG, is created by hand; this job waits for it.
 on:
   push:
     tags: ["v*"]

@@ -79,9 +79,3 @@ formatting are unit-tested in Rust. `npm run sidecar` builds `limita-cli` into
 
 CI (`.github/workflows/windows.yml`) tests the core on Windows and builds the installer
 as an artifact.
-
-## Releasing
-
-Windows and macOS are released together under one version; see
-[Releasing](../README.md#releasing) in the main README. A `v<version>` tag makes
-`windows-release.yml` build the installer and attach it to that release.

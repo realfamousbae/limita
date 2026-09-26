@@ -133,18 +133,6 @@ one version and one release.
 The Windows app is built with Tauri and Rust in [`windows/`](windows/README.md), which
 covers the differences from macOS, troubleshooting and building from source.
 
-## Releasing
-
-Both apps carry the same version: `MARKETING_VERSION` in `project.yml` (then
-`xcodegen generate`), and `version` in `windows/Cargo.toml`,
-`windows/app/package.json` and `windows/app/src-tauri/tauri.conf.json`.
-
-1. Push a tag `v<version>`. CI checks that all versions match, builds the Windows
-   installer and waits for the release.
-2. Build the DMG with `scripts/make-dmg.sh` and create the release with it:
-   `gh release create v<version> build/Limita-<version>.dmg --title "Limita <version>" --notes-file …`.
-   The installer is attached to it when the build finishes.
-
 ## License
 
 MIT, see [LICENSE](LICENSE). The bundled JetBrains Mono Nerd Font is under the SIL Open Font License 1.1, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
