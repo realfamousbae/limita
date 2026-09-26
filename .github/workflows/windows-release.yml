@@ -1,40 +1,46 @@
-name: Windows release
+name: Windows installer for a release
 
-# Push a tag like `windows-v0.1.0` to build the installer and publish it with the notes
-# in windows/release-notes.md. The tag must match the version in tauri.conf.json.
+# One version for every platform. Pushing a tag like `v0.3.0` builds the Windows
+# installer and attaches it to that release, next to the macOS DMG. The release itself,
+# with its notes and the DMG, is created by hand (see the README); this job waits for it.
 on:
   push:
-    tags: ["windows-v*"]
+    tags: ["v*"]
 
 jobs:
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches both apps' versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          windows=$(jq -r .version windows/app/src-tauri/tauri.conf.json)
+          macos=$(sed -n 's/.*MARKETING_VERSION: "\(.*\)"/\1/p' project.yml)
+          echo "tag $tag, Windows $windows, macOS $macos"
+          [ "$tag" = "$windows" ] && [ "$tag" = "$macos" ]
+
   build:
+    needs: versions
     uses: ./.github/workflows/windows.yml
 
-  release:
+  attach:
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Check the tag matches the app version
-        run: |
-          version=$(jq -r .version windows/app/src-tauri/tauri.conf.json)
-          if [ "windows-v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match version $version in tauri.conf.json"
-            exit 1
-          fi
       - uses: actions/download-artifact@v4
         with:
           name: limita-windows-installer
           path: installer
-      # Not marked latest: /releases/latest keeps pointing at the macOS app.
-      - name: Publish the installer
+      - name: Attach the installer to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" installer/*.exe \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Limita for Windows ${GITHUB_REF_NAME#windows-v}" \
-            --notes-file windows/release-notes.md \
-            --latest=false
+          for attempt in $(seq 1 30); do
+            gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break
+            echo "Release $GITHUB_REF_NAME not created yet, waiting…"
+            sleep 60
+          done
+          gh release upload "$GITHUB_REF_NAME" installer/*.exe --repo "$GITHUB_REPOSITORY" --clobber

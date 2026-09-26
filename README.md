@@ -123,15 +123,27 @@ Tests/LimitaTests/
 ## Windows
 
 Limita also runs on Windows 10 and 11: a tray icon with the traffic-light dot, the same
-dashboard next to it, and the hover pill along the top edge of any screen.
+dashboard next to it, and the hover pill along the top edge of any screen. Both apps share
+one version and one release.
 
-1. Download `Limita_<version>_x64-setup.exe` from the latest **Limita for Windows**
-   release on the [Releases](../../releases) page (tags `windows-v*`).
+1. Download `Limita_<version>_x64-setup.exe` from [Releases](../../releases).
 2. Run it; it installs for your user, no administrator rights needed. The installer is not
    signed yet: on the SmartScreen warning choose **More info → Run anyway**.
 
 The Windows app is built with Tauri and Rust in [`windows/`](windows/README.md), which
 covers the differences from macOS, troubleshooting and building from source.
+
+## Releasing
+
+Both apps carry the same version: `MARKETING_VERSION` in `project.yml` (then
+`xcodegen generate`), and `version` in `windows/Cargo.toml`,
+`windows/app/package.json` and `windows/app/src-tauri/tauri.conf.json`.
+
+1. Push a tag `v<version>`. CI checks that all versions match, builds the Windows
+   installer and waits for the release.
+2. Build the DMG with `scripts/make-dmg.sh` and create the release with it:
+   `gh release create v<version> build/Limita-<version>.dmg --title "Limita <version>" --notes-file …`.
+   The installer is attached to it when the build finishes.
 
 ## License
 
