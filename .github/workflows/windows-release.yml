@@ -16,7 +16,7 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME#v}"
           windows=$(jq -r .version windows/app/src-tauri/tauri.conf.json)
-          macos=$(sed -n 's/.*MARKETING_VERSION: "\(.*\)"/\1/p' project.yml)
+          macos=$(sed -n 's/.*MARKETING_VERSION: "\(.*\)"/\1/p' macos/project.yml)
           echo "tag $tag, Windows $windows, macOS $macos"
           [ "$tag" = "$windows" ] && [ "$tag" = "$macos" ]
 

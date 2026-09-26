@@ -96,28 +96,35 @@ A long-lived token from `claude setup-token` does not help here: it only allows 
 
 ## Build from source
 
+The macOS app lives in `macos/`; the Windows app in [`windows/`](windows/README.md).
 Requires macOS 14+, Xcode 15+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
+cd macos
 swift test
 xcodegen generate
 xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Release build
 ```
 
-`Limita.xcodeproj` is generated from `project.yml`. Run `xcodegen generate` after adding or removing files.
+`macos/Limita.xcodeproj` is generated from `macos/project.yml`. Run `xcodegen generate` after adding or removing files.
 
-`scripts/make-dmg.sh` builds a Release copy and packages it as `build/Limita-<version>.dmg` with the drag-to-install window. Its background is rendered from `design/dmg-background-source.webp` by `scripts/dmg-background.py` (needs Pillow); rerun that after changing the layout.
+`macos/scripts/make-dmg.sh` builds a Release copy and packages it as `macos/build/Limita-<version>.dmg` with the drag-to-install window. Its background is rendered from `macos/design/dmg-background-source.webp` by `macos/scripts/dmg-background.py` (needs Pillow); rerun that after changing the layout.
 
 Live-update failures are logged: `log show --predicate 'subsystem == "com.limita.app"' --last 1h`.
 
 ```text
-Limita/
-├── App/        lifecycle, status item, CLI entry for the status-line hook
-├── Data/       readers, live clients, Claude status-line setup
-├── Models/     limit windows, service state, balances
-├── UI/         panel controller, pill, dashboard, layout, font
-└── Resources/  app icon, menu-bar icon, bundled font
-Tests/LimitaTests/
+macos/
+├── Limita/
+│   ├── App/        lifecycle, status item, CLI entry for the status-line hook
+│   ├── Data/       readers, live clients, Claude status-line setup
+│   ├── Models/     limit windows, service state, balances
+│   ├── UI/         panel controller, pill, dashboard, layout, font
+│   └── Resources/  app icon, menu-bar icon, bundled font
+├── Tests/LimitaTests/
+├── scripts/        DMG packaging
+└── dmg/, design/   DMG background and artwork sources
+windows/            the Windows app (Tauri + Rust)
+docs/               banners and screenshots
 ```
 
 ## Windows
