@@ -18,7 +18,7 @@ export interface ServiceView {
   name: string;
   level: Level | null;
   stale: boolean;
-  subtitle: string | null;
+  status: string;
   setupMessage: string | null;
   meters: Meter[];
   details: { label: string; value: string }[];
@@ -33,4 +33,5 @@ export interface PanelView {
   isRefreshing: boolean;
   pill: { id: Service; level: Level | null; stale: boolean; label: string }[];
   longestResetText: string;
+  primeTime: { id: Service; lines: [string, string] }[];
 }

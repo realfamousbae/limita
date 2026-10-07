@@ -25,6 +25,8 @@ final class LimitsStore {
     /// Balances and extras from the last successful network read.
     private(set) var details: [Service: AccountDetails] = [:]
     private(set) var isRefreshing = false
+    /// Enabled services whose peak hours are on now, in display order.
+    private(set) var primeTimeServices: [Service] = []
     /// Result of the last connect/disconnect, for the service it concerns.
     var setupMessage: (service: Service, text: String)?
     /// Whether the menu-bar icon is shown. Not saved: every launch starts with the icon,
@@ -37,6 +39,7 @@ final class LimitsStore {
     /// Newest snapshot fetched over the network per service.
     @ObservationIgnored private var liveSnapshots: [Service: LimitSnapshot] = [:]
     @ObservationIgnored private var refreshTimer: Timer?
+    @ObservationIgnored private var primeTimeTimer: Timer?
     @ObservationIgnored private var lastRefresh: Date?
     @ObservationIgnored private var lastLiveAttempt: [Service: Date] = [:]
     @ObservationIgnored private var pendingLive = false
@@ -91,6 +94,22 @@ final class LimitsStore {
         refresh(live: true)
     }
 
+    /// Recomputes `primeTimeServices` and wakes again at the next start or end of peak
+    /// hours. Every refresh also calls it, in case the timer fired late after sleep.
+    func updatePrimeTime(now: Date = Date()) {
+        let active = enabledServices.filter { $0.primeTime?.contains(now) == true }
+        if active != primeTimeServices { primeTimeServices = active }
+
+        primeTimeTimer?.invalidate()
+        primeTimeTimer = nil
+        guard let next = Service.allCases.compactMap({ $0.primeTime?.nextChange(after: now) }).min() else { return }
+        let timer = Timer(fire: next.addingTimeInterval(0.5), interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updatePrimeTime() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        primeTimeTimer = timer
+    }
+
     /// Re-reads local sources unless that happened within `maxAge` — for opening the panel.
     func refreshIfOlder(than maxAge: TimeInterval) {
         if let lastRefresh, Date().timeIntervalSince(lastRefresh) < maxAge { return }
@@ -106,6 +125,7 @@ final class LimitsStore {
             return
         }
         let now = Date()
+        updatePrimeTime(now: now)
         // Timer ticks drift by up to their tolerance, so allow half a tick of slack
         // to keep an interval from slipping by a whole tick.
         let slack = Self.localInterval / 2
@@ -237,6 +257,7 @@ final class LimitsStore {
         if enabled { set.insert(service) } else { set.remove(service) }
         enabledServices = Service.allCases.filter(set.contains)
         settings.save(set)
+        updatePrimeTime()
     }
 
     private func installClaudeHook() -> String {

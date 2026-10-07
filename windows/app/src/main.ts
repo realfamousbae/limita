@@ -33,8 +33,17 @@ function dot(level: string | null, stale: boolean): HTMLElement {
   return el("span", `dot ${level ?? "none"}${stale ? " stale" : ""}`);
 }
 
+/** The service's logo; sources in macos/design/. */
+function logo(service: ServiceView["id"]): HTMLElement {
+  const img = document.createElement("img");
+  img.className = "logo";
+  img.src = `/logos/${service}.png`;
+  img.alt = "";
+  return img;
+}
+
 function badge(service: ServiceView["id"], size: "large" | "small" = "large"): HTMLElement {
-  return el("span", `badge ${service} ${size}`, icon(service));
+  return el("span", `badge ${service} ${size}`, logo(service));
 }
 
 // MARK: - Pill
@@ -49,7 +58,7 @@ function pill(current: PanelView): HTMLElement {
   current.pill.forEach((item, index) => {
     if (index > 0) node.append(el("span", "pill-divider"));
     node.append(
-      el("span", "pill-item", el("span", `pill-icon ${item.id}`, icon(item.id)), dot(item.level, item.stale), el("span", "digits", item.label)),
+      el("span", "pill-item", el("span", "pill-icon", logo(item.id)), dot(item.level, item.stale), el("span", "digits", item.label)),
     );
   });
   return node;
@@ -64,13 +73,13 @@ function dashboard(current: PanelView): HTMLElement {
   refresh.addEventListener("click", () => invoke("refresh"));
 
   const glyph = el("span", "app-glyph");
+  // Titles left, buttons right; prime-time badges, when any, between them with equal gaps.
   const header = el(
     "header",
     "",
-    glyph,
-    el("div", "titles", el("div", "app-name", "LIMITA"), el("div", "caption", "AI USAGE MONITOR")),
-    el("span", "spacer"),
-    current.services.length > 0 && refresh,
+    el("div", "header-side", glyph, el("div", "titles", el("div", "app-name", "LIMITA"), el("div", "caption", "AI USAGE MONITOR"))),
+    el("div", "prime-badges", ...current.primeTime.map(primeTimeBadge)),
+    el("div", "header-side end", current.services.length > 0 && refresh),
   );
 
   const body =
@@ -82,6 +91,24 @@ function dashboard(current: PanelView): HTMLElement {
         ]));
 
   return el("div", "dashboard", header, el("div", "divider horizontal"), body);
+}
+
+/** One pass through the sprite sheet: 196 frames at 24 fps, as in `.burning-gauge`. */
+const GAUGE_LOOP_MS = (196 / 24) * 1000;
+
+/** Says that a service is in its peak hours, when work burns through its limits faster. */
+function primeTimeBadge(badge: PanelView["primeTime"][number]): HTMLElement {
+  const gauge = el("span", "burning-gauge");
+  // Every view update rebuilds the header; resuming mid-loop keeps the animation smooth.
+  gauge.style.animationDelay = `-${Math.round(performance.now() % GAUGE_LOOP_MS)}ms`;
+  const node = el(
+    "div",
+    "prime-time",
+    gauge,
+    el("div", "prime-lines", el("div", "", badge.lines[0]), el("div", "", badge.lines[1])),
+  );
+  node.setAttribute("aria-label", badge.lines.join(" "));
+  return node;
 }
 
 function connectPrompt(current: PanelView): HTMLElement {
@@ -98,16 +125,15 @@ function connectPrompt(current: PanelView): HTMLElement {
 }
 
 function column(service: ServiceView): HTMLElement {
+  // Name on the left, how fresh the data is on the right. The meter titles already
+  // say "used" or "left".
   const head = el(
     "div",
     "column-head",
     badge(service.id),
-    el(
-      "div",
-      "",
-      el("div", "service-name", service.name, dot(service.level, service.stale)),
-      service.subtitle ? el("div", "caption", service.subtitle) : null,
-    ),
+    el("div", "service-name", service.name, dot(service.level, service.stale)),
+    el("span", "spacer"),
+    el("div", "head-status", el("div", "caption", service.status), service.updated ? el("div", "caption faint", service.updated) : null),
   );
 
   const node = el("section", `column ${service.id}`, head);
@@ -122,12 +148,12 @@ function column(service: ServiceView): HTMLElement {
     return node;
   }
   node.append(el("div", "meters", ...service.meters.map((m) => meter(m, service.stale))));
+  // Tiles two to a row, on the meters' grid.
   if (service.details.length > 0) {
     node.append(
-      el("div", "details", ...service.details.map((row) => el("div", "detail", el("span", "caption", row.label), el("span", "spacer"), el("span", "value digits", row.value)))),
+      el("div", "details", ...service.details.map((row) => el("div", "tile", el("div", "caption", row.label), el("div", "tile-value digits", row.value)))),
     );
   }
-  if (service.updated) node.append(el("div", "caption faint", service.updated));
   if (service.error) node.append(el("div", "error", icon("warning"), el("span", "", service.error)));
   return node;
 }
@@ -138,10 +164,10 @@ function meter(m: Meter, stale: boolean): HTMLElement {
   return el(
     "div",
     `meter${stale ? " stale" : ""}`,
-    el("div", "caption", m.title),
+    el("div", "caption meter-caption", m.title),
     el("div", "big digits", m.value),
     el("div", "bar", fill),
-    el("div", "caption nowrap", m.caption),
+    el("div", "caption meter-caption nowrap", m.caption),
   );
 }
 
@@ -166,7 +192,7 @@ function render(modeChanged = false) {
 
 /** Both meters share the width of the longest countdown, so it always fits on one line. */
 function sizeMeters(longest: string) {
-  const probe = el("span", "caption probe", longest);
+  const probe = el("span", "caption meter-caption probe", longest);
   document.body.append(probe);
   document.documentElement.style.setProperty("--meter", `${Math.ceil(probe.getBoundingClientRect().width) + 4}px`);
   probe.remove();

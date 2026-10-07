@@ -20,6 +20,15 @@ pub struct PanelView {
     pub pill: Vec<PillItem>,
     /// Sizes both meters to the longest countdown, so it always fits on one line.
     pub longest_reset_text: String,
+    /// Enabled services in their peak hours, for the header badges.
+    pub prime_time: Vec<PrimeTimeBadge>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrimeTimeBadge {
+    pub id: Service,
+    pub lines: [String; 2],
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -30,8 +39,9 @@ pub struct ServiceView {
     /// Traffic light of the headline window; `None` is grey.
     pub level: Option<LimitLevel>,
     pub stale: bool,
-    /// Claude only: "LIVE DATA · SHOWING USED". Codex meters already say "left".
-    pub subtitle: Option<String>,
+    /// How fresh the data is: "LIVE DATA", "STALE DATA" or "NO DATA". Shown on the
+    /// right of the name; the meter titles already say "used" or "left".
+    pub status: String,
     /// Outcome of connecting, shown instead of the meters until dismissed.
     pub setup_message: Option<String>,
     pub meters: Vec<MeterView>,
@@ -125,6 +135,12 @@ pub fn panel(snapshot: &Snapshot, now: Timestamp) -> PanelView {
         is_refreshing: snapshot.is_refreshing,
         pill,
         longest_reset_text: longest_reset_text().to_uppercase(),
+        prime_time: snapshot
+            .enabled
+            .iter()
+            .filter(|service| service.prime_time().is_some_and(|window| window.contains(now)))
+            .map(|&id| PrimeTimeBadge { id, lines: id.prime_time_lines() })
+            .collect(),
     }
 }
 
@@ -136,21 +152,18 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
         .as_ref()
         .filter(|(for_service, _)| *for_service == service)
         .map(|(_, text)| text.clone());
-    let subtitle = (service == Service::Claude).then(|| {
-        let status = match (&state, state.snapshot()) {
-            (_, None) => "NO DATA",
-            (ServiceState::Stale(_), _) => "STALE DATA",
-            _ => "LIVE DATA",
-        };
-        format!("{status} · SHOWING {}", service.percent_meaning().to_uppercase())
-    });
+    let status = match (&state, state.snapshot()) {
+        (_, None) => "NO DATA",
+        (ServiceState::Stale(_), _) => "STALE DATA",
+        _ => "LIVE DATA",
+    };
 
     let mut view = ServiceView {
         id: service,
         name: service.display_name().into(),
         level: state.level(now),
         stale: state.is_stale(),
-        subtitle,
+        status: status.into(),
         setup_message: setup_message.clone(),
         meters: Vec::new(),
         details: Vec::new(),
@@ -421,7 +434,7 @@ mod tests {
         let view = panel(&snapshot, now);
 
         let claude = &view.services[0];
-        assert_eq!(claude.subtitle.as_deref(), Some("LIVE DATA · SHOWING USED"));
+        assert_eq!(claude.status, "LIVE DATA");
         assert_eq!(claude.level, Some(LimitLevel::Warning));
         assert_eq!(claude.meters[0].title, "5 HOURS USED");
         assert_eq!(claude.meters[0].value, "75%");
@@ -440,6 +453,22 @@ mod tests {
         assert_eq!(summary.level, Some(LimitLevel::Warning));
         assert!(!summary.stale);
         assert_eq!(summary.tooltip, "Limita\nClaude 5h 75% used\nCodex 5h —");
+    }
+
+    #[test]
+    fn prime_time_badges_for_enabled_services_in_peak_hours() {
+        let peak = crate::time::parse_flexible("2026-10-07T06:00:00-07:00").unwrap();
+        let quiet = crate::time::parse_flexible("2026-10-07T12:00:00-07:00").unwrap();
+        let both = Snapshot { enabled: vec![Service::Claude, Service::Codex], ..Default::default() };
+        // 6:00 PT is 13:00 UTC: both services are in their peak hours.
+        let badges = panel(&both, peak).prime_time;
+        assert_eq!(badges.iter().map(|b| b.id).collect::<Vec<_>>(), [Service::Claude, Service::Codex]);
+        assert_eq!(badges[0].lines, ["CLAUDE PRIME TIME. WORK", "CAN BURN MORE TOKENS AND LIMITS"]);
+        assert_eq!(badges[1].lines[0], "CODEX PRIME TIME. WORK");
+        // 12:00 PT is 19:00 UTC: neither.
+        assert!(panel(&both, quiet).prime_time.is_empty());
+        let claude_only = Snapshot { enabled: vec![Service::Claude], ..Default::default() };
+        assert_eq!(panel(&claude_only, peak).prime_time.len(), 1, "only connected services get a badge");
     }
 
     #[test]

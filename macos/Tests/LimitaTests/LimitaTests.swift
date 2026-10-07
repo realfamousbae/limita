@@ -1,4 +1,5 @@
 import XCTest
+import ImageIO
 @testable import Limita
 
 final class LimitaTests: XCTestCase {
@@ -630,6 +631,75 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(BezelPanelController.expandedSize(services: 2).width, 2 * BezelPanelController.expandedSize(services: 1).width)
         XCTAssertLessThan(BezelPanelController.pillSize(services: 1).width, BezelPanelController.pillSize(services: 2).width)
         XCTAssertGreaterThan(BezelPanelController.expandedSize(services: 0).width, 0)
+    }
+
+    @MainActor
+    func testPrimeTimeWidensOnlyNarrowDashboards() {
+        let one = BezelPanelController.expandedSize(services: 1)
+        let two = BezelPanelController.expandedSize(services: 2)
+        XCTAssertGreaterThan(BezelPanelController.expandedSize(services: 1, primeTime: [.claude]).width, one.width,
+                             "one column is too narrow for the two-line badge")
+        XCTAssertEqual(BezelPanelController.expandedSize(services: 2, primeTime: [.claude, .codex]).width, two.width,
+                       "two columns already fit both badges")
+    }
+
+    // MARK: - Prime time
+
+    private func pacific(_ text: String) -> Date {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(identifier: "America/Los_Angeles")
+        formatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime, .withDashSeparatorInDate]
+        return formatter.date(from: text)!
+    }
+
+    func testClaudePrimeTimeIsWeekdayMorningsPacific() throws {
+        let window = try XCTUnwrap(Service.claude.primeTime)
+        XCTAssertFalse(window.contains(pacific("2026-10-07T04:59:00")))
+        XCTAssertTrue(window.contains(pacific("2026-10-07T05:00:00")), "Wednesday")
+        XCTAssertTrue(window.contains(pacific("2026-10-07T10:59:00")))
+        XCTAssertFalse(window.contains(pacific("2026-10-07T11:00:00")))
+        XCTAssertFalse(window.contains(pacific("2026-10-10T06:00:00")), "Saturday")
+        XCTAssertFalse(window.contains(pacific("2026-10-11T06:00:00")), "Sunday")
+        XCTAssertTrue(window.contains(pacific("2026-10-12T06:00:00")), "Monday")
+    }
+
+    func testPrimeTimeFollowsDaylightSaving() throws {
+        let window = try XCTUnwrap(Service.claude.primeTime)
+        let utc = ISO8601DateFormatter()
+        // PDT (UTC-7): 5 AM is 12:00 UTC. PST (UTC-8) after 1 November: 13:00 UTC.
+        XCTAssertTrue(window.contains(utc.date(from: "2026-10-30T12:30:00Z")!))
+        XCTAssertFalse(window.contains(utc.date(from: "2026-11-02T12:30:00Z")!))
+        XCTAssertTrue(window.contains(utc.date(from: "2026-11-02T13:30:00Z")!))
+    }
+
+    func testPrimeTimeNextChange() throws {
+        let window = try XCTUnwrap(Service.claude.primeTime)
+        XCTAssertEqual(window.nextChange(after: pacific("2026-10-07T04:00:00")), pacific("2026-10-07T05:00:00"))
+        XCTAssertEqual(window.nextChange(after: pacific("2026-10-07T05:00:00")), pacific("2026-10-07T11:00:00"))
+        XCTAssertEqual(window.nextChange(after: pacific("2026-10-07T12:00:00")), pacific("2026-10-08T05:00:00"))
+    }
+
+    func testPrimeTimeSpriteSheetMatchesTheCutter() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Limita/Resources/prime-time.webp")
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let sheet = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let rows = (PrimeTimeSprite.frameCount + PrimeTimeSprite.columns - 1) / PrimeTimeSprite.columns
+        XCTAssertEqual(sheet.width, PrimeTimeSprite.columns * PrimeTimeSprite.framePixels)
+        XCTAssertEqual(sheet.height, rows * PrimeTimeSprite.framePixels)
+        XCTAssertEqual(PrimeTimeSprite.cut(sheet).count, PrimeTimeSprite.frameCount)
+    }
+
+    func testCodexPrimeTimeIsWeekdaysUTC() throws {
+        let window = try XCTUnwrap(Service.codex.primeTime)
+        let utc = ISO8601DateFormatter()
+        XCTAssertFalse(window.contains(utc.date(from: "2026-10-07T11:59:00Z")!))
+        XCTAssertTrue(window.contains(utc.date(from: "2026-10-07T12:00:00Z")!), "Wednesday")
+        XCTAssertTrue(window.contains(utc.date(from: "2026-10-07T17:59:00Z")!))
+        XCTAssertFalse(window.contains(utc.date(from: "2026-10-07T18:00:00Z")!))
+        XCTAssertFalse(window.contains(utc.date(from: "2026-10-10T13:00:00Z")!), "Saturday")
+        XCTAssertEqual(window.nextChange(after: utc.date(from: "2026-10-07T13:00:00Z")!), utc.date(from: "2026-10-07T18:00:00Z")!)
     }
 
     // MARK: - Claude login errors

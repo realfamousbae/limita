@@ -6,12 +6,13 @@ struct ExpandedView: View {
 
     static let columnPadding: CGFloat = 18
     static let meterSpacing: CGFloat = 10
-    /// Both meters share one width: that of the longest reset caption, so the countdown
-    /// always fits on one line and the bars are the same length.
+    /// Both meters are at least as wide as the longest reset caption, so the countdown
+    /// always fits on one line. When the column is wider they share the extra room, so
+    /// the bars always run the full width of the column.
     static let meterWidth: CGFloat = {
         let caption = NSAttributedString(
             string: LimitWindow.longestResetText.uppercased(),
-            attributes: [.font: AppFont.ns(DashboardStyle.captionSize), .kern: DashboardStyle.captionTracking]
+            attributes: [.font: AppFont.ns(DashboardStyle.meterCaptionSize), .kern: DashboardStyle.captionTracking]
         )
         return ceil(caption.size().width) + 4
     }()
@@ -38,10 +39,6 @@ struct ExpandedView: View {
                     // Columns and the divider take the height of the tallest column.
                     .fixedSize(horizontal: false, vertical: true)
                 }
-
-                if !store.showsMenuBarIcon {
-                    hiddenIconTip
-                }
             }
         }
         // Height follows the content; the panel controller sizes the window to it.
@@ -62,31 +59,45 @@ struct ExpandedView: View {
         }
     }
 
-    /// The menu (Connect, Disconnect, Quit) lives on the menu-bar icon.
-    private var hiddenIconTip: some View {
-        VStack(spacing: 0) {
-            divider.frame(height: 1)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 9))
-                Text("MENU BAR ICON IS HIDDEN. SHOW IT WITH THE BUTTON ABOVE TO CONNECT OR DISCONNECT SERVICES, OR TO QUIT LIMITA.")
-                    .font(.app(DashboardStyle.captionSize))
-                    .tracking(DashboardStyle.captionTracking)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(DashboardStyle.caption)
-            .padding(.vertical, 11)
-        }
-        .padding(.horizontal, Self.columnPadding)
-    }
-
     private var divider: some View {
         Rectangle().fill(Color.white.opacity(0.08))
     }
 
+    static let headerSpacing: CGFloat = 9
+    static let headerPadding: CGFloat = 18
+    static let headerButtonSize: CGFloat = 27
+    private static let appGlyphSize: CGFloat = 28
+    private static let appNameSize: CGFloat = 13
+    private static let appNameTracking: CGFloat = 1.2
+    private static let appCaption = "AI USAGE MONITOR"
+
+    /// Space between prime-time badges.
+    private static let badgeGap: CGFloat = 12
+
+    /// Width the header needs with `primeTime` badges between the titles and the
+    /// buttons, the same gap on either side. The panel widens to it when the columns
+    /// alone are narrower.
+    static func headerWidth(primeTime services: [Service]) -> CGFloat {
+        guard !services.isEmpty else { return 0 }
+        let titles = max(
+            textWidth("LIMITA", font: AppFont.ns(appNameSize), tracking: appNameTracking),
+            textWidth(appCaption, font: AppFont.ns(DashboardStyle.captionSize), tracking: DashboardStyle.captionTracking)
+        )
+        let left = appGlyphSize + headerSpacing + titles
+        let right = 2 * headerButtonSize + headerSpacing
+        let badges = services.map(PrimeTimeBadge.width).reduce(0, +) + badgeGap * CGFloat(services.count - 1)
+        // Each side of the badges: a spacer of zero or more between two header spacings.
+        return 2 * headerPadding + left + right + badges + 4 * headerSpacing
+    }
+
+    static func textWidth(_ text: String, font: NSFont, tracking: CGFloat) -> CGFloat {
+        ceil(NSAttributedString(string: text, attributes: [.font: font, .kern: tracking]).size().width) + 2
+    }
+
+    /// Titles on the left and buttons on the right. The prime-time badges sit between
+    /// them, with equal space on either side.
     private var header: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: Self.headerSpacing) {
             ZStack {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(Color.white.opacity(0.10))
@@ -95,17 +106,27 @@ struct ExpandedView: View {
                     .renderingMode(.template)
                     .frame(width: 16, height: 16)
             }
-            .frame(width: 28, height: 28)
+            .frame(width: Self.appGlyphSize, height: Self.appGlyphSize)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("LIMITA")
-                    .font(.app(13))
-                    .tracking(1.2)
-                Text("AI USAGE MONITOR")
+                    .font(.app(Self.appNameSize))
+                    .tracking(Self.appNameTracking)
+                Text(Self.appCaption)
                     .caption()
             }
 
-            Spacer()
+            Spacer(minLength: 0)
+
+            if !store.primeTimeServices.isEmpty {
+                HStack(spacing: Self.badgeGap) {
+                    ForEach(store.primeTimeServices) { service in
+                        PrimeTimeBadge(service: service)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
 
             Button {
                 store.showsMenuBarIcon.toggle()
@@ -114,7 +135,7 @@ struct ExpandedView: View {
                     Circle().fill(Color.white.opacity(0.08))
                     MenuBarIconGlyph(crossedOut: store.showsMenuBarIcon)
                 }
-                .frame(width: 27, height: 27)
+                .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(store.showsMenuBarIcon ? "Hide menu bar icon" : "Show menu bar icon")
@@ -132,41 +153,45 @@ struct ExpandedView: View {
                                 .font(.system(size: 10, weight: .bold))
                         }
                     }
-                    .frame(width: 27, height: 27)
+                    .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
                 }
                 .buttonStyle(.plain)
                 .disabled(store.isRefreshing)
                 .accessibilityLabel("Refresh")
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 9)
-        .padding(.bottom, 8)
+        .padding(.horizontal, Self.headerPadding)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Service column
 
     private func serviceDashboard(_ service: Service, state: ServiceState, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 11) {
+            // Name on the left, how fresh the data is on the right. The meter titles
+            // already say "used" or "left".
             HStack(spacing: 8) {
                 ServiceBadge(service: service)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(service.displayName)
-                            .font(.app(14))
-                        LevelDot(state: state, now: now)
-                    }
-                    // Codex has no status line: its meters already say "left", and
-                    // staleness still shows as dimmed numbers and "UPDATED …".
-                    if service == .claude {
-                        Text("\(statusLabel(state)) · SHOWING \(service.percentMeaning.uppercased())")
-                            .caption()
+                HStack(spacing: 6) {
+                    Text(service.displayName)
+                        .font(.app(14))
+                    LevelDot(state: state, now: now)
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(statusLabel(state))
+                        .caption()
+                    if let snapshot = state.snapshot {
+                        Text("UPDATED \(Self.updatedText(snapshot.capturedAt, now: now).uppercased())")
+                            .caption(faint: true)
                     }
                 }
-                Spacer(minLength: 0)
+                .lineLimit(1)
             }
-            // Same height with or without the status line, so both columns' meters line up.
+            // Same height in every column, so the meters line up.
             .frame(height: 36)
 
             if let message = store.setupMessage, message.service == service {
@@ -181,17 +206,13 @@ struct ExpandedView: View {
                                    color: DashboardStyle.fiveHourBar(for: service), stale: state.isStale, now: now)
                         }
                     }
-                    .frame(width: Self.meterWidth)
+                    .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
                     metric("7 DAYS", service: service, window: snapshot.sevenDay,
                            color: DashboardStyle.accent(for: service).opacity(0.72), stale: state.isStale, now: now)
-                        .frame(width: Self.meterWidth)
+                        .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
                 }
 
-                detailRows(for: service)
-
-                Text("UPDATED \(Self.updatedText(snapshot.capturedAt, now: now).uppercased())")
-                    .caption(faint: true)
-                    .lineLimit(1)
+                detailTiles(for: service)
 
                 if let error = store.liveErrors[service] {
                     ErrorLine(text: error)
@@ -230,10 +251,10 @@ struct ExpandedView: View {
         let shown = (window?.shownPercent(for: service, at: now) ?? 0) / 100
         return VStack(alignment: .leading, spacing: 5) {
             Text("\(title) \(service.percentMeaning.uppercased())")
-                .caption()
+                .caption(size: DashboardStyle.meterCaptionSize)
 
             Text(window?.shownText(for: service, at: now) ?? "—")
-                .font(.app(24))
+                .font(.app(DashboardStyle.meterValueSize))
                 .monospacedDigit()
                 .opacity(stale ? 0.55 : 1)
 
@@ -249,7 +270,7 @@ struct ExpandedView: View {
             .frame(height: 4)
 
             Text(window?.resetText(at: now)?.uppercased() ?? "NO WINDOW")
-                .caption()
+                .caption(size: DashboardStyle.meterCaptionSize)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
         }
@@ -260,13 +281,13 @@ struct ExpandedView: View {
     private func unlimitedMetric(_ title: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .caption()
+                .caption(size: DashboardStyle.meterCaptionSize)
             Text("∞")
-                .font(.app(24))
+                .font(.app(DashboardStyle.meterValueSize))
             Capsule().fill(Color.white.opacity(0.09))
                 .frame(height: 4)
             Text("NO 5-HOUR LIMIT")
-                .caption()
+                .caption(size: DashboardStyle.meterCaptionSize)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
         }
@@ -275,27 +296,40 @@ struct ExpandedView: View {
 
     // MARK: - Balances
 
-    /// Rows under the meters. A row is hidden when the service did not report its value.
+    /// Tiles under the meters, two to a row on the meters' grid. A tile is hidden when
+    /// the service did not report its value.
     @ViewBuilder
-    private func detailRows(for service: Service) -> some View {
+    private func detailTiles(for service: Service) -> some View {
         let rows = Self.detailRows(for: service, details: store.details[service] ?? AccountDetails())
         if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(rows, id: \.label) { row in
-                    HStack(spacing: 6) {
-                        Text(row.label)
-                            .caption()
-                        Spacer(minLength: 4)
-                        Text(row.value)
-                            .font(.app(DashboardStyle.valueSize))
-                            .monospacedDigit()
-                            .foregroundStyle(.white.opacity(0.9))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(Array(stride(from: 0, to: rows.count, by: 2)), id: \.self) { start in
+                    HStack(alignment: .top, spacing: Self.meterSpacing) {
+                        detailTile(rows[start])
+                        if start + 1 < rows.count {
+                            detailTile(rows[start + 1])
+                        } else {
+                            Color.clear.frame(height: 0)
+                                .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
+                        }
                     }
                 }
             }
         }
+    }
+
+    private func detailTile(_ row: DetailRow) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(row.label)
+                .caption()
+            Text(row.value)
+                .font(.app(DashboardStyle.tileValueSize))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(minWidth: Self.meterWidth, maxWidth: .infinity, alignment: .leading)
     }
 
     struct DetailRow: Equatable {
@@ -420,11 +454,106 @@ struct ServiceBadge: View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(DashboardStyle.accent(for: service).opacity(0.14))
-            Image(systemName: service.symbolName)
-                .font(.system(size: size * 0.42, weight: .bold))
-                .foregroundStyle(DashboardStyle.accent(for: service))
+            Image(service.logoName)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size * 0.5, height: size * 0.5)
         }
         .frame(width: size, height: size)
+    }
+}
+
+/// Says that `service` is in its peak hours, when work burns through its limits faster.
+/// Sits in the header between the titles and the buttons.
+struct PrimeTimeBadge: View {
+    let service: Service
+
+    private static let iconSize: CGFloat = 26
+    private static let spacing: CGFloat = 9
+    private static let horizontalPadding: CGFloat = 14
+    private static let verticalPadding: CGFloat = 7
+
+    /// Room the badge takes, known before SwiftUI lays it out so the panel can be sized.
+    /// A little slack covers SwiftUI's tracking, which measures wider than AppKit's.
+    static func width(_ service: Service) -> CGFloat {
+        let (first, second) = service.primeTimeLines
+        let font = AppFont.ns(DashboardStyle.captionSize)
+        let text = max(
+            ExpandedView.textWidth(first, font: font, tracking: DashboardStyle.captionTracking),
+            ExpandedView.textWidth(second, font: font, tracking: DashboardStyle.captionTracking)
+        )
+        return 2 * horizontalPadding + iconSize + spacing + text + 6
+    }
+
+    var body: some View {
+        let (first, second) = service.primeTimeLines
+        HStack(alignment: .center, spacing: Self.spacing) {
+            BurningGauge()
+                .frame(width: Self.iconSize, height: Self.iconSize)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(first)
+                Text(second)
+            }
+            .font(.app(DashboardStyle.captionSize))
+            .tracking(DashboardStyle.captionTracking)
+            .foregroundStyle(.white.opacity(0.85))
+        }
+        .padding(.horizontal, Self.horizontalPadding)
+        .padding(.vertical, Self.verticalPadding)
+        // Never wraps or truncates; `width` only reserves the room.
+        .fixedSize()
+        .background(Capsule().fill(DashboardStyle.primeTime.opacity(0.10)))
+        .overlay(Capsule().stroke(DashboardStyle.primeTime.opacity(0.35), lineWidth: 1))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(first) \(second)")
+    }
+}
+
+/// The burning speedometer, looping through the frames of `PrimeTimeSprite`.
+private struct BurningGauge: View {
+    var body: some View {
+        let frames = PrimeTimeSprite.frames
+        TimelineView(.animation(minimumInterval: 1 / PrimeTimeSprite.fps)) { context in
+            if frames.isEmpty {
+                Color.clear
+            } else {
+                let index = Int(context.date.timeIntervalSinceReferenceDate * PrimeTimeSprite.fps) % frames.count
+                Image(nsImage: frames[index])
+                    .resizable()
+                    .interpolation(.high)
+            }
+        }
+    }
+}
+
+/// The badge animation: every frame in one sprite sheet, `prime-time.webp`, shared with
+/// the Windows app. Built by `scripts/prime-time-sprite.sh`; the numbers here must match it.
+enum PrimeTimeSprite {
+    static let fps: Double = 24
+    static let columns = 14
+    static let frameCount = 196
+    static let framePixels = 78
+
+    /// Cut once, on first use. Empty when the sheet is missing (e.g. `swift test`).
+    @MainActor static let frames: [NSImage] = {
+        guard let url = Bundle.main.url(forResource: "prime-time", withExtension: "webp"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let sheet = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else { return [] }
+        return cut(sheet)
+    }()
+
+    static func cut(_ sheet: CGImage) -> [NSImage] {
+        (0..<frameCount).compactMap { index in
+            let rect = CGRect(
+                x: (index % columns) * framePixels,
+                y: (index / columns) * framePixels,
+                width: framePixels,
+                height: framePixels
+            )
+            return sheet.cropping(to: rect).map { NSImage(cgImage: $0, size: .zero) }
+        }
     }
 }
 
@@ -511,6 +640,8 @@ private struct ConnectPrompt: View {
 
 enum DashboardStyle {
     static let healthy = Color(red: 0.32, green: 0.92, blue: 0.58)
+    /// The prime-time badge's outline, matching the flames of its animation.
+    static let primeTime = Color(red: 1, green: 0.45, blue: 0.18)
     static let cornerRadius: CGFloat = 20
 
     /// Small uppercase labels. Sized and tinted for ~4.5:1 contrast on black.
@@ -519,8 +650,14 @@ enum DashboardStyle {
     /// The least important line, e.g. "UPDATED …".
     static let faintCaption = Color.white.opacity(0.48)
     static let captionTracking: CGFloat = 0.3
-    /// Values next to captions, e.g. balances.
+    /// The meters' titles and countdowns, a little larger than other captions.
+    static let meterCaptionSize: CGFloat = 10.5
+    /// The meters' percentages.
+    static let meterValueSize: CGFloat = 26
+    /// Values next to captions, e.g. messages.
     static let valueSize: CGFloat = 11
+    /// Values in the tiles under the meters, e.g. balances.
+    static let tileValueSize: CGFloat = 13
 
     static func accent(for service: Service) -> Color {
         service == .codex
@@ -552,8 +689,8 @@ enum DashboardStyle {
 
 extension Text {
     /// The shared caption style for small labels.
-    func caption(faint: Bool = false) -> some View {
-        font(.app(DashboardStyle.captionSize))
+    func caption(faint: Bool = false, size: CGFloat = DashboardStyle.captionSize) -> some View {
+        font(.app(size))
             .tracking(DashboardStyle.captionTracking)
             .foregroundStyle(faint ? DashboardStyle.faintCaption : DashboardStyle.caption)
     }

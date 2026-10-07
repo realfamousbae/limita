@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use limita_core::store::Store;
-use limita_core::{view, Service};
+use limita_core::{prime_time, view, Service};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
@@ -84,7 +84,9 @@ fn run_view_loop(app: AppHandle, store: Store, tray: Arc<Tray>, changes: mpsc::R
             let now = Utc::now();
             let _ = app.emit("view", view::panel(&snapshot, now));
             tray.update(&store);
-            let next = view::next_tick(now, &view::reset_dates(&snapshot));
+            let mut changes_at = view::reset_dates(&snapshot);
+            changes_at.extend(prime_time::next_changes(now));
+            let next = view::next_tick(now, &changes_at);
             let wait = (next - Utc::now()).to_std().unwrap_or(Duration::ZERO) + Duration::from_millis(20);
             match changes.recv_timeout(wait) {
                 Ok(()) => while changes.try_recv().is_ok() {},

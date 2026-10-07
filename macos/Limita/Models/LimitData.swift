@@ -196,10 +196,11 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
         showsRemaining ? "left" : "used"
     }
 
-    var symbolName: String {
+    /// The service's logo in the asset catalog; sources in `design/`.
+    var logoName: String {
         switch self {
-        case .codex: "bolt.fill"
-        case .claude: "sparkles"
+        case .codex: "CodexLogo"
+        case .claude: "ClaudeLogo"
         }
     }
 }

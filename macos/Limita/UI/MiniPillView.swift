@@ -38,9 +38,11 @@ struct MiniPillView: View {
 
     private func indicator(_ service: Service, state: ServiceState, now: Date) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: service.symbolName)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(DashboardStyle.accent(for: service))
+            Image(service.logoName)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 11, height: 11)
             LevelDot(state: state, now: now)
             Text(Self.label(for: service, state: state, now: now))
                 .font(.app(11))
