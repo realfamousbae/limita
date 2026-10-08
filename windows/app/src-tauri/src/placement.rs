@@ -47,18 +47,22 @@ pub struct Screen {
 }
 
 /// Logical-pixel constants, multiplied by the monitor's scale.
-pub const TRIGGER_HEIGHT: f64 = 3.0;
 pub const SCREEN_INSET: f64 = 8.0;
 pub const GAP: f64 = 6.0;
 pub const HOVER_SLOP: f64 = 20.0;
 
+/// The part of the top edge that shows the pill, as fractions of the screen width. The
+/// corners are left alone: menus sit on the left, window buttons on the right.
+pub const TRIGGER_FROM: f64 = 0.28;
+pub const TRIGGER_TO: f64 = 0.75;
+
 impl Screen {
-    /// The cursor rests on the top edge of this screen.
+    /// The cursor touches the top edge of this screen, away from its corners.
     pub fn is_trigger(&self, px: f64, py: f64) -> bool {
-        py <= self.frame.y + TRIGGER_HEIGHT * self.scale
-            && py >= self.frame.y
-            && px >= self.frame.x
-            && px <= self.frame.right()
+        py >= self.frame.y
+            && py < self.frame.y + 1.0
+            && px >= self.frame.x + self.frame.width * TRIGGER_FROM
+            && px <= self.frame.x + self.frame.width * TRIGGER_TO
     }
 
     /// A frame of `size` hanging from the top of the work area, centred on `anchor_x` as
@@ -117,10 +121,22 @@ mod tests {
     #[test]
     fn trigger_is_the_top_edge_only() {
         let s = screen(1.5);
-        assert!(s.is_trigger(10.0, 0.0));
-        assert!(s.is_trigger(10.0, 4.0));
-        assert!(!s.is_trigger(10.0, 5.0));
+        assert!(s.is_trigger(1440.0, 0.0));
+        assert!(!s.is_trigger(1440.0, 1.0), "one pixel below the edge");
         assert!(!s.is_trigger(-1.0, 0.0), "another screen");
+    }
+
+    #[test]
+    fn trigger_skips_the_corners() {
+        // A second monitor to the right of the first, so the band starts from its own x.
+        let s = Screen { frame: Area::new(1920.0, 0.0, 1000.0, 800.0), work: Area::new(1920.0, 0.0, 1000.0, 760.0), scale: 1.0 };
+        assert!(!s.is_trigger(1920.0 + 100.0, 0.0), "menus on the left");
+        assert!(!s.is_trigger(1920.0 + 279.0, 0.0));
+        assert!(s.is_trigger(1920.0 + 280.0, 0.0));
+        assert!(s.is_trigger(1920.0 + 500.0, 0.0), "centre");
+        assert!(s.is_trigger(1920.0 + 750.0, 0.0));
+        assert!(!s.is_trigger(1920.0 + 751.0, 0.0));
+        assert!(!s.is_trigger(1920.0 + 980.0, 0.0), "window buttons on the right");
     }
 
     #[test]

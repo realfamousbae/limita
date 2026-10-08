@@ -23,9 +23,10 @@ onto the taskbar to keep it visible.
 - **The dot on the icon** follows the 5-hour limit of the connected services, the most
   severe one wins: green, yellow from 70 % used (30 % left), red from 90 %; faded when
   the data is stale. The tooltip lists each service.
-- **Hover pill.** Rest the cursor at the top edge of any screen, anywhere along it, and
-  the pill slides in; click it for the dashboard. It never takes keyboard focus and does
-  not appear over full-screen apps.
+- **Hover pill.** Push the cursor against the top edge of any screen, in its middle part
+  (the corners with menus and window buttons are left alone), and the pill slides in;
+  click it for the dashboard. It never takes keyboard focus and does not appear over
+  full-screen or borderless full-screen apps such as games.
 
 Everything else — what is shown, refresh intervals, colours, the countdown — matches the
 macOS app; see the [main README](../README.md).

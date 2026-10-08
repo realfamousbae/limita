@@ -37,13 +37,26 @@ pub fn show(window: &WebviewWindow, takes_focus: bool) {
 }
 
 /// A full-screen app (a game, a video, a presentation) owns the screen: no pill there.
+/// That is exclusive full screen, which Windows reports itself, and a window without a
+/// title bar covering the whole monitor, which is how borderless games run. A maximized
+/// window keeps its title bar, so it never counts, even over an auto-hidden taskbar.
 #[cfg(windows)]
 pub fn foreground_is_fullscreen(screen: crate::placement::Area) -> bool {
     use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::Shell::{
+        SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClassNameW, GetDesktopWindow, GetForegroundWindow, GetShellWindow, GetWindowRect,
+        GetClassNameW, GetDesktopWindow, GetForegroundWindow, GetShellWindow, GetWindowLongW, GetWindowRect, IsZoomed,
+        GWL_STYLE, WS_CAPTION,
     };
     unsafe {
+        let mut state = 0;
+        if SHQueryUserNotificationState(&mut state) == 0
+            && matches!(state, QUNS_BUSY | QUNS_RUNNING_D3D_FULL_SCREEN | QUNS_PRESENTATION_MODE)
+        {
+            return true;
+        }
         let hwnd = GetForegroundWindow();
         if hwnd.is_null() || hwnd == GetDesktopWindow() || hwnd == GetShellWindow() {
             return false;
@@ -53,6 +66,9 @@ pub fn foreground_is_fullscreen(screen: crate::placement::Area) -> bool {
         let class = String::from_utf16_lossy(&class[..length.max(0) as usize]);
         // The desktop behind the icons.
         if class == "WorkerW" || class == "Progman" {
+            return false;
+        }
+        if IsZoomed(hwnd) != 0 || GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_CAPTION == WS_CAPTION {
             return false;
         }
         let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
