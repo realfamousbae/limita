@@ -71,9 +71,10 @@ The plugin adds a **Limita** component to iTerm2's status bar:
 ```
 
 It appears only in tabs where Claude Code or Codex is running and lists every service
-you have connected in Limita. When the bar is short of room only the 5-hour limits are
-shown. A click opens the Limita dashboard. The plugin reads what the running app shows, so Limita must be running; without
-it the component says `Limita: not running`.
+you have connected in Limita. In other tabs the plugin hides the whole status bar, so it
+takes no room. When the bar is short of room only the 5-hour limits are shown. A click
+opens the Limita dashboard. The plugin reads what the running app shows, so Limita must
+be running; without it the component says `Limita: not running`.
 
 1. Download `limita.py` from [Releases](../../releases).
 2. In iTerm2, open **Settings → General → Magic** and turn on **Enable Python API**.
@@ -96,11 +97,10 @@ To make it look like the rest of the terminal, open **Configure Status Bar → A
 - **Font**: choose the font of your profile (**Profiles → Text**).
 - **Centred**: choose the **Tight packing** layout, then put a **Spring** on each side of
   Limita.
-- **No gap when hidden**: turn on **Remove empty components**, so the bar has no blank
-  space where Limita sits in other tabs.
-
-To see the limits in every tab, select Limita in **Configure Status Bar**, click
-**Configure Component** and turn off **Only while Claude Code or Codex runs**.
+To keep the status bar and the limits in every tab, select Limita in **Configure Status
+Bar**, click **Configure Component** and turn off **Only while Claude Code or Codex runs**.
+The plugin hides the bar only in profiles whose bar holds Limita; the profile itself is
+left as it is. Other components in that bar hide with it.
 
 With a script in AutoLaunch, iTerm2 stops opening a window at startup. To keep that window,
 turn on **Settings → General → Startup → Always open at least one terminal window at

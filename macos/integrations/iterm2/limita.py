@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Limita in iTerm2: a status-bar component with each connected service's 5-hour and
 weekly limits, shown while Claude Code or Codex runs in the session (a knob turns that
-off). A click on it opens the Limita dashboard.
+off). In other sessions the whole status bar is hidden, so it takes no room. A click on
+the component opens the Limita dashboard.
 
 The Limita app writes what its dashboard shows to `snapshot.json` and removes it on
 quit; this script only reads that file and formats it by the app's rules. See README.md
@@ -9,6 +10,8 @@ next to it.
 """
 
 import asyncio
+import base64
+import binascii
 import datetime
 import json
 import os
@@ -133,6 +136,22 @@ def status_for_session(services, now, job_name, command_line, only_while_running
     return status_variants(services, now)
 
 
+def limita_in_layout(props):
+    """Whether a profile's status bar holds the Limita component, and whether that
+    component is set to show only while Claude Code or Codex runs."""
+    layout = props.get("Status Bar Layout") or {}
+    for component in layout.get("components", []):
+        configuration = component.get("configuration") or {}
+        try:
+            registration = base64.b64decode(configuration.get("registration request v2") or "")
+        except (binascii.Error, ValueError):
+            continue
+        if IDENTIFIER.encode() in registration:
+            knobs = configuration.get("knobs") or {}
+            return True, bool(knobs.get(ONLY_WHILE_RUNNING, True))
+    return False, False
+
+
 # MARK: - iTerm2
 
 
@@ -185,6 +204,37 @@ async def main(connection):
         return status_for_session(load(), now_utc(), job_name, command_line, only)
 
     await component.async_register(connection, limita_status, onclick=open_dashboard)
+
+    app = await iterm2.async_get_app(connection)
+
+    async def fit_status_bar(session_id):
+        """Shows the session's status bar only while Claude Code or Codex runs in it. Only
+        for profiles whose bar holds Limita set to that; the profile itself is untouched."""
+        session = app.get_session_by_id(session_id)
+        if session is None:
+            return
+        try:
+            props = (await session.async_get_profile()).all_properties
+            uses_limita, only_while_running = limita_in_layout(props)
+            if not (props.get("Show Status Bar") and uses_limita and only_while_running):
+                return
+            shown = None
+            async with iterm2.VariableMonitor(
+                connection, iterm2.VariableScopes.SESSION, "jobName", session_id
+            ) as monitor:
+                job_name = await session.async_get_variable("jobName")
+                while True:
+                    wanted = runs_ai_cli(job_name, await session.async_get_variable("commandLine"))
+                    if wanted != shown:
+                        change = iterm2.LocalWriteOnlyProfile()
+                        change.set_status_bar_enabled(wanted)
+                        await session.async_set_profile_properties(change)
+                        shown = wanted
+                    job_name = await monitor.async_get()
+        except iterm2.RPCException:
+            return  # The session closed.
+
+    await iterm2.EachSessionOnceMonitor.async_foreach_session_create_task(app, fit_status_bar)
 
 
 if __name__ == "__main__":
