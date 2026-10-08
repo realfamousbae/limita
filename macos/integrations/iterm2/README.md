@@ -1,7 +1,9 @@
 # Limita in iTerm2
 
-`limita.py` adds a **Limita** component to iTerm2's status bar with each service's 5-hour
-and weekly limits; a click opens the Limita dashboard. Installation and setup are in the
+`limita.py` adds a **Limita** component to iTerm2's status bar with each connected
+service's 5-hour and weekly limits, shown while Claude Code or Codex is the foreground
+program of the session (iTerm2's `jobName` and `commandLine` variables); a click opens the
+Limita dashboard. Installation and setup are in the
 [main README](../../../README.md#iterm2). Each release also carries the script as
 `limita.py`.
 

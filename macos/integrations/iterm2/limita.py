@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Limita in iTerm2: a status-bar component with each service's 5-hour and weekly
-limits. A click on it opens the Limita dashboard.
+"""Limita in iTerm2: a status-bar component with each connected service's 5-hour and
+weekly limits, shown while Claude Code or Codex runs in the session (a knob turns that
+off). A click on it opens the Limita dashboard.
 
 The Limita app writes what its dashboard shows to `snapshot.json` and removes it on
 quit; this script only reads that file and formats it by the app's rules. See README.md
@@ -17,6 +18,8 @@ IDENTIFIER = "com.limita.iterm2"
 DASHBOARD_URL = "limita://dashboard"
 WINDOW_SEPARATOR = " · "
 SERVICE_SEPARATOR = "  │  "
+AI_CLIS = {"claude", "codex"}
+ONLY_WHILE_RUNNING = "only_while_ai_cli_runs"
 
 
 # MARK: - Reading, by the rules in LimitData.swift
@@ -113,6 +116,23 @@ def status_variants(services, now):
     ]
 
 
+# MARK: - Which program runs in the session
+
+
+def runs_ai_cli(job_name, command_line):
+    """Claude Code or Codex in the foreground: the native builds run as `claude` and
+    `codex`; npm installs run as `node /…/bin/claude`, so the first two words of the
+    command line count too. Later words do not: `vim claude.md` is not Claude Code."""
+    names = [job_name or ""] + (command_line or "").split()[:2]
+    return any(os.path.basename(name).lstrip("-").lower() in AI_CLIS for name in names)
+
+
+def status_for_session(services, now, job_name, command_line, only_while_running=True):
+    if only_while_running and not runs_ai_cli(job_name, command_line):
+        return [""]
+    return status_variants(services, now)
+
+
 # MARK: - iTerm2
 
 
@@ -148,15 +168,21 @@ async def main(connection):
     component = iterm2.StatusBarComponent(
         short_description="Limita",
         detailed_description="Claude Code and Codex limits from the Limita app. Click for the dashboard.",
-        knobs=[],
+        knobs=[iterm2.CheckboxKnob("Only while Claude Code or Codex runs", True, ONLY_WHILE_RUNNING)],
         exemplar="🟢 Claude 5h 52% · 7d 49% used  │  🟢 Codex 5h 80% · 7d 64% left",
         update_cadence=30,
         identifier=IDENTIFIER,
     )
 
+    # The references make iTerm2 call this again as soon as the foreground program changes.
     @iterm2.StatusBarRPC
-    async def limita_status(knobs):
-        return status_variants(load(), now_utc())
+    async def limita_status(
+        knobs,
+        job_name=iterm2.Reference("jobName?"),
+        command_line=iterm2.Reference("commandLine?"),
+    ):
+        only = knobs.get(ONLY_WHILE_RUNNING, True) if isinstance(knobs, dict) else True
+        return status_for_session(load(), now_utc(), job_name, command_line, only)
 
     await component.async_register(connection, limita_status, onclick=open_dashboard)
 

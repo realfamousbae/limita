@@ -27,7 +27,7 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 - **Stays away from the notch.** The camera housing plus 80 pt on each side is left to other apps: nothing triggers or draws there.
 - **Menu bar.** Left-click the icon for the dashboard, right-click for the menu. Clicking elsewhere closes it. The button next to **↻** in the dashboard hides or shows the icon until Limita quits; the icon is back on every launch.
 - **Keyboard shortcut.** **⌃⌥L** opens the dashboard at the top of the screen from any app, a terminal included; press it again to close it.
-- **iTerm2 status bar.** An optional plugin keeps your 5-hour and weekly limits in iTerm2's status bar, and a click on them opens the dashboard. See [iTerm2](#iterm2).
+- **iTerm2 status bar.** An optional plugin shows your 5-hour and weekly limits in iTerm2's status bar while Claude Code or Codex runs in the tab, and a click on them opens the dashboard. See [iTerm2](#iterm2).
 - **Only what you use.** Connect or disconnect Claude Code and Codex from the menu; disconnected services are neither shown nor queried. On first launch Limita connects whatever it finds installed.
 - **Live numbers.** Claude is queried every 3 minutes, Codex every 5 minutes, and both on **Refresh**; local sources are re-read every minute.
 - **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits); Claude usage credits and cloud session credits. Rows a service does not report are hidden.
@@ -70,8 +70,9 @@ The plugin adds a **Limita** component to iTerm2's status bar:
 🟢 Claude 5h 52% · 7d 49% used  │  🟢 Codex 5h 80% · 7d 64% left
 ```
 
-When the bar is short of room only the 5-hour limits are shown. A click opens the Limita
-dashboard. The plugin reads what the running app shows, so Limita must be running; without
+It appears only in tabs where Claude Code or Codex is running and lists every service
+you have connected in Limita. When the bar is short of room only the 5-hour limits are
+shown. A click opens the Limita dashboard. The plugin reads what the running app shows, so Limita must be running; without
 it the component says `Limita: not running`.
 
 1. Download `limita.py` from [Releases](../../releases).
@@ -95,6 +96,11 @@ To make it look like the rest of the terminal, open **Configure Status Bar → A
 - **Font**: choose the font of your profile (**Profiles → Text**).
 - **Centred**: choose the **Tight packing** layout, then put a **Spring** on each side of
   Limita.
+- **No gap when hidden**: turn on **Remove empty components**, so the bar has no blank
+  space where Limita sits in other tabs.
+
+To see the limits in every tab, select Limita in **Configure Status Bar**, click
+**Configure Component** and turn off **Only while Claude Code or Codex runs**.
 
 With a script in AutoLaunch, iTerm2 stops opening a window at startup. To keep that window,
 turn on **Settings → General → Startup → Always open at least one terminal window at
