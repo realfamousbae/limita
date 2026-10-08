@@ -43,6 +43,8 @@ final class LimitsStore {
     @ObservationIgnored private var lastRefresh: Date?
     @ObservationIgnored private var lastLiveAttempt: [Service: Date] = [:]
     @ObservationIgnored private var pendingLive = false
+    /// Last snapshot written for the iTerm2 script, so an unchanged one is not rewritten.
+    @ObservationIgnored private var writtenSnapshot: TerminalSnapshot?
     @ObservationIgnored private let codexReader: CodexLimitsReader
     @ObservationIgnored private let claudeReader: ClaudeLimitsReader
     @ObservationIgnored private let codexLive: CodexLiveClient
@@ -98,7 +100,10 @@ final class LimitsStore {
     /// hours. Every refresh also calls it, in case the timer fired late after sleep.
     func updatePrimeTime(now: Date = Date()) {
         let active = enabledServices.filter { $0.primeTime?.contains(now) == true }
-        if active != primeTimeServices { primeTimeServices = active }
+        if active != primeTimeServices {
+            primeTimeServices = active
+            writeTerminalSnapshot()
+        }
 
         primeTimeTimer?.invalidate()
         primeTimeTimer = nil
@@ -180,6 +185,7 @@ final class LimitsStore {
             }
             lastRefresh = Date()
             isRefreshing = false
+            writeTerminalSnapshot()
 
             if pendingLive {
                 pendingLive = false
@@ -250,6 +256,19 @@ final class LimitsStore {
         liveErrors[service] = nil
         details[service] = nil
         liveSnapshots[service] = nil
+        writeTerminalSnapshot()
+    }
+
+    /// Mirrors the dashboard to `TerminalSnapshot.fileURL` for the iTerm2 script.
+    private func writeTerminalSnapshot() {
+        let snapshot = TerminalSnapshot(services: enabledServices, states: state(for:), primeTime: primeTimeServices)
+        guard snapshot != writtenSnapshot else { return }
+        do {
+            try snapshot.write()
+            writtenSnapshot = snapshot
+        } catch {
+            log.error("snapshot write failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func setEnabled(_ service: Service, _ enabled: Bool) {

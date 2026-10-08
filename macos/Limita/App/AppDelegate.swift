@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let store = LimitsStore()
     private var panelController: BezelPanelController?
     private var statusItem: NSStatusItem?
+    private var dashboardHotKey: GlobalHotKey?
     private let menu = NSMenu()
     /// One Connect/Disconnect row per service, in display order.
     private var serviceMenuItems: [Service: NSMenuItem] = [:]
@@ -16,6 +17,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.startAutoRefresh()
 
         panelController = BezelPanelController(store: store)
+        dashboardHotKey = GlobalHotKey(
+            keyCode: GlobalHotKey.dashboard.keyCode,
+            modifiers: GlobalHotKey.dashboard.carbonModifiers
+        ) { [weak self] in
+            self?.panelController?.toggleFromShortcut()
+        }
         setupStatusItem()
 
         if CommandLine.arguments.contains("--show") {
@@ -24,6 +31,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.showLimits()
             }
         }
+    }
+
+    /// `limita://dashboard`, opened by the iTerm2 status-bar component.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard urls.contains(where: { $0.scheme == "limita" && $0.host == "dashboard" }) else { return }
+        panelController?.showAtTopOfCursorScreen()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        TerminalSnapshot.remove()
     }
 
     // MARK: - Status item
@@ -50,7 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.delegate = self
         menu.font = AppFont.ns(13)
-        menu.addItem(withTitle: "Show Limits", action: #selector(showLimits), keyEquivalent: "")
+        let show = menu.addItem(withTitle: "Show Limits", action: #selector(showLimits), keyEquivalent: "")
+        if dashboardHotKey != nil {
+            // Only a hint here: the shortcut itself works from any app.
+            show.keyEquivalent = GlobalHotKey.dashboardKeyEquivalent
+            show.keyEquivalentModifierMask = GlobalHotKey.dashboardModifiers
+        }
         menu.addItem(withTitle: "Refresh", action: #selector(refreshData), keyEquivalent: "r")
         menu.addItem(.separator())
         for service in Service.allCases {

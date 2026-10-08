@@ -20,6 +20,8 @@ final class PanelModel {
 /// - Resting the cursor at the top edge of any screen shows a compact pill there;
 ///   clicking it expands the full dashboard. Moving away hides it again.
 /// - The menu-bar icon opens the dashboard directly; a click outside closes it.
+/// - The global shortcut toggles the dashboard at the top of the screen under the cursor;
+///   `limita://dashboard` (the iTerm2 status-bar component) opens it there.
 ///
 /// The notch area is left alone on purpose — see `PanelLayout`.
 @MainActor
@@ -180,6 +182,27 @@ final class BezelPanelController {
         guard let screen = screen ?? screenContaining(NSEvent.mouseLocation) ?? NSScreen.main else { return }
         layout = PanelLayout(screen: screen)
         anchorX = anchor?.midX ?? NSEvent.mouseLocation.x
+        hoverDriven = false
+        transition(to: .expanded)
+    }
+
+    /// The global shortcut: closes whatever is open, or opens the dashboard centred at the
+    /// top of the screen the cursor is on, over whatever app is in front.
+    func toggleFromShortcut() {
+        forgetOffscreenPanel()
+        guard model.state == .hidden else {
+            hide()
+            return
+        }
+        showAtTopOfCursorScreen()
+    }
+
+    /// Opens the dashboard centred at the top of the screen the cursor is on. Never
+    /// toggles: the click that asks for it has already closed an open one.
+    func showAtTopOfCursorScreen() {
+        guard let screen = screenContaining(NSEvent.mouseLocation) ?? NSScreen.main else { return }
+        layout = PanelLayout(screen: screen)
+        anchorX = screen.frame.midX
         hoverDriven = false
         transition(to: .expanded)
     }

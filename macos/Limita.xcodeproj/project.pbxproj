@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0F5B44B77D4F53CFC3CCE664 /* PanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C451434F61CC4D86D765ECC0 /* PanelLayout.swift */; };
 		0F6140F276439F54E5A82FCB /* JetBrainsMonoNerdFontMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 50D972CBB476054189A45DBB /* JetBrainsMonoNerdFontMono-Regular.ttf */; };
+		17CE4507AA53914460DD3F57 /* GlobalHotKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FF86EB399F4E61DA9966D19 /* GlobalHotKey.swift */; };
 		198D43F3F9A2905D654DFD2C /* MiniPillView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EF6C8CCC714A70DC1BA4B0 /* MiniPillView.swift */; };
 		1ECB8764D7AD21C120CB9330 /* LimitaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFEC67C0B6E1EDDF35098A9A /* LimitaTests.swift */; };
 		25A7D14A1E6C53F4B4D69E92 /* DateParsing.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE4D46FD1D7B60B7CE213162 /* DateParsing.swift */; };
@@ -16,6 +17,7 @@
 		43C1CB71110D3B3917E3575E /* LimitsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */; };
 		4EA5262139160334A05CAE9E /* BezelPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27C03CC32416785B5AE66956 /* BezelPanelController.swift */; };
 		61B11378717DC64DB9E74DA2 /* TailLineReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5835DDCBD37DB19D625A0446 /* TailLineReader.swift */; };
+		63B31A179ACBB3D67C8FF1FC /* TerminalSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 155F0F598970B83929F1641C /* TerminalSnapshot.swift */; };
 		7F9821E6418D03249EED0A42 /* CodexLiveClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F5FB063C0035DB21B9EE9BC /* CodexLiveClient.swift */; };
 		8047ED5CA8064614590FF52D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37A349072A6F933C9F03DCC /* AppDelegate.swift */; };
 		87D73D8E5C39EEA3F12B8F26 /* LimitaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5CA708E4B041F7AED42C7A /* LimitaApp.swift */; };
@@ -43,7 +45,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		155F0F598970B83929F1641C /* TerminalSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSnapshot.swift; sourceTree = "<group>"; };
 		1EDD6F89AE8BABCC152E6C77 /* Limita.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Limita.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1FF86EB399F4E61DA9966D19 /* GlobalHotKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotKey.swift; sourceTree = "<group>"; };
 		27C03CC32416785B5AE66956 /* BezelPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BezelPanelController.swift; sourceTree = "<group>"; };
 		3B5CA708E4B041F7AED42C7A /* LimitaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitaApp.swift; sourceTree = "<group>"; };
 		4F5FB063C0035DB21B9EE9BC /* CodexLiveClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexLiveClient.swift; sourceTree = "<group>"; };
@@ -85,6 +89,7 @@
 			isa = PBXGroup;
 			children = (
 				B37A349072A6F933C9F03DCC /* AppDelegate.swift */,
+				1FF86EB399F4E61DA9966D19 /* GlobalHotKey.swift */,
 				3B5CA708E4B041F7AED42C7A /* LimitaApp.swift */,
 			);
 			path = App;
@@ -151,6 +156,7 @@
 				DC4594B9BA5DC82DDAE23517 /* LimitsStore.swift */,
 				CB08A24AA0A1DAE282E2D206 /* ServiceSettings.swift */,
 				5835DDCBD37DB19D625A0446 /* TailLineReader.swift */,
+				155F0F598970B83929F1641C /* TerminalSnapshot.swift */,
 			);
 			path = Data;
 			sourceTree = "<group>";
@@ -279,6 +285,7 @@
 				7F9821E6418D03249EED0A42 /* CodexLiveClient.swift in Sources */,
 				25A7D14A1E6C53F4B4D69E92 /* DateParsing.swift in Sources */,
 				C0E87B7D549C94F8610649EE /* ExpandedView.swift in Sources */,
+				17CE4507AA53914460DD3F57 /* GlobalHotKey.swift in Sources */,
 				CE560AF28A8DA7E0D318ADA4 /* LimitData.swift in Sources */,
 				87D73D8E5C39EEA3F12B8F26 /* LimitaApp.swift in Sources */,
 				43C1CB71110D3B3917E3575E /* LimitsStore.swift in Sources */,
@@ -287,6 +294,7 @@
 				CE5D3971941A1605BBC4BB21 /* PrimeTime.swift in Sources */,
 				F773247584DCE531A6F11F21 /* ServiceSettings.swift in Sources */,
 				61B11378717DC64DB9E74DA2 /* TailLineReader.swift in Sources */,
+				63B31A179ACBB3D67C8FF1FC /* TerminalSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

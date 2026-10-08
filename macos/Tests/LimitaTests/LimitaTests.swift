@@ -720,6 +720,39 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(try ClaudeLiveClient.accessToken(fromCredentials: Data(valid.utf8), now: now), "t")
     }
 
+    // MARK: - Terminal snapshot
+
+    func testTerminalSnapshotMirrorsTheDashboard() throws {
+        let now = Date(timeIntervalSince1970: 1_893_456_000)
+        let window = LimitWindow(usedPercent: 42, resetsAt: now.addingTimeInterval(3600))
+        let states: [Service: ServiceState] = [
+            .claude: .fresh(LimitSnapshot(fiveHour: window, sevenDay: nil, capturedAt: now)),
+            .codex: .unavailable(reason: "Codex has not run yet"),
+        ]
+        let snapshot = TerminalSnapshot(services: [.claude, .codex], states: { states[$0]! }, primeTime: [.claude])
+        let url = try temporaryDirectory().appendingPathComponent("snapshot.json")
+        try snapshot.write(to: url)
+
+        let json = try settingsObject(url)
+        XCTAssertEqual(json["version"] as? Int, 1)
+        let services = try XCTUnwrap(json["services"] as? [[String: Any]])
+        XCTAssertEqual(services.map { $0["id"] as? String }, ["claude", "codex"])
+        XCTAssertEqual(services[0]["meaning"] as? String, "used")
+        XCTAssertEqual(services[0]["status"] as? String, "fresh")
+        XCTAssertEqual(services[0]["primeTime"] as? Bool, true)
+        XCTAssertEqual(services[0]["staleAfter"] as? Double, ClaudeLimitsReader.staleAfter)
+        XCTAssertEqual(services[0]["capturedAt"] as? String, "2030-01-01T00:00:00Z")
+        let fiveHour = try XCTUnwrap(services[0]["fiveHour"] as? [String: Any])
+        XCTAssertEqual(fiveHour["usedPercent"] as? Double, 42)
+        XCTAssertEqual(fiveHour["resetsAt"] as? String, "2030-01-01T01:00:00Z")
+        XCTAssertEqual(services[1]["meaning"] as? String, "left")
+        XCTAssertEqual(services[1]["status"] as? String, "unavailable")
+        XCTAssertEqual(services[1]["reason"] as? String, "Codex has not run yet")
+
+        TerminalSnapshot.remove(at: url)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
     // MARK: - Helpers
 
     private func settingsObject(_ url: URL) throws -> [String: Any] {
