@@ -26,8 +26,8 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 - **Hover pill.** Rest the cursor at the top edge of any screen and a compact pill slides in with each service's 5-hour limit. Click it for the full dashboard.
 - **Stays away from the notch.** The camera housing plus 80 pt on each side is left to other apps: nothing triggers or draws there.
 - **Menu bar.** Left-click the icon for the dashboard, right-click for the menu. Clicking elsewhere closes it. The button next to **↻** in the dashboard hides or shows the icon until Limita quits; the icon is back on every launch.
-- **Keyboard shortcut.** **⌃⌥L** opens or closes the dashboard over any app, a terminal included.
-- **iTerm2.** An optional script puts your 5-hour and weekly limits in iTerm2's status bar; a click opens the dashboard. See [macos/integrations/iterm2](macos/integrations/iterm2/README.md).
+- **Keyboard shortcut.** **⌃⌥L** opens the dashboard at the top of the screen from any app, a terminal included; press it again to close it.
+- **iTerm2 status bar.** An optional plugin keeps your 5-hour and weekly limits in iTerm2's status bar, and a click on them opens the dashboard. See [iTerm2](#iterm2).
 - **Only what you use.** Connect or disconnect Claude Code and Codex from the menu; disconnected services are neither shown nor queried. On first launch Limita connects whatever it finds installed.
 - **Live numbers.** Claude is queried every 3 minutes, Codex every 5 minutes, and both on **Refresh**; local sources are re-read every minute.
 - **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits); Claude usage credits and cloud session credits. Rows a service does not report are hidden.
@@ -61,6 +61,44 @@ This is how Limita looks on your Mac.
 Limita lives in the menu bar only; it has no Dock icon.
 
 On the first Claude refresh, macOS asks whether Limita may read `Claude Code-credentials` from the Keychain. Choose **Always Allow**.
+
+## iTerm2
+
+The plugin adds a **Limita** component to iTerm2's status bar:
+
+```text
+🟢 Claude 5h 52% · 7d 49% used  │  🟢 Codex 5h 80% · 7d 64% left
+```
+
+When the bar is short of room only the 5-hour limits are shown. A click opens the Limita
+dashboard. The plugin reads what the running app shows, so Limita must be running; without
+it the component says `Limita: not running`.
+
+1. Download `limita.py` from [Releases](../../releases).
+2. In iTerm2, open **Settings → General → Magic** and turn on **Enable Python API**.
+3. Put the plugin into iTerm2's AutoLaunch folder, so it starts with iTerm2:
+
+   ```bash
+   mkdir -p ~/Library/Application\ Support/iTerm2/Scripts/AutoLaunch
+   mv ~/Downloads/limita.py ~/Library/Application\ Support/iTerm2/Scripts/AutoLaunch/
+   ```
+
+4. Start it once from the menu bar: **Scripts → AutoLaunch → limita.py** (restart iTerm2 if
+   AutoLaunch is not there yet). The first run asks to download iTerm2's Python runtime;
+   allow it.
+5. **Settings → Profiles → Session**: turn on **Status bar enabled** and click
+   **Configure Status Bar**. Drag **Limita** from the component menu down into
+   **Active Components** and click **OK**.
+
+To make it look like the rest of the terminal, open **Configure Status Bar → Advanced…**:
+
+- **Font**: choose the font of your profile (**Profiles → Text**).
+- **Centred**: choose the **Tight packing** layout, then put a **Spring** on each side of
+  Limita.
+
+With a script in AutoLaunch, iTerm2 stops opening a window at startup. To keep that window,
+turn on **Settings → General → Startup → Always open at least one terminal window at
+startup**.
 
 ## Keeping Claude up to date
 
@@ -96,6 +134,7 @@ A long-lived token from `claude setup-token` does not help here: it only allows 
 - No accounts, cookies or passwords, and no analytics.
 - Only rate-limit numbers and balances are read. Prompts, transcripts, project paths and session IDs are ignored.
 - The Claude status-line cache (`~/Library/Application Support/Limita/claude-status.json`) holds only the two windows and a timestamp.
+- For the iTerm2 plugin, the app writes what the dashboard shows to `~/Library/Application Support/Limita/snapshot.json`: percentages, reset times and status, nothing else. The file is removed when Limita quits.
 
 ## Build from source
 
@@ -124,6 +163,7 @@ macos/
 │   ├── UI/         panel controller, pill, dashboard, layout, font
 │   └── Resources/  app icon, menu-bar icon, bundled font
 ├── Tests/LimitaTests/
+├── integrations/   the iTerm2 status-bar plugin
 ├── scripts/        DMG packaging, prime-time sprite
 └── dmg/, design/   DMG background and artwork sources
 windows/            the Windows app (Tauri + Rust)
@@ -133,8 +173,10 @@ docs/               banners and screenshots
 ## Windows
 
 Limita also runs on Windows 10 and 11: a tray icon with the traffic-light dot, the same
-dashboard next to it, and the hover pill along the top edge of any screen. Both apps share
-one version and one release.
+dashboard next to it, and the hover pill in the middle of the top edge of any screen. The
+pill stays out of the corners, where menus and window buttons are, and never appears over
+full-screen apps and games, borderless ones included. Both apps share one version and one
+release.
 
 1. Download `Limita_<version>_x64-setup.exe` from [Releases](../../releases).
 2. Run it; it installs for your user, no administrator rights needed. The installer is not
