@@ -8,7 +8,8 @@
 //! The webview renders whatever mode it is told and reports the size it needs; the panel
 //! is sized and placed here, in physical pixels of the target monitor.
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use limita_core::store::Store;
@@ -88,6 +89,17 @@ pub struct Panel {
     app: AppHandle,
     store: Store,
     state: Mutex<State>,
+    /// Whether resting the cursor at the screen edge shows the pill. While it is off and
+    /// nothing is open, the hover thread sleeps and does not poll the cursor at all.
+    hover_pill: AtomicBool,
+    /// Wakes the sleeping hover thread.
+    wake: Mutex<mpsc::Sender<()>>,
+    wake_receiver: Mutex<Option<mpsc::Receiver<()>>>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct HoverPayload {
+    pub enabled: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -97,7 +109,11 @@ pub struct ModePayload {
 
 impl Panel {
     pub fn new(app: AppHandle, store: Store) -> Arc<Self> {
+        let (wake, wake_receiver) = mpsc::channel();
         Arc::new(Self {
+            hover_pill: AtomicBool::new(store.hover_pill()),
+            wake: Mutex::new(wake),
+            wake_receiver: Mutex::new(Some(wake_receiver)),
             app,
             store,
             state: Mutex::new(State {
@@ -129,6 +145,36 @@ impl Panel {
 
     pub fn mode(&self) -> Mode {
         self.lock().mode
+    }
+
+    pub fn hover_pill(&self) -> bool {
+        self.hover_pill.load(Ordering::Relaxed)
+    }
+
+    /// Turns the hover pill on or off, and remembers the choice.
+    pub fn set_hover_pill(&self, enabled: bool) {
+        if self.hover_pill.swap(enabled, Ordering::Relaxed) == enabled {
+            return;
+        }
+        self.store.set_hover_pill(enabled);
+        if enabled {
+            self.wake_hover_thread();
+        } else {
+            let mut state = self.lock();
+            if state.mode == Mode::Pill {
+                self.transition(&mut state, Mode::Hidden, false, None);
+            }
+            state.dwell_started = None;
+        }
+        let _ = self.app.emit("hover-pill", HoverPayload { enabled });
+    }
+
+    pub fn toggle_hover_pill(&self) {
+        self.set_hover_pill(!self.hover_pill());
+    }
+
+    fn wake_hover_thread(&self) {
+        let _ = self.wake.lock().unwrap_or_else(|p| p.into_inner()).send(());
     }
 
     // MARK: - Entry points
@@ -208,12 +254,22 @@ impl Panel {
 
     // MARK: - Hover tracking
 
-    /// Polls the cursor for the life of the app.
+    /// Polls the cursor for the life of the app, except while the hover pill is off and
+    /// nothing is open: then the thread blocks until it is needed again.
     pub fn start_hover_tracking(self: &Arc<Self>) {
         let panel = Arc::clone(self);
+        let Some(wake) = self.wake_receiver.lock().unwrap_or_else(|p| p.into_inner()).take() else { return };
         std::thread::Builder::new()
             .name("limita-hover".into())
             .spawn(move || loop {
+                if !panel.hover_pill() && panel.mode() == Mode::Hidden {
+                    // A wake-up sent after the check above is queued, so it is not lost.
+                    if wake.recv().is_err() {
+                        return;
+                    }
+                    while wake.try_recv().is_ok() {}
+                    continue;
+                }
                 std::thread::sleep(POLL);
                 panel.track_cursor();
             })
@@ -243,6 +299,10 @@ impl Panel {
 
         match state.mode {
             Mode::Hidden => {
+                if !self.hover_pill() {
+                    state.dwell_started = None;
+                    return;
+                }
                 let screens = self.screens(&mut state);
                 let trigger = screens
                     .iter()
@@ -299,6 +359,10 @@ impl Panel {
         }
         let Some(anchor) = anchor.or(state.anchor) else { return };
         let changed = state.mode != mode || state.hover_driven != hover_driven;
+        if state.mode == Mode::Hidden {
+            // Click-outside detection needs the hover thread even while the pill is off.
+            self.wake_hover_thread();
+        }
         state.mode = mode;
         state.hover_driven = hover_driven;
         state.anchor = Some(anchor);

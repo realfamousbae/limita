@@ -266,6 +266,22 @@ header {
   font-size: 11px;
 }
 
+/* A slash over the glyph while the feature it turns off is on, as the macOS buttons do. */
+.round {
+  position: relative;
+}
+
+.round.crossed::after {
+  content: "";
+  position: absolute;
+  width: 1.6px;
+  height: 18px;
+  background: #fff;
+  border-radius: 1px;
+  box-shadow: 0 0 0 1.5px #141414;
+  transform: rotate(-45deg);
+}
+
 .round:disabled {
   cursor: default;
 }

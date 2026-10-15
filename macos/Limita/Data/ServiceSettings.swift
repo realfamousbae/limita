@@ -6,6 +6,7 @@ import Foundation
 /// user's connect/disconnect choices are kept as they are.
 struct ServiceSettings: @unchecked Sendable {
     static let enabledKey = "enabledServices"
+    static let hoverKey = "hoverPillEnabled"
 
     let defaults: UserDefaults
 
@@ -21,6 +22,12 @@ struct ServiceSettings: @unchecked Sendable {
         let detected = detect()
         save(detected)
         return detected
+    }
+
+    /// Whether the cursor at the screen edge shows the pill. On unless the user turned it off.
+    var hoverEnabled: Bool {
+        get { defaults.object(forKey: Self.hoverKey) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Self.hoverKey) }
     }
 
     func save(_ services: Set<Service>) {

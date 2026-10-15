@@ -35,6 +35,17 @@ final class LimitsStore {
         didSet { onMenuBarIconChange?(showsMenuBarIcon) }
     }
     @ObservationIgnored var onMenuBarIconChange: ((Bool) -> Void)?
+    /// Whether resting the cursor at the screen edge shows the pill. While off, nothing
+    /// watches the mouse. Saved, unlike the icon: the dashboard stays reachable by the
+    /// menu-bar icon and the shortcut either way.
+    var hoverEnabled: Bool {
+        didSet {
+            guard hoverEnabled != oldValue else { return }
+            settings.hoverEnabled = hoverEnabled
+            onHoverEnabledChange?(hoverEnabled)
+        }
+    }
+    @ObservationIgnored var onHoverEnabledChange: ((Bool) -> Void)?
 
     /// Newest snapshot fetched over the network per service.
     @ObservationIgnored private var liveSnapshots: [Service: LimitSnapshot] = [:]
@@ -75,6 +86,7 @@ final class LimitsStore {
             return detected
         }
         enabledServices = Service.allCases.filter(enabled.contains)
+        hoverEnabled = settings.hoverEnabled
     }
 
     func isEnabled(_ service: Service) -> Bool {

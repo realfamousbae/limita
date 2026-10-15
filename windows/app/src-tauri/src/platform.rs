@@ -100,3 +100,26 @@ pub fn mouse_button_down() -> bool {
 pub fn mouse_button_down() -> bool {
     false
 }
+
+/// Ctrl+Alt+H, from any app, turns the hover pill on or off. The thread waits in the
+/// message loop and uses no CPU between presses. Skipped quietly if another app holds the
+/// shortcut.
+#[cfg(windows)]
+pub fn register_hover_hotkey(on_press: impl Fn() + Send + 'static) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
+    let _ = std::thread::Builder::new().name("limita-hotkey".into()).spawn(move || unsafe {
+        if RegisterHotKey(std::ptr::null_mut(), 1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, u32::from(b'H')) == 0 {
+            return;
+        }
+        let mut message: MSG = std::mem::zeroed();
+        while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
+            if message.message == WM_HOTKEY {
+                on_press();
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+pub fn register_hover_hotkey(_: impl Fn() + Send + 'static) {}

@@ -129,6 +129,19 @@ struct ExpandedView: View {
             }
 
             Button {
+                store.hoverEnabled.toggle()
+            } label: {
+                ZStack {
+                    Circle().fill(Color.white.opacity(0.08))
+                    HoverPillGlyph(crossedOut: store.hoverEnabled)
+                }
+                .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
+            }
+            .buttonStyle(.plain)
+            .help(store.hoverEnabled ? "Turn off the hover pill (⌃⌥H)" : "Turn on the hover pill (⌃⌥H)")
+            .accessibilityLabel(store.hoverEnabled ? "Turn off hover pill" : "Turn on hover pill")
+
+            Button {
                 store.showsMenuBarIcon.toggle()
             } label: {
                 ZStack {
@@ -394,17 +407,37 @@ struct MenuBarIconGlyph: View {
                 .resizable()
                 .renderingMode(.template)
                 .frame(width: 13, height: 13)
-            if crossedOut {
-                // The dark rim cuts the glyph so the slash reads at this size.
-                Capsule()
-                    .fill(Color(white: 0.08))
-                    .frame(width: 4, height: 19)
-                    .rotationEffect(.degrees(-45))
-                Capsule()
-                    .fill(Color.white)
-                    .frame(width: 1.6, height: 18)
-                    .rotationEffect(.degrees(-45))
-            }
+            if crossedOut { GlyphSlash() }
+        }
+    }
+}
+
+/// The hover-pill toggle: a cursor, crossed out while the pill is on (the button turns it off).
+struct HoverPillGlyph: View {
+    let crossedOut: Bool
+
+    var body: some View {
+        ZStack {
+            Image(systemName: "cursorarrow")
+                .font(.system(size: 11, weight: .bold))
+            if crossedOut { GlyphSlash() }
+        }
+    }
+}
+
+/// A slash over a header-button glyph. The dark rim cuts the glyph so the slash reads
+/// at this size.
+struct GlyphSlash: View {
+    var body: some View {
+        ZStack {
+            Capsule()
+                .fill(Color(white: 0.08))
+                .frame(width: 4, height: 19)
+                .rotationEffect(.degrees(-45))
+            Capsule()
+                .fill(Color.white)
+                .frame(width: 1.6, height: 18)
+                .rotationEffect(.degrees(-45))
         }
     }
 }

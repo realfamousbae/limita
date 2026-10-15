@@ -8,6 +8,7 @@ import type { Meter, Mode, PanelView, ServiceView } from "./view";
 
 let mode: Mode = "hidden";
 let view: PanelView | null = null;
+let hoverPill = true;
 let reported = "";
 
 const app = document.getElementById("app")!;
@@ -72,6 +73,10 @@ function dashboard(current: PanelView): HTMLElement {
   (refresh as HTMLButtonElement).disabled = current.isRefreshing;
   refresh.addEventListener("click", () => invoke("refresh"));
 
+  const hover = el("button", `round${hoverPill ? " crossed" : ""}`, icon("cursor"));
+  hover.title = hoverPill ? "Turn off the hover pill (Ctrl+Alt+H)" : "Turn on the hover pill (Ctrl+Alt+H)";
+  hover.addEventListener("click", () => invoke("toggle_hover_pill"));
+
   const glyph = el("span", "app-glyph");
   // Titles left, buttons right; prime-time badges, when any, between them with equal gaps.
   const header = el(
@@ -79,7 +84,7 @@ function dashboard(current: PanelView): HTMLElement {
     "",
     el("div", "header-side", glyph, el("div", "titles", el("div", "app-name", "LIMITA"), el("div", "caption", "AI USAGE MONITOR"))),
     el("div", "prime-badges", ...current.primeTime.map(primeTimeBadge)),
-    el("div", "header-side end", current.services.length > 0 && refresh),
+    el("div", "header-side end", hover, current.services.length > 0 && refresh),
   );
 
   const body =
@@ -200,14 +205,19 @@ function sizeMeters(longest: string) {
 
 async function start() {
   await document.fonts.load('10px "JetBrains Mono"');
-  const current = await invoke<{ mode: Mode; view: PanelView }>("current");
+  const current = await invoke<{ mode: Mode; hoverPill: boolean; view: PanelView }>("current");
   view = current.view;
   mode = current.mode;
+  hoverPill = current.hoverPill;
   sizeMeters(view.longestResetText);
   render(true);
 
   await listen<PanelView>("view", (event) => {
     view = event.payload;
+    render();
+  });
+  await listen<{ enabled: boolean }>("hover-pill", (event) => {
+    hoverPill = event.payload.enabled;
     render();
   });
   await listen<{ mode: Mode }>("panel-mode", (event) => {

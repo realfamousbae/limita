@@ -126,6 +126,14 @@ impl Store {
         Self::new(Sources::standard(cli_path), settings::detect_installed_here, on_change)
     }
 
+    pub fn hover_pill(&self) -> bool {
+        self.sources.settings.hover_pill()
+    }
+
+    pub fn set_hover_pill(&self, enabled: bool) {
+        self.sources.settings.set_hover_pill(enabled);
+    }
+
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }

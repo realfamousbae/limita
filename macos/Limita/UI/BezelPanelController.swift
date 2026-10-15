@@ -63,7 +63,10 @@ final class BezelPanelController {
     private let store: LimitsStore
     private let model = PanelModel()
     private let panel: NSPanel
-    private var monitors: [Any] = []
+    /// Watches mouse movement; installed only while the hover pill is on.
+    private var moveMonitors: [Any] = []
+    /// Closes the panel on a click elsewhere; installed only while the panel is open.
+    private var clickMonitor: Any?
     private var screenObserver: NSObjectProtocol?
     private var spaceObserver: NSObjectProtocol?
     private var dwellTimer: Timer?
@@ -105,7 +108,7 @@ final class BezelPanelController {
         hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
 
-        installMonitors()
+        setHoverEnabled(store.hoverEnabled)
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -137,6 +140,7 @@ final class BezelPanelController {
     private func forgetOffscreenPanel() {
         if model.state != .hidden, !isOnScreen {
             model.state = .hidden
+            removeClickMonitor()
         }
     }
 
@@ -213,26 +217,44 @@ final class BezelPanelController {
 
     // MARK: - Mouse tracking
 
-    private func installMonitors() {
-        let moved: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: moved, handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.mouseMoved(to: NSEvent.mouseLocation) }
-        }) {
-            monitors.append(global)
+    /// Turns hover tracking on or off. Off removes the mouse-move monitors altogether,
+    /// so Limita is not woken by mouse movement.
+    func setHoverEnabled(_ enabled: Bool) {
+        if enabled {
+            guard moveMonitors.isEmpty else { return }
+            let moved: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
+            if let global = NSEvent.addGlobalMonitorForEvents(matching: moved, handler: { [weak self] _ in
+                MainActor.assumeIsolated { self?.mouseMoved(to: NSEvent.mouseLocation) }
+            }) {
+                moveMonitors.append(global)
+            }
+            if let local = NSEvent.addLocalMonitorForEvents(matching: moved, handler: { [weak self] event in
+                MainActor.assumeIsolated { self?.mouseMoved(to: NSEvent.mouseLocation) }
+                return event
+            }) {
+                moveMonitors.append(local)
+            }
+        } else {
+            moveMonitors.forEach(NSEvent.removeMonitor)
+            moveMonitors = []
+            cancel(&dwellTimer)
+            cancel(&hideTimer)
+            if model.state == .pill { hide() }
         }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: moved, handler: { [weak self] event in
-            MainActor.assumeIsolated { self?.mouseMoved(to: NSEvent.mouseLocation) }
-            return event
-        }) {
-            monitors.append(local)
-        }
-        // Clicks in other apps close the panel. Clicks inside Limita arrive locally and
-        // are handled by the panel or the status item.
-        if let clicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+    }
+
+    /// Clicks in other apps close the panel. Clicks inside Limita arrive locally and
+    /// are handled by the panel or the status item.
+    private func installClickMonitor() {
+        guard clickMonitor == nil else { return }
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated { self?.hide() }
-        }) {
-            monitors.append(clicks)
         }
+    }
+
+    private func removeClickMonitor() {
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        clickMonitor = nil
     }
 
     private func mouseMoved(to point: CGPoint) {
@@ -312,6 +334,7 @@ final class BezelPanelController {
         switch state {
         case .hidden:
             model.state = .hidden
+            removeClickMonitor()
             store.setupMessage = nil
             guard animated else {
                 panel.alphaValue = 0
@@ -334,6 +357,7 @@ final class BezelPanelController {
             let wasHidden = model.state == .hidden
             panel.setFrame(layout.frame(size: size, anchorX: anchorX), display: false)
             model.state = state
+            installClickMonitor()
             if wasHidden { panel.alphaValue = 0 }
             panel.orderFrontRegardless()
             NSAnimationContext.runAnimationGroup { context in

@@ -29,16 +29,41 @@ impl Default for ServiceSettings {
 struct Stored {
     /// Absent until the first launch has stored its detection.
     enabled_services: Option<Vec<String>>,
+    /// Absent means on.
+    hover_pill: Option<bool>,
 }
 
 impl ServiceSettings {
-    /// The stored set, or the result of `detect` on first launch (which is then stored).
-    pub fn load(&self, detect: impl FnOnce() -> BTreeSet<Service>) -> BTreeSet<Service> {
-        let stored = std::fs::read(&self.file)
+    fn read(&self) -> Stored {
+        std::fs::read(&self.file)
             .ok()
             .and_then(|data| serde_json::from_slice::<Stored>(&data).ok())
-            .and_then(|stored| stored.enabled_services);
-        if let Some(raw) = stored {
+            .unwrap_or_default()
+    }
+
+    fn write(&self, stored: &Stored) {
+        if let Some(parent) = self.file.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_vec_pretty(stored) {
+            let _ = crate::claude_cache::write_atomically(&self.file, &json);
+        }
+    }
+
+    /// Whether the cursor at the screen edge shows the pill. On unless the user turned it off.
+    pub fn hover_pill(&self) -> bool {
+        self.read().hover_pill.unwrap_or(true)
+    }
+
+    pub fn set_hover_pill(&self, enabled: bool) {
+        let mut stored = self.read();
+        stored.hover_pill = Some(enabled);
+        self.write(&stored);
+    }
+
+    /// The stored set, or the result of `detect` on first launch (which is then stored).
+    pub fn load(&self, detect: impl FnOnce() -> BTreeSet<Service>) -> BTreeSet<Service> {
+        if let Some(raw) = self.read().enabled_services {
             return raw.iter().filter_map(|id| Service::from_id(id)).collect();
         }
         let detected = detect();
@@ -47,15 +72,9 @@ impl ServiceSettings {
     }
 
     pub fn save(&self, services: &BTreeSet<Service>) {
-        let stored = Stored {
-            enabled_services: Some(services.iter().map(|s| s.id().to_string()).collect()),
-        };
-        if let Some(parent) = self.file.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(json) = serde_json::to_vec_pretty(&stored) {
-            let _ = crate::claude_cache::write_atomically(&self.file, &json);
-        }
+        let mut stored = self.read();
+        stored.enabled_services = Some(services.iter().map(|s| s.id().to_string()).collect());
+        self.write(&stored);
     }
 }
 
@@ -92,6 +111,17 @@ mod tests {
 
         settings.save(&BTreeSet::new());
         assert_eq!(settings.load(|| [Service::Claude].into()), BTreeSet::new(), "an empty choice is kept");
+    }
+
+    #[test]
+    fn hover_pill_defaults_on_and_survives_service_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = ServiceSettings { file: dir.path().join("settings.json") };
+        assert!(settings.hover_pill());
+        settings.set_hover_pill(false);
+        settings.save(&[Service::Codex].into());
+        assert!(!settings.hover_pill(), "saving services keeps the hover choice");
+        assert_eq!(settings.load(BTreeSet::new), [Service::Codex].into());
     }
 
     #[test]

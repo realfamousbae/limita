@@ -6,6 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panelController: BezelPanelController?
     private var statusItem: NSStatusItem?
     private var dashboardHotKey: GlobalHotKey?
+    private var hoverHotKey: GlobalHotKey?
+    private var hoverMenuItem: NSMenuItem?
     private let menu = NSMenu()
     /// One Connect/Disconnect row per service, in display order.
     private var serviceMenuItems: [Service: NSMenuItem] = [:]
@@ -22,6 +24,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             modifiers: GlobalHotKey.dashboard.carbonModifiers
         ) { [weak self] in
             self?.panelController?.toggleFromShortcut()
+        }
+        store.onHoverEnabledChange = { [weak self] enabled in
+            self?.panelController?.setHoverEnabled(enabled)
+        }
+        hoverHotKey = GlobalHotKey(
+            id: 2,
+            keyCode: GlobalHotKey.hoverToggle.keyCode,
+            modifiers: GlobalHotKey.hoverToggle.carbonModifiers
+        ) { [weak self] in
+            self?.store.hoverEnabled.toggle()
         }
         setupStatusItem()
 
@@ -74,6 +86,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             show.keyEquivalentModifierMask = GlobalHotKey.dashboardModifiers
         }
         menu.addItem(withTitle: "Refresh", action: #selector(refreshData), keyEquivalent: "r")
+        let hover = menu.addItem(withTitle: "Hover Pill", action: #selector(toggleHover), keyEquivalent: "")
+        if hoverHotKey != nil {
+            hover.keyEquivalent = GlobalHotKey.hoverToggleKeyEquivalent
+            hover.keyEquivalentModifierMask = GlobalHotKey.dashboardModifiers
+        }
+        hoverMenuItem = hover
         menu.addItem(.separator())
         for service in Service.allCases {
             let item = NSMenuItem(title: "", action: #selector(toggleService(_:)), keyEquivalent: "")
@@ -106,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        hoverMenuItem?.state = store.hoverEnabled ? .on : .off
         for (service, item) in serviceMenuItems {
             item.title = Self.menuTitle(for: service, connected: store.isEnabled(service))
         }
@@ -126,6 +145,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func refreshData() {
         store.refresh(live: true)
+    }
+
+    @objc private func toggleHover() {
+        store.hoverEnabled.toggle()
     }
 
     @objc private func toggleService(_ sender: NSMenuItem) {

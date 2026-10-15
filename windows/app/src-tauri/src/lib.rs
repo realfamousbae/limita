@@ -28,12 +28,13 @@ use tray::Tray;
 #[serde(rename_all = "camelCase")]
 struct Current {
     mode: Mode,
+    hover_pill: bool,
     view: view::PanelView,
 }
 
 #[tauri::command(async)]
 fn current(panel: State<'_, Arc<Panel>>, store: State<'_, Store>) -> Current {
-    Current { mode: panel.mode(), view: view::panel(&store.snapshot(), Utc::now()) }
+    Current { mode: panel.mode(), hover_pill: panel.hover_pill(), view: view::panel(&store.snapshot(), Utc::now()) }
 }
 
 #[tauri::command(async)]
@@ -56,6 +57,11 @@ fn dismiss_setup(store: State<'_, Store>) {
 #[tauri::command(async)]
 fn expand(panel: State<'_, Arc<Panel>>) {
     panel.expand();
+}
+
+#[tauri::command(async)]
+fn toggle_hover_pill(panel: State<'_, Arc<Panel>>) {
+    panel.toggle_hover_pill();
 }
 
 #[tauri::command(async)]
@@ -114,6 +120,7 @@ pub fn run() {
             dismiss_setup,
             expand,
             hide_panel,
+            toggle_hover_pill,
             panel_resized
         ])
         .setup(|app| {
@@ -145,6 +152,8 @@ pub fn run() {
 
             run_view_loop(handle, store.clone(), tray, changes);
             panel.start_hover_tracking();
+            let hotkey_panel = panel.clone();
+            platform::register_hover_hotkey(move || hotkey_panel.toggle_hover_pill());
             store.start_auto_refresh();
             Ok(())
         })
