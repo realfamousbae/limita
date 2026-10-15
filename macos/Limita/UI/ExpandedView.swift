@@ -591,7 +591,7 @@ private struct BurningGauge: View {
 }
 
 /// The badge animation: every frame in one sprite sheet, `prime-time.webp`, shared with
-/// the Windows app. Built by `scripts/prime-time-sprite.sh`; the numbers here must match it.
+/// the Windows app. Built by `scripts/prime-time-sprite.sh` at the repo root; the numbers here must match it.
 enum PrimeTimeSprite {
     static let fps: Double = 24
     static let columns = 14

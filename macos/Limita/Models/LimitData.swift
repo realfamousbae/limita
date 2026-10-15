@@ -196,7 +196,7 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
         showsRemaining ? "left" : "used"
     }
 
-    /// The service's logo in the asset catalog; sources in `design/`.
+    /// The service's logo in the asset catalog; sources in `assets/design/`.
     var logoName: String {
         switch self {
         case .codex: "CodexLogo"

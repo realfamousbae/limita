@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Renders the DMG window background from design/dmg-background-source.webp.
+"""Renders the DMG window background from ../assets/design/dmg-background-source.webp.
 
 Adds the icon frames, light plates under the labels (Finder always draws
 labels in dark text) and the arrow, and writes dmg/background.png (660x440)
@@ -11,7 +11,7 @@ from pathlib import Path
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = ROOT / "design" / "dmg-background-source.webp"
+SOURCE = ROOT.parent / "assets" / "design" / "dmg-background-source.webp"
 OUT = ROOT / "dmg"
 
 WIDTH, HEIGHT = 660, 440          # window content size, pt

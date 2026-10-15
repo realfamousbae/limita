@@ -35,7 +35,7 @@ function dot(level: string | null, stale: boolean): HTMLElement {
   return el("span", `dot ${level ?? "none"}${stale ? " stale" : ""}`);
 }
 
-/** The service's logo; sources in macos/design/. */
+/** The service's logo; sources in assets/design/, copies via scripts/sync-assets.sh. */
 function logo(service: ServiceView["id"]): HTMLElement {
   const img = document.createElement("img");
   img.className = "logo";

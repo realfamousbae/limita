@@ -157,7 +157,7 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Release build
 
 `macos/Limita.xcodeproj` is generated from `macos/project.yml`. Run `xcodegen generate` after adding or removing files.
 
-`macos/scripts/make-dmg.sh` builds a Release copy and packages it as `macos/build/Limita-<version>.dmg` with the drag-to-install window. Its background is rendered from `macos/design/dmg-background-source.webp` by `macos/scripts/dmg-background.py` (needs Pillow); rerun that after changing the layout. The prime-time badge animation, `prime-time.webp` for both apps, is built from `macos/design/prime-time-source.webm` by `macos/scripts/prime-time-sprite.sh` (needs ffmpeg and cwebp).
+`macos/scripts/make-dmg.sh` builds a Release copy and packages it as `macos/build/Limita-<version>.dmg` with the drag-to-install window. Its background is rendered from `assets/design/dmg-background-source.webp` by `macos/scripts/dmg-background.py` (needs Pillow); rerun that after changing the layout. The prime-time badge animation, `prime-time.webp` for both apps, is built from `assets/design/prime-time-source.webm` by `scripts/prime-time-sprite.sh` (needs ffmpeg and cwebp). Artwork both apps use (that animation, the status glyph, the service logos) lives once in `assets/shared/`; `scripts/sync-assets.sh` copies it to the asset catalog and the Windows folders, and `--check` verifies the copies.
 
 Live-update failures are logged: `log show --predicate 'subsystem == "com.limita.app"' --last 1h`.
 
@@ -171,9 +171,11 @@ macos/
 │   └── Resources/  app icon, menu-bar icon, bundled font
 ├── Tests/LimitaTests/
 ├── integrations/   the iTerm2 status-bar plugin
-├── scripts/        DMG packaging, prime-time sprite
-└── dmg/, design/   DMG background and artwork sources
+├── scripts/        DMG packaging
+└── dmg/            DMG background
 windows/            the Windows app (Tauri + Rust)
+assets/             artwork shared by both apps (shared/) and its sources (design/)
+scripts/            asset sync, prime-time sprite
 docs/               banners and screenshots
 ```
 

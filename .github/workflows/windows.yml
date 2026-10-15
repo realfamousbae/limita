@@ -3,9 +3,9 @@ name: Windows
 on:
   push:
     branches: ["**"]
-    paths: ["windows/**", ".github/workflows/windows.yml"]
+    paths: ["windows/**", "assets/**", "scripts/**", ".github/workflows/windows.yml"]
   pull_request:
-    paths: ["windows/**", ".github/workflows/windows.yml"]
+    paths: ["windows/**", "assets/**", "scripts/**", ".github/workflows/windows.yml"]
   workflow_dispatch:
   # Used by windows-release.yml.
   workflow_call:
@@ -20,6 +20,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Shared artwork is in sync
+        shell: bash
+        run: ../scripts/sync-assets.sh --check
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

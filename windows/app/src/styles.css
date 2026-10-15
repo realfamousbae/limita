@@ -250,7 +250,7 @@ header {
 }
 
 /* The burning speedometer: `prime-time.webp` holds 196 frames of 78 px in a 14 × 14
-   grid at 24 fps (built by macos/scripts/prime-time-sprite.sh). Shown at 26 px, the
+   grid at 24 fps (built by scripts/prime-time-sprite.sh). Shown at 26 px, the
    sheet is 364 px; x steps through a row while y steps once per row. */
 .burning-gauge {
   width: 26px;
