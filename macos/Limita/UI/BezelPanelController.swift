@@ -44,11 +44,11 @@ final class BezelPanelController {
         }
     }
 
-    /// The dashboard widens while prime-time badges need more room than the columns.
-    static func expandedSize(services: Int, primeTime: [Service] = []) -> CGSize {
+    /// The dashboard widens while the prime-time badge needs more room than the columns.
+    static func expandedSize(services: Int, primeTime: PrimeTimeNotice? = nil) -> CGSize {
         guard services > 0 else { return CGSize(width: 300, height: 210) }
         var width = columnWidth * CGFloat(services)
-        if !primeTime.isEmpty {
+        if let primeTime {
             width = max(width, ExpandedView.headerWidth(primeTime: primeTime).rounded(.up))
         }
         return CGSize(width: width, height: estimatedExpandedHeight)
@@ -147,7 +147,7 @@ final class BezelPanelController {
     private func size(for state: PanelState) -> CGSize {
         let count = store.enabledServices.count
         if state == .pill { return Self.pillSize(services: count) }
-        var size = Self.expandedSize(services: count, primeTime: store.primeTimeServices)
+        var size = Self.expandedSize(services: count, primeTime: store.primeTimeNotice)
         if let measuredHeight { size.height = measuredHeight }
         return size
     }

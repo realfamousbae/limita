@@ -36,8 +36,9 @@ pub fn menu_title(service: Service, connected: bool) -> String {
 }
 
 impl Tray {
-    pub fn create(app: &AppHandle, store: &Store, panel: Arc<Panel>) -> tauri::Result<Arc<Self>> {
-        let show = MenuItem::with_id(app, SHOW, "Show Limits", true, None::<&str>)?;
+    /// `shortcut`: Ctrl+Alt+L was registered, so "Show Limits" shows it as a hint.
+    pub fn create(app: &AppHandle, store: &Store, panel: Arc<Panel>, shortcut: bool) -> tauri::Result<Arc<Self>> {
+        let show = MenuItem::with_id(app, SHOW, "Show Limits", true, shortcut.then_some("Ctrl+Alt+L"))?;
         let refresh = MenuItem::with_id(app, REFRESH, "Refresh", true, None::<&str>)?;
         let services: Vec<_> = Service::ALL
             .into_iter()

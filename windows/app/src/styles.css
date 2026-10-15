@@ -152,12 +152,12 @@ button {
 .dashboard {
   background: #000;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 20px;
+  border-radius: 16px;
   box-sizing: border-box;
   overflow: hidden;
 }
 
-/* `space-between` gives the prime-time badges the same gap to the titles and to the
+/* `space-between` gives the prime-time badge the same gap to the titles and to the
    buttons; `gap` is the least of it. */
 header {
   display: flex;
@@ -175,11 +175,6 @@ header {
 
 .header-side.end {
   justify-content: flex-end;
-}
-
-.prime-badges {
-  display: flex;
-  gap: 12px;
 }
 
 .app-glyph {
@@ -200,9 +195,22 @@ header {
   filter: invert(1);
 }
 
+.name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
 .app-name {
   font-size: 13px;
   letter-spacing: 1.2px;
+}
+
+/* Small and faint: only there so a screenshot tells which version it is. */
+.version {
+  font-size: 8px;
+  letter-spacing: 0.3px;
+  color: var(--faint);
 }
 
 .titles {
@@ -232,6 +240,13 @@ header {
   font-size: 9.5px;
   letter-spacing: 0.3px;
   color: rgba(255, 255, 255, 0.85);
+}
+
+/* The one service in peak hours while another is connected. The font has no bold face;
+   the browser emboldens it. */
+.prime-lines strong {
+  font-weight: 700;
+  color: #fff;
 }
 
 /* The burning speedometer: `prime-time.webp` holds 196 frames of 78 px in a 14 × 14
@@ -319,7 +334,7 @@ header {
 }
 
 .column {
-  /* Grows when prime-time badges make the header wider than the columns. */
+  /* Grows when the prime-time badge makes the header wider than the columns. */
   flex: 1 0 auto;
   width: calc(2 * var(--meter) + 10px);
   padding: 13px 18px;

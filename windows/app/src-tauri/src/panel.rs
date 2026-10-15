@@ -216,6 +216,23 @@ impl Panel {
         self.transition(&mut state, Mode::Dashboard, false, Some(anchor));
     }
 
+    /// Ctrl+Alt+L: hides whatever is open, otherwise opens the dashboard centred at the
+    /// top of the screen the cursor is on, as ⌃⌥L does on macOS.
+    pub fn toggle_from_shortcut(&self) {
+        let mut state = self.lock();
+        if state.mode != Mode::Hidden {
+            self.transition(&mut state, Mode::Hidden, false, None);
+            return;
+        }
+        let screens = self.screens(&mut state);
+        let cursor = self.app.cursor_position().ok();
+        let Some(screen) = cursor.and_then(|c| screen_containing(&screens, c.x, c.y)).or_else(|| screens.first().copied()) else {
+            return;
+        };
+        let x = screen.frame.x + screen.frame.width / 2.0;
+        self.transition(&mut state, Mode::Dashboard, false, Some(Anchor::Top { screen, x }));
+    }
+
     /// The pill was clicked.
     pub fn expand(&self) {
         let mut state = self.lock();

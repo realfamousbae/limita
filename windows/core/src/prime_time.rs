@@ -3,6 +3,8 @@
 
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc, Weekday};
 
+use serde::Serialize;
+
 use crate::model::Service;
 use crate::time::Timestamp;
 
@@ -92,12 +94,43 @@ impl Service {
         }
     }
 
-    /// The prime-time badge's two lines.
-    pub fn prime_time_lines(self) -> [String; 2] {
-        [
-            format!("{} PRIME TIME. WORK", self.display_name().to_uppercase()),
-            "CAN BURN MORE TOKENS AND LIMITS".to_string(),
-        ]
+}
+
+/// The prime-time badge's text: whose peak hours are on and what that means. Port of
+/// `PrimeTimeNotice` in `PrimeTime.swift`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrimeTimeNotice {
+    /// The service in peak hours, in bold, when it must be told apart from the other
+    /// connected services. It starts the first line.
+    pub strong: Option<String>,
+    /// The first line after `strong`.
+    pub title: String,
+    pub detail: String,
+}
+
+impl PrimeTimeNotice {
+    /// `None` when no connected service is in peak hours. One service names itself, in
+    /// bold if another service is connected; every connected service in peak hours at
+    /// once reads as all providers.
+    pub fn new(active: &[Service], connected: &[Service]) -> Option<Self> {
+        let (strong, title) = match active {
+            [] => return None,
+            [service] => {
+                let name = service.display_name().to_uppercase();
+                if connected.len() > 1 {
+                    (Some(name), " PEAK HOURS".to_string())
+                } else {
+                    (None, format!("{name} PEAK HOURS"))
+                }
+            }
+            _ => (None, "PEAK HOURS FOR ALL PROVIDERS".to_string()),
+        };
+        Some(PrimeTimeNotice { strong, title, detail: "USAGE LIMITS RUN OUT FASTER".to_string() })
+    }
+
+    pub fn first_line(&self) -> String {
+        format!("{}{}", self.strong.as_deref().unwrap_or(""), self.title)
     }
 }
 
@@ -148,6 +181,25 @@ mod tests {
         assert_eq!(window.next_change(at("2026-10-07T12:00:00-07:00")), at("2026-10-08T05:00:00-07:00"));
         // Across the switch back to PST on 1 November.
         assert_eq!(window.next_change(at("2026-10-31T12:00:00-07:00")), at("2026-11-01T05:00:00-08:00"));
+    }
+
+    #[test]
+    fn notice_names_the_service_in_peak_hours() {
+        let both = [Service::Claude, Service::Codex];
+        assert_eq!(PrimeTimeNotice::new(&[], &both), None);
+
+        let alone = PrimeTimeNotice::new(&[Service::Claude], &[Service::Claude]).unwrap();
+        assert_eq!(alone.strong, None, "nothing to tell apart with one service");
+        assert_eq!(alone.first_line(), "CLAUDE PEAK HOURS");
+        assert_eq!(alone.detail, "USAGE LIMITS RUN OUT FASTER");
+
+        let one = PrimeTimeNotice::new(&[Service::Codex], &both).unwrap();
+        assert_eq!(one.strong.as_deref(), Some("CODEX"), "bold when another service is connected");
+        assert_eq!(one.first_line(), "CODEX PEAK HOURS");
+
+        let all = PrimeTimeNotice::new(&both, &both).unwrap();
+        assert_eq!(all.strong, None);
+        assert_eq!(all.first_line(), "PEAK HOURS FOR ALL PROVIDERS");
     }
 
     #[test]

@@ -26,13 +26,13 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 - **Hover pill.** Rest the cursor at the top edge of any screen and a compact pill slides in with each service's 5-hour limit. Click it for the full dashboard.
 - **Stays away from the notch.** The camera housing plus 80 pt on each side is left to other apps: nothing triggers or draws there.
 - **Menu bar.** Left-click the icon for the dashboard, right-click for the menu. Clicking elsewhere closes it. The button next to **↻** in the dashboard hides or shows the icon until Limita quits; the icon is back on every launch.
-- **Keyboard shortcut.** **⌃⌥L** opens the dashboard at the top of the screen from any app, a terminal included; press it again to close it.
+- **Keyboard shortcut.** **⌃⌥L** (**Ctrl+Alt+L** on Windows) opens the dashboard at the top of the screen from any app, a terminal included; press it again to close it.
 - **iTerm2 status bar.** An optional plugin shows your 5-hour and weekly limits in iTerm2's status bar while Claude Code or Codex runs in the tab, and a click on them opens the dashboard. See [iTerm2](#iterm2).
 - **Only what you use.** Connect or disconnect Claude Code and Codex from the menu; disconnected services are neither shown nor queried. On first launch Limita connects whatever it finds installed.
 - **Live numbers.** Claude is queried every 3 minutes, Codex every 5 minutes, and both on **Refresh**; local sources are re-read every minute.
 - **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits); Claude usage credits and cloud session credits. Rows a service does not report are hidden.
 - **Readable at a glance.** Claude shows what is **used**, Codex what is **left**, and the dashboard labels which is which. Each service's dot follows its 5-hour limit: green, yellow from 70 % used (30 % left), red from 90 %; stale data keeps its colour, dimmed. Percentages stay plain white, and the dashboard counts down to each reset to the minute. If a live update fails, the reason is shown right in the dashboard.
-- **Prime time.** During a service's peak hours, when work can burn through limits faster, the dashboard header shows a burning-gauge badge. Claude: weekdays 5–11 AM Pacific time; Codex: weekdays 12:00–18:00 UTC. Both are shown in your local time.
+- **Prime time.** During a service's peak hours, when usage limits run out faster, the dashboard header shows a burning-gauge badge: "CLAUDE PEAK HOURS" with one service connected, the name in bold when only one of two connected services is in peak hours, "PEAK HOURS FOR ALL PROVIDERS" when both are. Claude: weekdays 5–11 AM Pacific time; Codex: weekdays 12:00–18:00 UTC. Both are shown in your local time.
 - Multiple displays and full-screen Spaces. JetBrains Mono everywhere.
 
 # Screenshots
@@ -40,12 +40,12 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 This is how Limita looks on your Mac.
 
 <p align="center">
-  <img src="docs/screenshots/pill-claude-desktop.png" alt="Pill with Claude on the desktop" width="303">
-  <img src="docs/screenshots/pill-menu-bar.png" alt="Pill with both services under the menu bar" width="512">
+  <img src="docs/screenshots/pill-claude-desktop.png" alt="Pill with Claude under the menu bar" width="303">
+  <img src="docs/screenshots/pill-menu-bar.png" alt="Pill with both services under the menu bar" width="549">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/dashboard-claude-desktop.png" alt="Dashboard with Claude only" width="820">
+  <img src="docs/screenshots/dashboard-claude-desktop.png" alt="Dashboard with Claude only, in peak hours" width="757">
 </p>
 
 <p align="center">

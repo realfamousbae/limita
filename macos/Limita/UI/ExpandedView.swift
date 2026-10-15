@@ -71,23 +71,33 @@ struct ExpandedView: View {
     private static let appNameTracking: CGFloat = 1.2
     private static let appCaption = "AI USAGE MONITOR"
 
-    /// Space between prime-time badges.
-    private static let badgeGap: CGFloat = 12
+    private static let versionSize: CGFloat = 8
+    private static let versionGap: CGFloat = 5
+    /// "v0.6.0" next to the app name, so a screenshot tells which version it is. Empty
+    /// when the bundle has no version (e.g. `swift test`).
+    static let versionText: String = {
+        guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              !version.isEmpty
+        else { return "" }
+        return "v\(version)"
+    }()
 
-    /// Width the header needs with `primeTime` badges between the titles and the
+    /// Width the header needs with the `primeTime` badge between the titles and the
     /// buttons, the same gap on either side. The panel widens to it when the columns
     /// alone are narrower.
-    static func headerWidth(primeTime services: [Service]) -> CGFloat {
-        guard !services.isEmpty else { return 0 }
+    static func headerWidth(primeTime: PrimeTimeNotice) -> CGFloat {
+        var name = textWidth("LIMITA", font: AppFont.ns(appNameSize), tracking: appNameTracking)
+        if !versionText.isEmpty {
+            name += versionGap + textWidth(versionText, font: AppFont.ns(versionSize), tracking: DashboardStyle.captionTracking)
+        }
         let titles = max(
-            textWidth("LIMITA", font: AppFont.ns(appNameSize), tracking: appNameTracking),
+            name,
             textWidth(appCaption, font: AppFont.ns(DashboardStyle.captionSize), tracking: DashboardStyle.captionTracking)
         )
         let left = appGlyphSize + headerSpacing + titles
-        let right = 2 * headerButtonSize + headerSpacing
-        let badges = services.map(PrimeTimeBadge.width).reduce(0, +) + badgeGap * CGFloat(services.count - 1)
-        // Each side of the badges: a spacer of zero or more between two header spacings.
-        return 2 * headerPadding + left + right + badges + 4 * headerSpacing
+        let right = 3 * headerButtonSize + 2 * headerSpacing
+        // Each side of the badge: a spacer of zero or more between two header spacings.
+        return 2 * headerPadding + left + right + PrimeTimeBadge.width(primeTime) + 4 * headerSpacing
     }
 
     static func textWidth(_ text: String, font: NSFont, tracking: CGFloat) -> CGFloat {
@@ -109,21 +119,25 @@ struct ExpandedView: View {
             .frame(width: Self.appGlyphSize, height: Self.appGlyphSize)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("LIMITA")
-                    .font(.app(Self.appNameSize))
-                    .tracking(Self.appNameTracking)
+                HStack(alignment: .firstTextBaseline, spacing: Self.versionGap) {
+                    Text("LIMITA")
+                        .font(.app(Self.appNameSize))
+                        .tracking(Self.appNameTracking)
+                    if !Self.versionText.isEmpty {
+                        Text(Self.versionText)
+                            .font(.app(Self.versionSize))
+                            .tracking(DashboardStyle.captionTracking)
+                            .foregroundStyle(DashboardStyle.faintCaption)
+                    }
+                }
                 Text(Self.appCaption)
                     .caption()
             }
 
             Spacer(minLength: 0)
 
-            if !store.primeTimeServices.isEmpty {
-                HStack(spacing: Self.badgeGap) {
-                    ForEach(store.primeTimeServices) { service in
-                        PrimeTimeBadge(service: service)
-                    }
-                }
+            if let notice = store.primeTimeNotice {
+                PrimeTimeBadge(notice: notice)
 
                 Spacer(minLength: 0)
             }
@@ -133,7 +147,7 @@ struct ExpandedView: View {
             } label: {
                 ZStack {
                     Circle().fill(Color.white.opacity(0.08))
-                    HoverPillGlyph(crossedOut: store.hoverEnabled)
+                    HoverPillGlyph(crossedOut: !store.hoverEnabled)
                 }
                 .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
             }
@@ -146,7 +160,7 @@ struct ExpandedView: View {
             } label: {
                 ZStack {
                     Circle().fill(Color.white.opacity(0.08))
-                    MenuBarIconGlyph(crossedOut: store.showsMenuBarIcon)
+                    MenuBarIconGlyph(crossedOut: !store.showsMenuBarIcon)
                 }
                 .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
             }
@@ -396,8 +410,8 @@ struct ExpandedView: View {
 
 // MARK: - Pieces
 
-/// The app glyph on the menu-bar toggle: crossed out while the icon is shown (the button
-/// hides it), plain while it is hidden (the button brings it back).
+/// The app glyph on the menu-bar toggle shows the current state: plain while the icon is
+/// shown, crossed out while it is hidden.
 struct MenuBarIconGlyph: View {
     let crossedOut: Bool
 
@@ -412,7 +426,7 @@ struct MenuBarIconGlyph: View {
     }
 }
 
-/// The hover-pill toggle: a cursor, crossed out while the pill is on (the button turns it off).
+/// The hover-pill toggle: a cursor, plain while the pill is on, crossed out while it is off.
 struct HoverPillGlyph: View {
     let crossedOut: Bool
 
@@ -497,40 +511,40 @@ struct ServiceBadge: View {
     }
 }
 
-/// Says that `service` is in its peak hours, when work burns through its limits faster.
+/// Says that a service is in its peak hours, when work burns through its limits faster.
 /// Sits in the header between the titles and the buttons.
 struct PrimeTimeBadge: View {
-    let service: Service
+    let notice: PrimeTimeNotice
 
     private static let iconSize: CGFloat = 26
     private static let spacing: CGFloat = 9
     private static let horizontalPadding: CGFloat = 14
     private static let verticalPadding: CGFloat = 7
+    /// The app font has no bold face, so bold is the text drawn again this far to the right.
+    private static let boldOffset: CGFloat = 0.5
 
     /// Room the badge takes, known before SwiftUI lays it out so the panel can be sized.
     /// A little slack covers SwiftUI's tracking, which measures wider than AppKit's.
-    static func width(_ service: Service) -> CGFloat {
-        let (first, second) = service.primeTimeLines
+    static func width(_ notice: PrimeTimeNotice) -> CGFloat {
         let font = AppFont.ns(DashboardStyle.captionSize)
         let text = max(
-            ExpandedView.textWidth(first, font: font, tracking: DashboardStyle.captionTracking),
-            ExpandedView.textWidth(second, font: font, tracking: DashboardStyle.captionTracking)
+            ExpandedView.textWidth(notice.firstLine, font: font, tracking: DashboardStyle.captionTracking) + boldOffset,
+            ExpandedView.textWidth(notice.detail, font: font, tracking: DashboardStyle.captionTracking)
         )
         return 2 * horizontalPadding + iconSize + spacing + text + 6
     }
 
     var body: some View {
-        let (first, second) = service.primeTimeLines
         HStack(alignment: .center, spacing: Self.spacing) {
             BurningGauge()
                 .frame(width: Self.iconSize, height: Self.iconSize)
             VStack(alignment: .leading, spacing: 2) {
-                Text(first)
-                Text(second)
+                firstLine
+                Text(notice.detail)
+                    .foregroundStyle(.white.opacity(0.85))
             }
             .font(.app(DashboardStyle.captionSize))
             .tracking(DashboardStyle.captionTracking)
-            .foregroundStyle(.white.opacity(0.85))
         }
         .padding(.horizontal, Self.horizontalPadding)
         .padding(.vertical, Self.verticalPadding)
@@ -539,7 +553,23 @@ struct PrimeTimeBadge: View {
         .background(Capsule().fill(DashboardStyle.primeTime.opacity(0.10)))
         .overlay(Capsule().stroke(DashboardStyle.primeTime.opacity(0.35), lineWidth: 1))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(first) \(second)")
+        .accessibilityLabel("\(notice.firstLine) \(notice.detail)")
+    }
+
+    /// The service name, when there is one, in bright bold: a second copy of the line,
+    /// shifted right, with everything but the name transparent.
+    @ViewBuilder
+    private var firstLine: some View {
+        let rest = Text(notice.title).foregroundColor(.white.opacity(0.85))
+        if let strong = notice.strong {
+            ZStack(alignment: .leading) {
+                Text(strong).foregroundColor(.white) + rest
+                (Text(strong).foregroundColor(.white) + Text(notice.title).foregroundColor(.clear))
+                    .offset(x: Self.boldOffset)
+            }
+        } else {
+            rest
+        }
     }
 }
 
@@ -675,7 +705,7 @@ enum DashboardStyle {
     static let healthy = Color(red: 0.32, green: 0.92, blue: 0.58)
     /// The prime-time badge's outline, matching the flames of its animation.
     static let primeTime = Color(red: 1, green: 0.45, blue: 0.18)
-    static let cornerRadius: CGFloat = 20
+    static let cornerRadius: CGFloat = 16
 
     /// Small uppercase labels. Sized and tinted for ~4.5:1 contrast on black.
     static let captionSize: CGFloat = 9.5

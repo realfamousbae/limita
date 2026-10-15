@@ -27,6 +27,10 @@ final class LimitsStore {
     private(set) var isRefreshing = false
     /// Enabled services whose peak hours are on now, in display order.
     private(set) var primeTimeServices: [Service] = []
+    /// What the prime-time badge says, `nil` while no badge shows.
+    var primeTimeNotice: PrimeTimeNotice? {
+        PrimeTimeNotice(active: primeTimeServices, connected: enabledServices)
+    }
     /// Result of the last connect/disconnect, for the service it concerns.
     var setupMessage: (service: Service, text: String)?
     /// Whether the menu-bar icon is shown. Not saved: every launch starts with the icon,

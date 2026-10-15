@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::model::{
     longest_reset_text, AccountDetails, LimitLevel, LimitWindow, Service, ServiceState, UsageCredits,
 };
+use crate::prime_time::PrimeTimeNotice;
 use crate::store::Snapshot;
 use crate::time::{relative_text, seconds_between, Timestamp};
 
@@ -20,15 +21,8 @@ pub struct PanelView {
     pub pill: Vec<PillItem>,
     /// Sizes both meters to the longest countdown, so it always fits on one line.
     pub longest_reset_text: String,
-    /// Enabled services in their peak hours, for the header badges.
-    pub prime_time: Vec<PrimeTimeBadge>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PrimeTimeBadge {
-    pub id: Service,
-    pub lines: [String; 2],
+    /// The header badge while an enabled service is in its peak hours.
+    pub prime_time: Option<PrimeTimeNotice>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -135,12 +129,15 @@ pub fn panel(snapshot: &Snapshot, now: Timestamp) -> PanelView {
         is_refreshing: snapshot.is_refreshing,
         pill,
         longest_reset_text: longest_reset_text().to_uppercase(),
-        prime_time: snapshot
-            .enabled
-            .iter()
-            .filter(|service| service.prime_time().is_some_and(|window| window.contains(now)))
-            .map(|&id| PrimeTimeBadge { id, lines: id.prime_time_lines() })
-            .collect(),
+        prime_time: {
+            let active: Vec<Service> = snapshot
+                .enabled
+                .iter()
+                .copied()
+                .filter(|service| service.prime_time().is_some_and(|window| window.contains(now)))
+                .collect();
+            PrimeTimeNotice::new(&active, &snapshot.enabled)
+        },
     }
 }
 
@@ -456,19 +453,18 @@ mod tests {
     }
 
     #[test]
-    fn prime_time_badges_for_enabled_services_in_peak_hours() {
+    fn prime_time_badge_for_enabled_services_in_peak_hours() {
         let peak = crate::time::parse_flexible("2026-10-07T06:00:00-07:00").unwrap();
         let quiet = crate::time::parse_flexible("2026-10-07T12:00:00-07:00").unwrap();
         let both = Snapshot { enabled: vec![Service::Claude, Service::Codex], ..Default::default() };
         // 6:00 PT is 13:00 UTC: both services are in their peak hours.
-        let badges = panel(&both, peak).prime_time;
-        assert_eq!(badges.iter().map(|b| b.id).collect::<Vec<_>>(), [Service::Claude, Service::Codex]);
-        assert_eq!(badges[0].lines, ["CLAUDE PRIME TIME. WORK", "CAN BURN MORE TOKENS AND LIMITS"]);
-        assert_eq!(badges[1].lines[0], "CODEX PRIME TIME. WORK");
+        let badge = panel(&both, peak).prime_time.unwrap();
+        assert_eq!(badge.first_line(), "PEAK HOURS FOR ALL PROVIDERS");
+        assert_eq!(badge.detail, "USAGE LIMITS RUN OUT FASTER");
         // 12:00 PT is 19:00 UTC: neither.
-        assert!(panel(&both, quiet).prime_time.is_empty());
-        let claude_only = Snapshot { enabled: vec![Service::Claude], ..Default::default() };
-        assert_eq!(panel(&claude_only, peak).prime_time.len(), 1, "only connected services get a badge");
+        assert_eq!(panel(&both, quiet).prime_time, None);
+        let codex_only = Snapshot { enabled: vec![Service::Codex], ..Default::default() };
+        assert_eq!(panel(&codex_only, peak).prime_time.unwrap().first_line(), "CODEX PEAK HOURS", "only connected services count");
     }
 
     #[test]

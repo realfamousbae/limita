@@ -60,8 +60,39 @@ extension Service {
         }
     }
 
-    /// The prime-time badge's two lines.
-    var primeTimeLines: (String, String) {
-        ("\(displayName.uppercased()) PRIME TIME. WORK", "CAN BURN MORE TOKENS AND LIMITS")
+}
+
+/// The prime-time badge's text: whose peak hours are on and what that means.
+struct PrimeTimeNotice: Equatable {
+    /// The service in peak hours, in bold, when it must be told apart from the other
+    /// connected services. It starts the first line.
+    let strong: String?
+    /// The first line after `strong`.
+    let title: String
+    let detail: String
+
+    var firstLine: String { (strong ?? "") + title }
+
+    static let detailText = "USAGE LIMITS RUN OUT FASTER"
+
+    /// `nil` when no connected service is in peak hours. One service names itself, in
+    /// bold if another service is connected; every connected service in peak hours at
+    /// once reads as all providers.
+    init?(active: [Service], connected: [Service]) {
+        guard !active.isEmpty else { return nil }
+        detail = Self.detailText
+        if active.count == 1, let service = active.first {
+            let name = service.displayName.uppercased()
+            if connected.count > 1 {
+                strong = name
+                title = " PEAK HOURS"
+            } else {
+                strong = nil
+                title = "\(name) PEAK HOURS"
+            }
+        } else {
+            strong = nil
+            title = "PEAK HOURS FOR ALL PROVIDERS"
+        }
     }
 }

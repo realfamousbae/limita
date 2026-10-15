@@ -637,10 +637,29 @@ final class LimitaTests: XCTestCase {
     func testPrimeTimeWidensOnlyNarrowDashboards() {
         let one = BezelPanelController.expandedSize(services: 1)
         let two = BezelPanelController.expandedSize(services: 2)
-        XCTAssertGreaterThan(BezelPanelController.expandedSize(services: 1, primeTime: [.claude]).width, one.width,
+        let claude = PrimeTimeNotice(active: [.claude], connected: [.claude])
+        XCTAssertGreaterThan(BezelPanelController.expandedSize(services: 1, primeTime: claude).width, one.width,
                              "one column is too narrow for the two-line badge")
-        XCTAssertEqual(BezelPanelController.expandedSize(services: 2, primeTime: [.claude, .codex]).width, two.width,
-                       "two columns already fit both badges")
+        let both = PrimeTimeNotice(active: [.claude, .codex], connected: [.claude, .codex])
+        XCTAssertEqual(BezelPanelController.expandedSize(services: 2, primeTime: both).width, two.width,
+                       "two columns already fit the badge")
+    }
+
+    func testPrimeTimeNoticeNamesTheServiceInPeakHours() throws {
+        XCTAssertNil(PrimeTimeNotice(active: [], connected: [.claude, .codex]))
+
+        let alone = try XCTUnwrap(PrimeTimeNotice(active: [.claude], connected: [.claude]))
+        XCTAssertNil(alone.strong, "nothing to tell apart with one service")
+        XCTAssertEqual(alone.firstLine, "CLAUDE PEAK HOURS")
+        XCTAssertEqual(alone.detail, "USAGE LIMITS RUN OUT FASTER")
+
+        let one = try XCTUnwrap(PrimeTimeNotice(active: [.codex], connected: [.claude, .codex]))
+        XCTAssertEqual(one.strong, "CODEX", "bold when another service is connected")
+        XCTAssertEqual(one.firstLine, "CODEX PEAK HOURS")
+
+        let both = try XCTUnwrap(PrimeTimeNotice(active: [.claude, .codex], connected: [.claude, .codex]))
+        XCTAssertNil(both.strong)
+        XCTAssertEqual(both.firstLine, "PEAK HOURS FOR ALL PROVIDERS")
     }
 
     // MARK: - Prime time

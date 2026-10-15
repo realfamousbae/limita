@@ -4,11 +4,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { icons } from "./icons";
-import type { Meter, Mode, PanelView, ServiceView } from "./view";
+import type { Meter, Mode, PanelView, PrimeTimeNotice, ServiceView } from "./view";
 
 let mode: Mode = "hidden";
 let view: PanelView | null = null;
 let hoverPill = true;
+let version = "";
 let reported = "";
 
 const app = document.getElementById("app")!;
@@ -73,17 +74,17 @@ function dashboard(current: PanelView): HTMLElement {
   (refresh as HTMLButtonElement).disabled = current.isRefreshing;
   refresh.addEventListener("click", () => invoke("refresh"));
 
-  const hover = el("button", `round${hoverPill ? " crossed" : ""}`, icon("cursor"));
+  const hover = el("button", `round${hoverPill ? "" : " crossed"}`, icon("cursor"));
   hover.title = hoverPill ? "Turn off the hover pill (Ctrl+Alt+H)" : "Turn on the hover pill (Ctrl+Alt+H)";
   hover.addEventListener("click", () => invoke("toggle_hover_pill"));
 
   const glyph = el("span", "app-glyph");
-  // Titles left, buttons right; prime-time badges, when any, between them with equal gaps.
+  // Titles left, buttons right; the prime-time badge, when shown, between them with equal gaps.
   const header = el(
     "header",
     "",
-    el("div", "header-side", glyph, el("div", "titles", el("div", "app-name", "LIMITA"), el("div", "caption", "AI USAGE MONITOR"))),
-    el("div", "prime-badges", ...current.primeTime.map(primeTimeBadge)),
+    el("div", "header-side", glyph, el("div", "titles", el("div", "name-row", el("span", "app-name", "LIMITA"), version && el("span", "version", `v${version}`)), el("div", "caption", "AI USAGE MONITOR"))),
+    current.primeTime ? primeTimeBadge(current.primeTime) : el("div"),
     el("div", "header-side end", hover, current.services.length > 0 && refresh),
   );
 
@@ -102,7 +103,7 @@ function dashboard(current: PanelView): HTMLElement {
 const GAUGE_LOOP_MS = (196 / 24) * 1000;
 
 /** Says that a service is in its peak hours, when work burns through its limits faster. */
-function primeTimeBadge(badge: PanelView["primeTime"][number]): HTMLElement {
+function primeTimeBadge(notice: PrimeTimeNotice): HTMLElement {
   const gauge = el("span", "burning-gauge");
   // Every view update rebuilds the header; resuming mid-loop keeps the animation smooth.
   gauge.style.animationDelay = `-${Math.round(performance.now() % GAUGE_LOOP_MS)}ms`;
@@ -110,9 +111,14 @@ function primeTimeBadge(badge: PanelView["primeTime"][number]): HTMLElement {
     "div",
     "prime-time",
     gauge,
-    el("div", "prime-lines", el("div", "", badge.lines[0]), el("div", "", badge.lines[1])),
+    el(
+      "div",
+      "prime-lines",
+      el("div", "", notice.strong && el("strong", "", notice.strong), notice.title),
+      el("div", "", notice.detail),
+    ),
   );
-  node.setAttribute("aria-label", badge.lines.join(" "));
+  node.setAttribute("aria-label", `${notice.strong ?? ""}${notice.title} ${notice.detail}`);
   return node;
 }
 
@@ -205,7 +211,8 @@ function sizeMeters(longest: string) {
 
 async function start() {
   await document.fonts.load('10px "JetBrains Mono"');
-  const current = await invoke<{ mode: Mode; hoverPill: boolean; view: PanelView }>("current");
+  const current = await invoke<{ mode: Mode; hoverPill: boolean; version: string; view: PanelView }>("current");
+  version = current.version;
   view = current.view;
   mode = current.mode;
   hoverPill = current.hoverPill;

@@ -101,25 +101,50 @@ pub fn mouse_button_down() -> bool {
     false
 }
 
-/// Ctrl+Alt+H, from any app, turns the hover pill on or off. The thread waits in the
-/// message loop and uses no CPU between presses. Skipped quietly if another app holds the
-/// shortcut.
+/// A system-wide Ctrl+Alt+<letter> shortcut and what it does.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub struct HotKey {
+    pub letter: u8,
+    pub on_press: Box<dyn Fn() + Send>,
+}
+
+/// Registers Ctrl+Alt shortcuts that work from any app: L shows or hides the dashboard,
+/// H turns the hover pill on or off. One thread waits in the message loop and uses no CPU
+/// between presses. Returns, per shortcut, whether it was registered; one another app
+/// holds is skipped quietly.
 #[cfg(windows)]
-pub fn register_hover_hotkey(on_press: impl Fn() + Send + 'static) {
+pub fn register_hotkeys(hotkeys: Vec<HotKey>) -> Vec<bool> {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT};
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
-    let _ = std::thread::Builder::new().name("limita-hotkey".into()).spawn(move || unsafe {
-        if RegisterHotKey(std::ptr::null_mut(), 1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, u32::from(b'H')) == 0 {
+    let count = hotkeys.len();
+    let (sender, registered) = std::sync::mpsc::channel();
+    // A hot key belongs to the thread that registers it, so the loop runs there too.
+    let spawned = std::thread::Builder::new().name("limita-hotkey".into()).spawn(move || unsafe {
+        let ok: Vec<bool> = hotkeys
+            .iter()
+            .enumerate()
+            .map(|(id, key)| RegisterHotKey(std::ptr::null_mut(), id as i32 + 1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, u32::from(key.letter)) != 0)
+            .collect();
+        let _ = sender.send(ok.clone());
+        if !ok.contains(&true) {
             return;
         }
         let mut message: MSG = std::mem::zeroed();
         while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
             if message.message == WM_HOTKEY {
-                on_press();
+                if let Some(key) = hotkeys.get((message.wParam as usize).wrapping_sub(1)) {
+                    (key.on_press)();
+                }
             }
         }
     });
+    match spawned {
+        Ok(_) => registered.recv().unwrap_or_else(|_| vec![false; count]),
+        Err(_) => vec![false; count],
+    }
 }
 
 #[cfg(not(windows))]
-pub fn register_hover_hotkey(_: impl Fn() + Send + 'static) {}
+pub fn register_hotkeys(hotkeys: Vec<HotKey>) -> Vec<bool> {
+    vec![false; hotkeys.len()]
+}

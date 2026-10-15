@@ -29,12 +29,19 @@ use tray::Tray;
 struct Current {
     mode: Mode,
     hover_pill: bool,
+    /// Shown next to the app name, so a screenshot tells which version it is.
+    version: String,
     view: view::PanelView,
 }
 
 #[tauri::command(async)]
-fn current(panel: State<'_, Arc<Panel>>, store: State<'_, Store>) -> Current {
-    Current { mode: panel.mode(), hover_pill: panel.hover_pill(), view: view::panel(&store.snapshot(), Utc::now()) }
+fn current(app: AppHandle, panel: State<'_, Arc<Panel>>, store: State<'_, Store>) -> Current {
+    Current {
+        mode: panel.mode(),
+        hover_pill: panel.hover_pill(),
+        version: app.package_info().version.to_string(),
+        view: view::panel(&store.snapshot(), Utc::now()),
+    }
 }
 
 #[tauri::command(async)]
@@ -137,7 +144,13 @@ pub fn run() {
             let handle = app.handle().clone();
             let panel = Panel::new(handle.clone(), store.clone());
             app.manage(panel.clone());
-            let tray = Tray::create(&handle, &store, panel.clone())?;
+            let dashboard_panel = panel.clone();
+            let hover_panel = panel.clone();
+            let registered = platform::register_hotkeys(vec![
+                platform::HotKey { letter: b'L', on_press: Box::new(move || dashboard_panel.toggle_from_shortcut()) },
+                platform::HotKey { letter: b'H', on_press: Box::new(move || hover_panel.toggle_hover_pill()) },
+            ]);
+            let tray = Tray::create(&handle, &store, panel.clone(), registered[0])?;
             app.manage(tray.clone());
 
             if let Some(window) = app.get_webview_window(panel::WINDOW) {
@@ -152,8 +165,6 @@ pub fn run() {
 
             run_view_loop(handle, store.clone(), tray, changes);
             panel.start_hover_tracking();
-            let hotkey_panel = panel.clone();
-            platform::register_hover_hotkey(move || hotkey_panel.toggle_hover_pill());
             store.start_auto_refresh();
             Ok(())
         })

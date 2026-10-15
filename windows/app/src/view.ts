@@ -33,5 +33,13 @@ export interface PanelView {
   isRefreshing: boolean;
   pill: { id: Service; level: Level | null; stale: boolean; label: string }[];
   longestResetText: string;
-  primeTime: { id: Service; lines: [string, string] }[];
+  /** The header badge while a connected service is in its peak hours. */
+  primeTime: PrimeTimeNotice | null;
+}
+
+/** `strong`, when set, starts the first line in bold; `title` follows it. */
+export interface PrimeTimeNotice {
+  strong: string | null;
+  title: string;
+  detail: string;
 }
