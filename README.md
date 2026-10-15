@@ -39,13 +39,14 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 
 This is how Limita looks on your Mac.
 
+<!-- The pills sit on one line with no whitespace between them: gap.png makes their gap
+     22 px, the same as the space between paragraphs below, and 293 + 22 + 505 = 820. -->
 <p align="center">
-  <img src="docs/screenshots/pill-claude-desktop.png" alt="Pill with Claude under the menu bar" width="299">
-  <img src="docs/screenshots/pill-menu-bar.png" alt="Pill with both services under the menu bar" width="517">
+  <img src="docs/screenshots/pill-claude.png" alt="Pill with Claude under the menu bar" width="293"><img src="docs/screenshots/gap.png" alt="" width="22" height="1"><img src="docs/screenshots/pill-both.png" alt="Pill with both services under the menu bar" width="505">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/dashboard-claude-desktop.png" alt="Dashboard with Claude only, in peak hours" width="820">
+  <img src="docs/screenshots/dashboard-claude.png" alt="Dashboard with Claude only, in peak hours" width="820">
 </p>
 
 <p align="center">
