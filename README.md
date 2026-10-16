@@ -120,6 +120,14 @@ So after a long break from Claude Code, typically several hours, Claude's number
 
 A long-lived token from `claude setup-token` does not help here: it only allows model requests, not reading usage limits.
 
+## Wrong system clock
+
+Limita compares each reset time with your computer's clock. A window whose reset time has passed is treated as reset, so it shows **0 %** and **"window reset"** until fresh numbers arrive.
+
+If the clock runs ahead, a 5-hour window that is still open looks reset: the 5-hour limit seems to vanish while the weekly limit, whose reset is days away, still shows normally. This can happen after reinstalling or downgrading macOS, when the date and time are no longer set automatically.
+
+**To fix it,** turn on **System Settings → General → Date & Time → Set time and date automatically** and check the time zone (on Windows: **Settings → Time & language → Date & time → Set time automatically**), then press **↻** in Limita.
+
 ## Data sources
 
 | | Claude | Codex |
