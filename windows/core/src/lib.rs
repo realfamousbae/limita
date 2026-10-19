@@ -5,6 +5,7 @@
 //! Ported from the macOS app (`Limita/Data`, `Limita/Models`); the behaviour rules are
 //! the same, so a change there usually belongs here too.
 
+pub mod activity;
 pub mod claude_cache;
 pub mod claude_live;
 pub mod codex_live;

@@ -31,6 +31,8 @@ struct Stored {
     enabled_services: Option<Vec<String>>,
     /// Absent means on.
     hover_pill: Option<bool>,
+    /// Whether the activity panel under the dashboard is open. Absent means closed.
+    activity_expanded: Option<bool>,
 }
 
 impl ServiceSettings {
@@ -58,6 +60,17 @@ impl ServiceSettings {
     pub fn set_hover_pill(&self, enabled: bool) {
         let mut stored = self.read();
         stored.hover_pill = Some(enabled);
+        self.write(&stored);
+    }
+
+    /// Whether the activity panel is open, so the dashboard opens the way it was left.
+    pub fn activity_expanded(&self) -> bool {
+        self.read().activity_expanded.unwrap_or(false)
+    }
+
+    pub fn set_activity_expanded(&self, expanded: bool) {
+        let mut stored = self.read();
+        stored.activity_expanded = Some(expanded);
         self.write(&stored);
     }
 

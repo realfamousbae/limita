@@ -10,7 +10,9 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{Local, Utc};
+use limita_core::activity::{self, ActivityReader};
+use limita_core::settings::ServiceSettings;
 use limita_core::store::Store;
 use limita_core::{prime_time, view, Service};
 use serde::Serialize;
@@ -81,6 +83,39 @@ fn panel_resized(width: f64, height: f64, panel: State<'_, Arc<Panel>>) {
     panel.resized(width, height);
 }
 
+/// The activity panel under the dashboard. Logs are scanned only while it is open, on
+/// request from the webview, never in the view loop.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivityPanel {
+    expanded: bool,
+    grids: Vec<activity::ActivityGrid>,
+}
+
+fn activity_panel(store: &Store, reader: &ActivityReader) -> ActivityPanel {
+    let expanded = ServiceSettings::default().activity_expanded();
+    let grids = if expanded {
+        let enabled = store.snapshot().enabled;
+        let today = Local::now().date_naive();
+        let days = reader.read(&enabled, &Local);
+        enabled.iter().map(|&service| activity::grid(service, &days[&service], today)).collect()
+    } else {
+        Vec::new()
+    };
+    ActivityPanel { expanded, grids }
+}
+
+#[tauri::command(async)]
+fn activity(store: State<'_, Store>, reader: State<'_, Arc<ActivityReader>>) -> ActivityPanel {
+    activity_panel(&store, &reader)
+}
+
+#[tauri::command(async)]
+fn set_activity_expanded(expanded: bool, store: State<'_, Store>, reader: State<'_, Arc<ActivityReader>>) -> ActivityPanel {
+    ServiceSettings::default().set_activity_expanded(expanded);
+    activity_panel(&store, &reader)
+}
+
 /// `limita-cli` next to the app; Claude Code runs it as its status line.
 fn cli_path() -> Option<std::path::PathBuf> {
     let name = if cfg!(windows) { "limita-cli.exe" } else { "limita-cli" };
@@ -128,7 +163,9 @@ pub fn run() {
             expand,
             hide_panel,
             toggle_hover_pill,
-            panel_resized
+            panel_resized,
+            activity,
+            set_activity_expanded
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -140,6 +177,7 @@ pub fn run() {
             });
             store.repair_claude_hook_if_needed();
             app.manage(store.clone());
+            app.manage(Arc::new(ActivityReader::default()));
 
             let handle = app.handle().clone();
             let panel = Panel::new(handle.clone(), store.clone());

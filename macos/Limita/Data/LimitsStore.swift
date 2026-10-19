@@ -50,6 +50,8 @@ final class LimitsStore {
         }
     }
     @ObservationIgnored var onHoverEnabledChange: ((Bool) -> Void)?
+    /// Tokens per day for the activity panel under the dashboard.
+    let activity: ActivityStore
 
     /// Newest snapshot fetched over the network per service.
     @ObservationIgnored private var liveSnapshots: [Service: LimitSnapshot] = [:]
@@ -75,6 +77,7 @@ final class LimitsStore {
         claudeLive: ClaudeLiveClient = ClaudeLiveClient(),
         configurator: ClaudeStatusLineConfigurator = ClaudeStatusLineConfigurator(),
         settings: ServiceSettings = ServiceSettings(),
+        activity: ActivityStore? = nil,
         detectInstalled: () -> Set<Service> = { ServiceSettings.detectInstalled() }
     ) {
         self.codexReader = codexReader
@@ -83,6 +86,7 @@ final class LimitsStore {
         self.claudeLive = claudeLive
         self.configurator = configurator
         self.settings = settings
+        self.activity = activity ?? ActivityStore()
         let enabled = settings.load {
             var detected = detectInstalled()
             // An existing status-line hook means the user already chose Claude.
@@ -140,6 +144,7 @@ final class LimitsStore {
     /// Reads local sources, and also asks the network for each service when `live` is set
     /// or its last network attempt is older than its `liveInterval`. Disabled services are skipped.
     func refresh(live forceLive: Bool = false) {
+        if forceLive { activity.refresh(enabledServices) }
         guard !isRefreshing else {
             // A manual refresh during a background local read must not be lost.
             if forceLive { pendingLive = true }

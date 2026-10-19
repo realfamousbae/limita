@@ -4,13 +4,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { icons } from "./icons";
-import type { Meter, Mode, PanelView, PrimeTimeNotice, ServiceView } from "./view";
+import type { ActivityDay, ActivityGrid, ActivityPanel, Meter, Mode, PanelView, PrimeTimeNotice, ServiceView } from "./view";
 
 let mode: Mode = "hidden";
 let view: PanelView | null = null;
 let hoverPill = true;
 let version = "";
 let reported = "";
+let activity: ActivityPanel = { expanded: false, grids: [] };
+/** The day under the cursor, kept across re-renders. */
+let hovered: { service: ServiceView["id"]; day: ActivityDay } | null = null;
+/** Where each graph is scrolled; a graph not in here opens on the newest weeks. */
+const scrolled = new Map<ServiceView["id"], number>();
 
 const app = document.getElementById("app")!;
 
@@ -72,7 +77,10 @@ function dashboard(current: PanelView): HTMLElement {
   const refresh = el("button", "round", current.isRefreshing ? el("span", "spinner") : icon("refresh"));
   refresh.title = "Refresh";
   (refresh as HTMLButtonElement).disabled = current.isRefreshing;
-  refresh.addEventListener("click", () => invoke("refresh"));
+  refresh.addEventListener("click", () => {
+    invoke("refresh");
+    loadActivity();
+  });
 
   const hover = el("button", `round${hoverPill ? "" : " crossed"}`, icon("cursor"));
   hover.title = hoverPill ? "Turn off the hover pill (Ctrl+Alt+H)" : "Turn on the hover pill (Ctrl+Alt+H)";
@@ -96,7 +104,131 @@ function dashboard(current: PanelView): HTMLElement {
           column(service),
         ]));
 
-  return el("div", "dashboard", header, el("div", "divider horizontal"), body);
+  const dashboard = el("div", "dashboard", header, el("div", "divider horizontal"), body);
+  if (current.services.length > 0) {
+    // The window grows to fit, so the panel drops down below the columns.
+    if (activity.expanded && activity.grids.length > 0) {
+      dashboard.append(
+        el("div", "divider horizontal"),
+        el("div", "columns", ...activity.grids.flatMap((grid, index) => [
+          index > 0 ? el("div", "divider vertical") : null,
+          activityGraph(grid),
+        ])),
+      );
+    }
+    dashboard.append(activityToggle());
+  }
+  return dashboard;
+}
+
+// MARK: - Activity
+
+const CELL_STEP = 13;
+
+async function loadActivity() {
+  activity = await invoke<ActivityPanel>("activity");
+  render();
+}
+
+/** The round button with a chevron under the dashboard that opens and closes the panel. */
+function activityToggle(): HTMLElement {
+  const button = el("button", `round activity-toggle${activity.expanded ? " open" : ""}`, icon("chevron"));
+  button.setAttribute("aria-label", activity.expanded ? "Hide activity" : "Show activity");
+  button.addEventListener("click", async () => {
+    const expanded = !activity.expanded;
+    if (!expanded) {
+      activity = { expanded, grids: [] };
+      render();
+    }
+    activity = await invoke<ActivityPanel>("set_activity_expanded", { expanded });
+    render();
+  });
+  return el("div", "activity-toggle-row", button);
+}
+
+/** One service's year: weeks left to right, opened on the newest. Hovering a day shows
+ * its tokens in a chip over it and its date in the caption. */
+function activityGraph(grid: ActivityGrid): HTMLElement {
+  const info = el("div", "caption faint nowrap", grid.total);
+  const chip = el("span", "activity-chip");
+  const months = el("div", "activity-months", ...grid.months.map((month) => {
+    const label = el("span", "", month.text);
+    label.style.left = `${month.column * CELL_STEP}px`;
+    return label;
+  }));
+  const cells = el("div", "activity-cells");
+  const node = el("section", `column activity ${grid.id}`);
+
+  const show = (day: ActivityDay | null, cell: HTMLElement | null) => {
+    node.querySelector(".cell.hovered")?.classList.remove("hovered");
+    hovered = day && { service: grid.id, day };
+    info.textContent = day ? day.label : grid.total;
+    info.classList.toggle("faint", !day);
+    if (!day || !cell) {
+      chip.style.display = "none";
+      return;
+    }
+    cell.classList.add("hovered");
+    chip.textContent = day.chip;
+    chip.style.display = "block";
+    // Centred over the cell, kept inside the graph.
+    const box = node.getBoundingClientRect();
+    const rect = cell.getBoundingClientRect();
+    const width = chip.getBoundingClientRect().width;
+    const left = Math.min(Math.max(rect.left + rect.width / 2 - box.left - width / 2, 0), box.width - width);
+    chip.style.left = `${left}px`;
+    chip.style.top = `${rect.top - box.top - 19}px`;
+  };
+
+  for (const week of grid.columns) {
+    const column = el("div", "activity-week");
+    for (const day of week) {
+      const cell = el("span", day ? `cell l${day.level}` : "cell empty");
+      if (day) {
+        cell.dataset.key = day.key;
+        cell.addEventListener("mouseenter", () => show(day, cell));
+        cell.addEventListener("click", () => show(day, cell));
+      }
+      column.append(cell);
+    }
+    cells.append(column);
+  }
+  cells.addEventListener("mouseleave", () => show(null, null));
+
+  const scroller = el("div", "activity-scroll", months, cells);
+  scroller.dataset.service = grid.id;
+  scroller.addEventListener("scroll", () => {
+    // Restoring the position after a re-render fires this too; that is no real scroll.
+    if (scroller.scrollLeft === scrolled.get(grid.id)) return;
+    scrolled.set(grid.id, scroller.scrollLeft);
+    if (hovered?.service === grid.id) show(null, null);
+  });
+  // Restores the hovered day once the graph is laid out (see `render`).
+  node.addEventListener("restore", () => {
+    if (hovered?.service !== grid.id) return;
+    const cell = cells.querySelector<HTMLElement>(`[data-key="${hovered.day.key}"]`);
+    show(cell ? hovered.day : null, cell);
+  });
+
+  const weekdays = el("div", "activity-weekdays", ...["", "Mon", "", "Wed", "", "Fri", ""].map((d) => el("span", "", d)));
+  const legend = el("div", "activity-legend", el("span", "", "LESS"), ...[0, 1, 2, 3, 4].map((l) => el("span", `cell l${l}`)), el("span", "", "MORE"));
+  node.append(
+    el("div", "activity-head", el("div", "caption", "ACTIVITY"), info),
+    el("div", "activity-body", weekdays, scroller),
+    legend,
+    chip,
+  );
+  return node;
+}
+
+/** Puts each graph back where it was scrolled, or on the newest weeks, and the hover chip
+ * back over its day. Runs after the dashboard is in the document. */
+function restoreActivity() {
+  for (const scroller of Array.from(app.querySelectorAll<HTMLElement>(".activity-scroll"))) {
+    const service = scroller.dataset.service as ServiceView["id"];
+    scroller.scrollLeft = scrolled.get(service) ?? scroller.scrollWidth;
+  }
+  for (const node of Array.from(app.querySelectorAll(".column.activity"))) node.dispatchEvent(new Event("restore"));
 }
 
 /** One pass through the sprite sheet: 196 frames at 24 fps, as in `.burning-gauge`. */
@@ -187,10 +319,14 @@ function meter(m: Meter, stale: boolean): HTMLElement {
 function render(modeChanged = false) {
   if (!view || mode === "hidden") {
     app.replaceChildren();
+    // The next opening starts on the newest weeks.
+    scrolled.clear();
+    hovered = null;
     reported = "";
     return;
   }
   app.replaceChildren(mode === "pill" ? pill(view) : dashboard(view));
+  if (mode === "dashboard") restoreActivity();
   // Measured right away: a hidden window gets no animation frames, and it stays hidden
   // until Rust knows the size.
   const box = app.firstElementChild?.getBoundingClientRect();
@@ -218,6 +354,7 @@ async function start() {
   hoverPill = current.hoverPill;
   sizeMeters(view.longestResetText);
   render(true);
+  loadActivity();
 
   await listen<PanelView>("view", (event) => {
     view = event.payload;
@@ -230,6 +367,7 @@ async function start() {
   await listen<{ mode: Mode }>("panel-mode", (event) => {
     mode = event.payload.mode;
     render(true);
+    if (mode === "dashboard") loadActivity();
   });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") invoke("hide_panel");

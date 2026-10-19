@@ -778,6 +778,85 @@ final class LimitaTests: XCTestCase {
         try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] ?? [:]
     }
 
+    // MARK: - Activity
+
+    func testActivityLevelsSplitActiveDaysIntoQuarters() {
+        let active = [10, 20, 30, 40]
+        XCTAssertEqual(active.map { ActivityGrid.level($0, active: active) }, [1, 2, 3, 4])
+        XCTAssertEqual(ActivityGrid.level(0, active: active), 0)
+        // The busiest day is always the darkest, even when it is the only one.
+        XCTAssertEqual(ActivityGrid.level(5, active: [5]), 4)
+        XCTAssertEqual([1, 1_000_000].map { ActivityGrid.level($0, active: [1, 1_000_000]) }, [2, 4])
+    }
+
+    func testActivityGridEndsTodayWithSundayOnTop() throws {
+        var calendar = Calendar.activity
+        calendar.timeZone = TimeZone(identifier: "Europe/Moscow")!
+        // Monday, 19 October 2026, local time.
+        let today = calendar.date(from: DateComponents(year: 2026, month: 10, day: 19, hour: 15))!
+        let grid = ActivityGrid(days: ["2026-10-18": 100, "2026-10-19": 300, "2025-01-01": 999], today: today, calendar: calendar)
+
+        XCTAssertEqual(grid.columns.count, ActivityGrid.weeks)
+        let last = try XCTUnwrap(grid.columns.last)
+        XCTAssertEqual(last[0]?.key, "2026-10-18")
+        XCTAssertEqual(last[1]?.key, "2026-10-19")
+        XCTAssertNil(last[2])
+        XCTAssertEqual(last[1]?.level, 4)
+        XCTAssertEqual(last[0]?.level, 2)
+        // Days before the first week are not counted.
+        XCTAssertEqual(grid.total, 400)
+        XCTAssertEqual(grid.months.last?.text, "Oct")
+    }
+
+    func testTokenFormats() {
+        XCTAssertEqual(TokenFormat.compact(950), "950")
+        XCTAssertEqual(TokenFormat.compact(12_340), "12.3K")
+        XCTAssertEqual(TokenFormat.compact(185_862_783), "186M")
+        XCTAssertEqual(TokenFormat.compact(2_000_000), "2M")
+        XCTAssertEqual(TokenFormat.thousands(0), "0K")
+        XCTAssertEqual(TokenFormat.thousands(300), "<1K")
+        XCTAssertEqual(TokenFormat.thousands(12_345_678), "12,346K")
+    }
+
+    func testActivityReaderCountsClaudeRequestsOnceAcrossFilesAndKeepsHistory() throws {
+        let home = try temporaryDirectory()
+        let project = home.appendingPathComponent(".claude/projects/-p")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        func line(_ id: String, _ time: String, _ input: Int) -> String {
+            #"{"type":"assistant","requestId":"r\#(id)","timestamp":"\#(time)","message":{"id":"m\#(id)","usage":{"input_tokens":\#(input),"output_tokens":1,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}}}"#
+        }
+        let original = [line("1", "2026-10-16T10:00:00.000Z", 10), line("2", "2026-10-16T23:30:00Z", 20)]
+        try Data(original.joined(separator: "\n").utf8).write(to: project.appendingPathComponent("a.jsonl"))
+        // A resumed session repeats request 1 and adds request 3.
+        let resumed = [line("1", "2026-10-16T10:00:00.000Z", 10), #"{"type":"user"}"#, line("3", "2026-10-17T09:00:00Z", 30)]
+        try Data(resumed.joined(separator: "\n").utf8).write(to: project.appendingPathComponent("b.jsonl"))
+
+        let history = home.appendingPathComponent("activity.json")
+        let reader = ActivityReader(home: home, historyURL: history)
+        let moscow = TimeZone(identifier: "Europe/Moscow")!
+        // 23:30 UTC is already the 17th in Moscow.
+        XCTAssertEqual(reader.read([.claude], timeZone: moscow)[.claude], ["2026-10-16": 16, "2026-10-17": 62])
+
+        // Deleted transcripts do not lower the saved days.
+        try FileManager.default.removeItem(at: project.appendingPathComponent("a.jsonl"))
+        let fresh = ActivityReader(home: home, historyURL: history)
+        XCTAssertEqual(fresh.read([.claude], timeZone: moscow)[.claude], ["2026-10-16": 16, "2026-10-17": 62])
+    }
+
+    func testActivityReaderCountsCodexGrowthOfTheRunningTotal() {
+        func event(_ time: String, _ total: Int) -> String {
+            #"{"timestamp":"\#(time)","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":\#(total)}}}}"#
+        }
+        let log = [
+            event("2026-10-16T10:00:00Z", 100),
+            event("2026-10-16T10:00:01Z", 100),
+            #"{"timestamp":"2026-10-16T11:00:00Z","type":"event_msg","payload":{"type":"token_count","info":null}}"#,
+            event("2026-10-17T10:00:00Z", 250),
+        ].joined(separator: "\n")
+        let days = ActivityReader.codexDays(in: Data(log.utf8), formatter: DayKeys.formatter(timeZone: TimeZone(identifier: "UTC")!))
+        XCTAssertEqual(days, ["2026-10-16": 100, "2026-10-17": 150])
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
