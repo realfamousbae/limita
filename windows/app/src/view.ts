@@ -45,17 +45,24 @@ export interface PrimeTimeNotice {
 }
 
 /** The activity panel under the dashboard (limita-core `activity.rs`). */
+export type Period = "week" | "month" | "all";
+
 export interface ActivityPanel {
   expanded: boolean;
+  period: Period;
   grids: ActivityGrid[];
 }
 
 export interface ActivityGrid {
   id: Service;
-  /** `columns[week][weekday]`, Sunday first; `null` after today. */
-  columns: (ActivityDay | null)[][];
-  months: { column: number; text: string }[];
-  total: string;
+  /** row: the last 7 days; calendar: 5 weeks from Monday; weeks: a column per week. */
+  layout: "row" | "calendar" | "weeks";
+  /** `cells[row][column]`; `null` after today. */
+  cells: (ActivityDay | null)[][];
+  columnLabels: (string | null)[];
+  rowLabels: (string | null)[];
+  /** Four to a row: the totals, then tokens by kind. */
+  summary: { label: string; value: string }[];
 }
 
 export interface ActivityDay {

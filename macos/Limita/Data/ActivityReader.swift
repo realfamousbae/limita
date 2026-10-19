@@ -1,26 +1,128 @@
 import Foundation
 
-/// Tokens per local day for each service, read from the CLIs' own session logs.
+/// What one service did on one local day. Stored in `activity.json`; the same format
+/// on Windows.
+struct DayStats: Codable, Equatable, Sendable {
+    /// Everything the model processed: the four kinds below added up.
+    var tokens = 0
+    /// Input not served from the cache.
+    var input = 0
+    var output = 0
+    var cacheWrite = 0
+    var cacheRead = 0
+    /// Your prompts plus the model's replies.
+    var messages = 0
+    /// Tokens by model id.
+    var models: [String: Int] = [:]
+    /// Messages by local hour, 0...23.
+    var hours: [Int] = Array(repeating: 0, count: 24)
+
+    init() {}
+
+    init(tokens: Int) {
+        self.tokens = tokens
+    }
+
+    var isActive: Bool { tokens > 0 || messages > 0 }
+
+    /// Days saved by 0.8.0 are a bare token count.
+    init(from decoder: Decoder) throws {
+        if let tokens = try? decoder.singleValueContainer().decode(Int.self) {
+            self.init(tokens: tokens)
+            return
+        }
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tokens = try container.decodeIfPresent(Int.self, forKey: .tokens) ?? 0
+        input = try container.decodeIfPresent(Int.self, forKey: .input) ?? 0
+        output = try container.decodeIfPresent(Int.self, forKey: .output) ?? 0
+        cacheWrite = try container.decodeIfPresent(Int.self, forKey: .cacheWrite) ?? 0
+        cacheRead = try container.decodeIfPresent(Int.self, forKey: .cacheRead) ?? 0
+        messages = try container.decodeIfPresent(Int.self, forKey: .messages) ?? 0
+        models = try container.decodeIfPresent([String: Int].self, forKey: .models) ?? [:]
+        let hours = try container.decodeIfPresent([Int].self, forKey: .hours) ?? []
+        if hours.count == 24 { self.hours = hours }
+    }
+
+    /// Saved days are only ever raised: each count keeps the larger value.
+    func merged(with other: DayStats) -> DayStats {
+        var result = DayStats()
+        result.tokens = max(tokens, other.tokens)
+        result.input = max(input, other.input)
+        result.output = max(output, other.output)
+        result.cacheWrite = max(cacheWrite, other.cacheWrite)
+        result.cacheRead = max(cacheRead, other.cacheRead)
+        result.messages = max(messages, other.messages)
+        result.models = models.merging(other.models, uniquingKeysWith: max)
+        result.hours = zip(hours, other.hours).map { max($0, $1) }
+        return result
+    }
+
+    mutating func add(_ event: ActivityEvent) {
+        tokens += event.tokens
+        input += event.usage.input
+        output += event.usage.output
+        cacheWrite += event.usage.cacheWrite
+        cacheRead += event.usage.cacheRead
+        if event.isMessage {
+            messages += 1
+            hours[event.hour] += 1
+        }
+        if let model = event.model, event.tokens > 0 { models[model, default: 0] += event.tokens }
+    }
+}
+
+/// Tokens by kind.
+struct TokenUsage: Equatable, Sendable {
+    var input = 0
+    var output = 0
+    var cacheWrite = 0
+    var cacheRead = 0
+
+    var total: Int { input + output + cacheWrite + cacheRead }
+
+    func minus(_ other: TokenUsage) -> TokenUsage {
+        TokenUsage(
+            input: max(0, input - other.input),
+            output: max(0, output - other.output),
+            cacheWrite: max(0, cacheWrite - other.cacheWrite),
+            cacheRead: max(0, cacheRead - other.cacheRead)
+        )
+    }
+}
+
+/// One counted thing in a log: a request's tokens, a message, or both.
+struct ActivityEvent: Equatable, Sendable {
+    let day: DayKey
+    let hour: Int
+    var model: String?
+    var usage = TokenUsage()
+    var isMessage = false
+
+    var tokens: Int { usage.total }
+}
+
+/// Activity per local day for each service, read from the CLIs' own session logs.
 ///
-/// - Claude Code: every assistant line in `~/.claude/projects/*/*.jsonl` carries the
-///   request's `usage`. Resumed and forked sessions copy earlier lines into new files,
-///   so a request is counted once by `message.id` + `requestId`, whatever file it is in.
+/// - Claude Code: every assistant line in `~/.claude/projects/**/*.jsonl` carries the
+///   request's `usage` and model; user lines are your prompts. Resumed and forked
+///   sessions copy earlier lines into new files, so a request is counted once by
+///   `message.id` + `requestId` and a prompt once by its `uuid`, whatever file it is in.
 /// - Codex: `token_count` events in `~/.codex/sessions/**/rollout-*.jsonl` carry the
-///   session's running total; a day gets the growth of that total during it.
+///   session's running total; a day gets the growth of that total during it. Messages
+///   are `user_message` and `agent_message` events, the model comes from `turn_context`.
 ///
-/// Tokens are everything the model processed: input, output, cache writes and cache
-/// reads (Codex counts cached input inside its input). Claude Code deletes old
-/// transcripts (30 days by default), so the totals are kept in `activity.json`: a day
-/// is only ever raised, never lowered because its files are gone.
+/// Claude Code deletes old transcripts (30 days by default), so the days are kept in
+/// `activity.json` and only ever raised, never lowered because their files are gone.
 final class ActivityReader: @unchecked Sendable {
-    typealias Days = [DayKey: Int]
+    typealias Days = [DayKey: DayStats]
 
     private let claudeProjects: URL
     private let codexDirectories: [URL]
     private let historyURL: URL
     private let lock = NSLock()
     /// Parsed files, so a scan only reads what changed since the last one.
-    private var claudeFiles: [String: CachedFile<[String: ClaudeRequest]>] = [:]
+    private var claudeFiles: [String: CachedFile<[String: ActivityEvent]>] = [:]
     private var codexFiles: [String: CachedFile<Days>] = [:]
 
     init(
@@ -47,19 +149,18 @@ final class ActivityReader: @unchecked Sendable {
     func read(_ services: [Service], timeZone: TimeZone = .current) -> [Service: Days] {
         lock.lock()
         defer { lock.unlock() }
-        let formatter = DayKeys.formatter(timeZone: timeZone)
+        let clock = LocalClock(timeZone: timeZone)
         var history = loadHistory()
         for service in services {
-            let scanned = service == .claude ? scanClaude(formatter) : scanCodex(formatter)
+            let scanned = service == .claude ? scanClaude(clock) : scanCodex(clock)
             history[service.rawValue] = Self.merge(history[service.rawValue] ?? [:], scanned)
         }
         saveHistory(history)
         return Dictionary(uniqueKeysWithValues: services.map { ($0, history[$0.rawValue] ?? [:]) })
     }
 
-    /// A day keeps the larger of its saved and scanned totals.
     static func merge(_ saved: Days, _ scanned: Days) -> Days {
-        saved.merging(scanned, uniquingKeysWith: max)
+        saved.merging(scanned) { $0.merged(with: $1) }
     }
 
     // MARK: - History file
@@ -79,75 +180,129 @@ final class ActivityReader: @unchecked Sendable {
 
     // MARK: - Claude Code
 
-    struct ClaudeRequest: Equatable {
-        let day: DayKey
-        let tokens: Int
-    }
-
-    private func scanClaude(_ formatter: DateFormatter) -> Days {
+    private func scanClaude(_ clock: LocalClock) -> Days {
         let files = Self.jsonlFiles(in: claudeProjects) { _ in true }
-        claudeFiles = Self.refresh(claudeFiles, files: files) { Self.claudeRequests(in: $0, formatter: formatter) }
-        var requests: [String: ClaudeRequest] = [:]
+        claudeFiles = Self.refresh(claudeFiles, files: files) { Self.claudeEvents(in: $0, clock: clock) }
+        var events: [String: ActivityEvent] = [:]
         for file in claudeFiles.values {
-            requests.merge(file.value) { first, _ in first }
+            events.merge(file.value) { first, _ in first }
         }
         var days: Days = [:]
-        for request in requests.values {
-            days[request.day, default: 0] += request.tokens
+        for event in events.values {
+            days[event.day, default: DayStats()].add(event)
         }
         return days
     }
 
-    /// Requests in one transcript, by `message.id` + `requestId`.
-    static func claudeRequests(in data: Data, formatter: DateFormatter) -> [String: ClaudeRequest] {
-        var requests: [String: ClaudeRequest] = [:]
-        forEachLine(in: data, containing: #""usage""#) { object in
-            guard object["type"] as? String == "assistant",
+    /// Events in one transcript: requests by `message.id` + `requestId`, prompts by `uuid`.
+    static func claudeEvents(in data: Data, clock: LocalClock) -> [String: ActivityEvent] {
+        var events: [String: ActivityEvent] = [:]
+        forEachLine(in: data, containing: #""type":"#) { object in
+            guard let type = object["type"] as? String, type == "assistant" || type == "user",
                   let message = object["message"] as? [String: Any],
-                  let usage = message["usage"] as? [String: Any],
                   let timestamp = object["timestamp"] as? String,
                   let date = ISO8601DateFormatter.parseFlexible(timestamp)
             else { return }
-            let tokens = ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
-                .reduce(0) { $0 + ((usage[$1] as? NSNumber)?.intValue ?? 0) }
-            let id = "\(message["id"] as? String ?? "")|\(object["requestId"] as? String ?? object["uuid"] as? String ?? "")"
-            requests[id] = ClaudeRequest(day: formatter.string(from: date), tokens: tokens)
+            let (day, hour) = clock.dayAndHour(date)
+
+            if type == "assistant" {
+                guard let usage = message["usage"] as? [String: Any] else { return }
+                func count(_ key: String) -> Int { (usage[key] as? NSNumber)?.intValue ?? 0 }
+                let tokens = TokenUsage(
+                    input: count("input_tokens"),
+                    output: count("output_tokens"),
+                    cacheWrite: count("cache_creation_input_tokens"),
+                    cacheRead: count("cache_read_input_tokens")
+                )
+                let model = (message["model"] as? String).flatMap { $0.hasPrefix("<") ? nil : $0 }
+                let id = "a|\(message["id"] as? String ?? "")|\(object["requestId"] as? String ?? object["uuid"] as? String ?? "")"
+                events[id] = ActivityEvent(day: day, hour: hour, model: model, usage: tokens, isMessage: true)
+            } else if isPrompt(object, message: message), let uuid = object["uuid"] as? String {
+                events["u|\(uuid)"] = ActivityEvent(day: day, hour: hour, isMessage: true)
+            }
         }
-        return requests
+        return events
+    }
+
+    /// A line you typed: not a tool result, not a subagent's prompt, not command output.
+    private static func isPrompt(_ object: [String: Any], message: [String: Any]) -> Bool {
+        if object["isMeta"] as? Bool == true || object["isSidechain"] as? Bool == true { return false }
+        if let text = message["content"] as? String {
+            return !text.hasPrefix("<local-command-")
+        }
+        if let parts = message["content"] as? [[String: Any]] {
+            return parts.contains { $0["type"] as? String == "text" }
+                && !parts.contains { $0["type"] as? String == "tool_result" }
+        }
+        return false
     }
 
     // MARK: - Codex
 
-    private func scanCodex(_ formatter: DateFormatter) -> Days {
+    private func scanCodex(_ clock: LocalClock) -> Days {
         let files = codexDirectories.flatMap { directory in
             Self.jsonlFiles(in: directory) { $0.lastPathComponent.hasPrefix("rollout-") }
         }
-        codexFiles = Self.refresh(codexFiles, files: files) { Self.codexDays(in: $0, formatter: formatter) }
+        codexFiles = Self.refresh(codexFiles, files: files) { data in
+            Self.codexDays(in: data, clock: clock)
+        }
         var days: Days = [:]
         for file in codexFiles.values {
-            days.merge(file.value, uniquingKeysWith: +)
+            days.merge(file.value) { first, second in
+                var sum = first
+                sum.tokens += second.tokens
+                sum.input += second.input
+                sum.output += second.output
+                sum.cacheWrite += second.cacheWrite
+                sum.cacheRead += second.cacheRead
+                sum.messages += second.messages
+                sum.models.merge(second.models, uniquingKeysWith: +)
+                sum.hours = zip(first.hours, second.hours).map(+)
+                return sum
+            }
         }
         return days
     }
 
-    /// Growth of the session's running total, by the day of each `token_count` event.
-    /// Repeated events with the same total add nothing.
-    static func codexDays(in data: Data, formatter: DateFormatter) -> Days {
+    /// One rollout is one session. Tokens are the growth of its running total by the day
+    /// of each `token_count` event; repeated events with the same total add nothing.
+    /// Codex counts cached input inside its input and writes no cache of its own, so
+    /// cached input is a cache read and the rest is input.
+    static func codexDays(in data: Data, clock: LocalClock) -> Days {
         var days: Days = [:]
-        var previous = 0
-        forEachLine(in: data, containing: #""token_count""#) { object in
-            guard let payload = object["payload"] as? [String: Any],
-                  payload["type"] as? String == "token_count",
-                  let info = payload["info"] as? [String: Any],
-                  let usage = info["total_token_usage"] as? [String: Any],
-                  let total = (usage["total_tokens"] as? NSNumber)?.intValue,
+        var previous = TokenUsage()
+        var model: String?
+        forEachLine(in: data, containing: #""payload""#) { object in
+            guard let payload = object["payload"] as? [String: Any] else { return }
+            let type = object["type"] as? String
+            if type == "turn_context" {
+                if let name = payload["model"] as? String { model = name }
+                return
+            }
+            guard type == "event_msg",
                   let timestamp = object["timestamp"] as? String,
                   let date = ISO8601DateFormatter.parseFlexible(timestamp)
             else { return }
-            // A smaller total means the count started over.
-            let growth = total >= previous ? total - previous : total
-            previous = total
-            if growth > 0 { days[formatter.string(from: date), default: 0] += growth }
+            let (day, hour) = clock.dayAndHour(date)
+            var event = ActivityEvent(day: day, hour: hour, model: model)
+            switch payload["type"] as? String {
+            case "user_message", "agent_message":
+                event.isMessage = true
+            case "token_count":
+                guard let info = payload["info"] as? [String: Any],
+                      let usage = info["total_token_usage"] as? [String: Any]
+                else { return }
+                func count(_ key: String) -> Int { (usage[key] as? NSNumber)?.intValue ?? 0 }
+                let cached = count("cached_input_tokens")
+                let total = TokenUsage(input: max(0, count("input_tokens") - cached), output: count("output_tokens"), cacheRead: cached)
+                // A smaller total means the count started over.
+                event.usage = total.total >= previous.total ? total.minus(previous) : total
+                previous = total
+                guard event.tokens > 0 else { return }
+            default:
+                return
+            }
+            days[day, default: DayStats()].add(event)
         }
         return days
     }
@@ -209,5 +364,22 @@ final class ActivityReader: @unchecked Sendable {
             }
             start = end < data.endIndex ? data.index(after: end) : data.endIndex
         }
+    }
+}
+
+/// Local day keys and hours, made once per scan: a `DateFormatter` per line is slow.
+struct LocalClock {
+    let formatter: DateFormatter
+    let calendar: Calendar
+
+    init(timeZone: TimeZone) {
+        formatter = DayKeys.formatter(timeZone: timeZone)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        self.calendar = calendar
+    }
+
+    func dayAndHour(_ date: Date) -> (DayKey, Int) {
+        (formatter.string(from: date), calendar.component(.hour, from: date))
     }
 }

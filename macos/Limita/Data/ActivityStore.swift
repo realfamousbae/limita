@@ -1,12 +1,14 @@
 import Foundation
 import Observation
 
-/// The activity panel under the dashboard: whether it is open, and the tokens per day
-/// it shows. Logs are scanned only while the panel is open, never on the minute timer.
+/// The activity panel under the dashboard: whether it is open, which period it shows,
+/// and each service's graph. Logs are scanned only while the panel is open, never on
+/// the minute timer.
 @Observable
 @MainActor
 final class ActivityStore {
     static let expandedKey = "activityExpanded"
+    static let periodKey = "activityPeriod"
 
     /// Saved, so the dashboard opens the way the user left it.
     var isExpanded: Bool {
@@ -15,10 +17,21 @@ final class ActivityStore {
             defaults.set(isExpanded, forKey: Self.expandedKey)
         }
     }
-    private(set) var days: [Service: [DayKey: Int]] = [:]
+    /// Saved like `isExpanded`.
+    var period: ActivityPeriod {
+        didSet {
+            guard period != oldValue else { return }
+            defaults.set(period.rawValue, forKey: Self.periodKey)
+            rebuild()
+        }
+    }
+    /// Built when the data or the period change, not on every render: hovering
+    /// re-renders the graph many times a second.
+    private(set) var grids: [Service: ActivityGrid] = [:]
     /// No scan has finished yet, so there is nothing to show.
     var isLoaded: Bool { lastScan != nil }
 
+    @ObservationIgnored private var days: [Service: [DayKey: DayStats]] = [:]
     @ObservationIgnored private let reader: ActivityReader
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var lastScan: Date?
@@ -28,6 +41,7 @@ final class ActivityStore {
         self.reader = reader
         self.defaults = defaults
         isExpanded = defaults.bool(forKey: Self.expandedKey)
+        period = defaults.string(forKey: Self.periodKey).flatMap(ActivityPeriod.init(rawValue:)) ?? .all
     }
 
     /// Rescans unless that happened within `maxAge`. Unchanged files are not re-read, so
@@ -42,6 +56,12 @@ final class ActivityStore {
             days.merge(result) { _, new in new }
             lastScan = Date()
             isScanning = false
+            rebuild()
         }
+    }
+
+    private func rebuild() {
+        let period = period
+        grids = days.mapValues { ActivityGrid(days: $0, period: period) }
     }
 }

@@ -1,257 +1,355 @@
 import SwiftUI
 
-/// The panel that drops down under the service columns: a year of tokens per day for
-/// each service, laid out like GitHub's contribution graph, under that service's column.
+/// The panel that drops down under the service columns: a period switch, and for each
+/// service, under its column, a short summary and a graph of tokens per day.
 struct ActivitySection: View {
     let store: LimitsStore
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
-                if index > 0 {
-                    Rectangle().fill(Color.white.opacity(0.08))
-                        .frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 14)
-                }
-                ActivityGraph(
-                    service: service,
-                    days: store.activity.days[service],
-                    loaded: store.activity.isLoaded
-                )
-                .padding(.horizontal, ExpandedView.columnPadding)
-                .padding(.top, 13)
-                .padding(.bottom, 4)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+        VStack(spacing: 0) {
+            HStack(alignment: .center) {
+                Text("ACTIVITY").caption()
+                Spacer(minLength: 8)
+                PeriodSwitch(activity: store.activity)
             }
+            .padding(.horizontal, ExpandedView.columnPadding)
+            .padding(.top, 12)
+
+            HStack(spacing: 0) {
+                ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
+                    if index > 0 {
+                        Rectangle().fill(Color.white.opacity(0.08))
+                            .frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 12)
+                    }
+                    ActivityColumn(service: service, grid: store.activity.grids[service], loaded: store.activity.isLoaded)
+                        .padding(.horizontal, ExpandedView.columnPadding)
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-/// The round button with a chevron under the dashboard that opens and closes the panel.
+/// WEEK · MONTH · ALL, shared by every service's graph.
+private struct PeriodSwitch: View {
+    let activity: ActivityStore
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ActivityPeriod.allCases, id: \.self) { period in
+                let selected = activity.period == period
+                Button {
+                    activity.period = period
+                } label: {
+                    Text(period.title)
+                        .font(.app(DashboardStyle.captionSize))
+                        .tracking(DashboardStyle.captionTracking)
+                        .foregroundStyle(selected ? Color.white : DashboardStyle.caption)
+                        .padding(.horizontal, 9)
+                        .frame(height: 20)
+                        .background(Capsule().fill(Color.white.opacity(selected ? 0.14 : 0)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(Capsule().fill(Color.white.opacity(0.06)))
+    }
+}
+
+/// A small capsule at the bottom right of the dashboard, in line with the columns'
+/// right edge, that opens and closes the panel.
 struct ActivityToggle: View {
     let store: LimitsStore
 
     var body: some View {
         let expanded = store.activity.isExpanded
-        Button {
-            store.activity.isExpanded.toggle()
-            store.activity.refresh(store.enabledServices, ifOlderThan: 60)
-        } label: {
-            ZStack {
-                Circle().fill(Color.white.opacity(0.08))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .rotationEffect(.degrees(expanded ? 180 : 0))
-                    .offset(y: expanded ? -0.5 : 0.5)
+        HStack {
+            Spacer(minLength: 0)
+            Button {
+                store.activity.isExpanded.toggle()
+                store.activity.refresh(store.enabledServices, ifOlderThan: 60)
+            } label: {
+                HStack(spacing: 6) {
+                    Text("ACTIVITY")
+                        .font(.app(DashboardStyle.captionSize))
+                        .tracking(DashboardStyle.captionTracking)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                .foregroundStyle(DashboardStyle.caption)
+                .padding(.horizontal, 10)
+                .frame(height: 22)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+                .contentShape(Capsule())
             }
-            .frame(width: 22, height: 22)
-            .contentShape(Circle())
+            .buttonStyle(.plain)
+            .accessibilityLabel(expanded ? "Hide activity" : "Show activity")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(expanded ? "Hide activity" : "Show activity")
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, ExpandedView.columnPadding)
         .padding(.top, 2)
-        .padding(.bottom, 8)
+        .padding(.bottom, 12)
     }
 }
 
-/// One service's year: weeks left to right, scrolled to the newest. Hovering a day
-/// shows its tokens in the caption; tooltips never appear in this panel.
-struct ActivityGraph: View {
+/// One service: summary, graph, and under it the hovered day and the legend.
+private struct ActivityColumn: View {
     let service: Service
-    let days: [DayKey: Int]?
+    let grid: ActivityGrid?
     let loaded: Bool
-
-    static let cell: CGFloat = 10
-    static let gap: CGFloat = 3
-    private static let step = cell + gap
-    private static let monthRowHeight: CGFloat = 13
-    private static let weekdayColumnWidth: CGFloat = 24
 
     @State private var hovered: ActivityGrid.Day?
 
     var body: some View {
-        let grid = ActivityGrid(days: days ?? [:])
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("ACTIVITY")
-                    .caption()
-                Spacer(minLength: 0)
-                Text(caption(grid))
-                    .caption(faint: hovered == nil)
-                    .lineLimit(1)
-                    .monospacedDigit()
-            }
-
-            HStack(alignment: .top, spacing: 0) {
-                weekdayLabels
-                ScrollView(.horizontal, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        monthLabels(grid)
-                        cells(grid)
-                    }
+        VStack(alignment: .leading, spacing: 12) {
+            if let grid {
+                SummaryTiles(summary: grid.summary)
+                ActivityGraph(grid: grid, service: service, hovered: $hovered)
+                HStack(spacing: 8) {
+                    Text(hovered.map(Self.dateText) ?? "")
+                        .caption()
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Legend(service: service)
                 }
-                .defaultScrollAnchor(.trailing)
+            } else {
+                Text(loaded ? "No activity yet" : "Reading logs…")
+                    .font(.app(DashboardStyle.valueSize))
+                    .foregroundStyle(DashboardStyle.caption)
             }
-
-            legend
         }
-        // Drawn over the whole graph, so the scroll view does not clip it.
-        .overlayPreferenceValue(HoveredCellKey.self) { anchor in
-            GeometryReader { proxy in
-                if let anchor, let hovered {
-                    TokenChip(tokens: hovered.tokens, service: service, cell: proxy[anchor], bounds: proxy.size)
-                }
+        // A new period lays the cells out anew; a day kept from the old one would point
+        // at the wrong cell.
+        .onChange(of: grid?.layout) { hovered = nil }
+    }
+
+    static func dateText(_ day: ActivityGrid.Day) -> String {
+        day.date.formatted(.dateTime.locale(.english).weekday(.abbreviated).month(.abbreviated).day().year()).uppercased()
+    }
+}
+
+/// Tiles in the style of the balances, four to a row: the totals, then tokens by kind.
+private struct SummaryTiles: View {
+    let summary: ActivitySummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: ExpandedView.meterSpacing) {
+                tile("TOTAL TOKENS", TokenFormat.compact(summary.tokens))
+                tile("FAVORITE MODEL", summary.favoriteModel ?? "—")
+                tile("MESSAGES", TokenFormat.count(summary.messages))
+                tile("PEAK HOUR", summary.peakHourText)
+            }
+            HStack(alignment: .top, spacing: ExpandedView.meterSpacing) {
+                tile("INPUT", TokenFormat.compact(summary.usage.input))
+                tile("OUTPUT", TokenFormat.compact(summary.usage.output))
+                tile("CACHE WRITE", TokenFormat.compact(summary.usage.cacheWrite))
+                tile("CACHE READ", TokenFormat.compact(summary.usage.cacheRead))
             }
         }
     }
 
-    private func caption(_ grid: ActivityGrid) -> String {
-        if let hovered {
-            return hovered.date.formatted(.dateTime.locale(.english).weekday(.abbreviated).month(.abbreviated).day().year()).uppercased()
+    private func tile(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .caption()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value)
+                .font(.app(DashboardStyle.tileValueSize))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
-        guard loaded else { return "READING LOGS…" }
-        return "\(TokenFormat.compact(grid.total)) TOKENS / YEAR"
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
 
-    private var weekdayLabels: some View {
-        VStack(alignment: .leading, spacing: Self.gap) {
-            ForEach(0..<7, id: \.self) { row in
-                Text(["", "Mon", "", "Wed", "", "Fri", ""][row])
-                    .caption(size: 8.5)
-                    .frame(height: Self.cell)
-            }
+/// The cells, drawn in one `Canvas` so hovering redraws one view, not hundreds. Cells
+/// grow to fill the column, up to a size per layout; nothing scrolls or is cut off.
+private struct ActivityGraph: View {
+    let grid: ActivityGrid
+    let service: Service
+    @Binding var hovered: ActivityGrid.Day?
+
+    /// The column's width once laid out; until then a guess from the dashboard's width.
+    @State private var width: CGFloat = BezelPanelController.columnWidth - 2 * ExpandedView.columnPadding
+
+    private static let labelHeight: CGFloat = 14
+    private static let rowLabelWidth: CGFloat = 26
+    private static let chipHeight: CGFloat = 16
+
+    private var gap: CGFloat { grid.layout == .weeks ? 3 : 4 }
+    private var leading: CGFloat { grid.rowLabels.contains { $0 != nil } ? Self.rowLabelWidth : 0 }
+    /// Week and month cells stretch across the column at a fixed height; the half-year
+    /// grid keeps square cells as big as fit, up to 22 points apart.
+    private var stepX: CGFloat {
+        let fit = ((width - leading + gap) / CGFloat(max(grid.columns, 1))).rounded(.down)
+        return grid.layout == .weeks ? max(6, min(22, fit)) : max(6, fit)
+    }
+    private var stepY: CGFloat {
+        switch grid.layout {
+        case .row: 44
+        case .calendar: 30
+        case .weeks: stepX
         }
-        .padding(.top, Self.monthRowHeight)
-        .frame(width: Self.weekdayColumnWidth, alignment: .leading)
     }
+    private var cellWidth: CGFloat { stepX - gap }
+    private var cellHeight: CGFloat { stepY - gap }
+    private var height: CGFloat { Self.labelHeight + CGFloat(grid.rows) * stepY - gap }
 
-    private func monthLabels(_ grid: ActivityGrid) -> some View {
+    var body: some View {
         ZStack(alignment: .topLeading) {
-            ForEach(grid.months, id: \.column) { label in
-                Text(label.text)
-                    .caption(size: 8.5)
-                    .fixedSize()
-                    .offset(x: CGFloat(label.column) * Self.step)
-            }
+            columnLabels
+            rowLabels
+            cells
+                .frame(width: CGFloat(grid.columns) * stepX - gap, height: CGFloat(grid.rows) * stepY - gap)
+                .offset(x: leading, y: Self.labelHeight)
+            chip
         }
-        .frame(width: CGFloat(ActivityGrid.weeks) * Self.step - Self.gap, height: Self.monthRowHeight, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: height)
+        .background(GeometryReader { geometry in
+            Color.clear
+                .onAppear { width = geometry.size.width }
+                .onChange(of: geometry.size.width) { width = geometry.size.width }
+        })
     }
 
-    private func cells(_ grid: ActivityGrid) -> some View {
-        HStack(alignment: .top, spacing: Self.gap) {
-            ForEach(grid.columns.indices, id: \.self) { week in
-                VStack(spacing: Self.gap) {
-                    ForEach(0..<7, id: \.self) { weekday in
-                        if let day = grid.columns[week][weekday] {
-                            ActivityCell(level: day.level, service: service, highlighted: day.key == hovered?.key)
-                                .anchorPreference(key: HoveredCellKey.self, value: .bounds) {
-                                    day.key == hovered?.key ? $0 : nil
-                                }
-                        } else {
-                            Color.clear.frame(width: Self.cell, height: Self.cell)
-                        }
+    private var cells: some View {
+        let grid = grid
+        let stepX = stepX
+        let stepY = stepY
+        let size = CGSize(width: cellWidth, height: cellHeight)
+        let accent = DashboardStyle.accent(for: service)
+        let hoveredKey = hovered?.key
+        return Canvas { context, _ in
+            for (row, days) in grid.cells.enumerated() {
+                for (column, day) in days.enumerated() {
+                    guard let day else { continue }
+                    let rect = CGRect(origin: CGPoint(x: CGFloat(column) * stepX, y: CGFloat(row) * stepY), size: size)
+                    let shape = Path(roundedRect: rect, cornerRadius: min(4, min(size.width, size.height) / 5), style: .continuous)
+                    context.fill(shape, with: .color(ActivityShade.color(day.level, accent: accent)))
+                    if day.key == hoveredKey {
+                        context.stroke(shape, with: .color(.white.opacity(0.9)), lineWidth: 1)
                     }
                 }
             }
         }
-        // One hover handler for the whole grid instead of one per cell. A click shows
-        // the day too, in case the panel gets no hover events.
+        .contentShape(Rectangle())
         .onContinuousHover { phase in
             switch phase {
-            case .active(let point): hover(day(at: point, in: grid))
-            case .ended: hover(nil)
+            case .active(let point): hover(point)
+            case .ended: set(nil)
             }
         }
-        .onTapGesture { point in hover(day(at: point, in: grid)) }
+        // A click shows the day too, in case the panel gets no hover events.
+        .onTapGesture { point in hover(point) }
+    }
+
+    private func hover(_ point: CGPoint) {
+        let column = Int(point.x / stepX)
+        let row = Int(point.y / stepY)
+        guard point.x >= 0, point.y >= 0, grid.cells.indices.contains(row),
+              grid.cells[row].indices.contains(column)
+        else { return set(nil) }
+        set(grid.cells[row][column])
     }
 
     /// Only a different day re-renders, not every pixel the cursor moves.
-    private func hover(_ day: ActivityGrid.Day?) {
+    private func set(_ day: ActivityGrid.Day?) {
         if day?.key != hovered?.key { hovered = day }
     }
 
-    private func day(at point: CGPoint, in grid: ActivityGrid) -> ActivityGrid.Day? {
-        guard point.x >= 0, point.y >= 0 else { return nil }
-        let week = Int(point.x / Self.step)
-        let weekday = Int(point.y / Self.step)
-        guard grid.columns.indices.contains(week), weekday < 7 else { return nil }
-        return grid.columns[week][weekday]
+    private var columnLabels: some View {
+        ForEach(grid.columnLabels.indices, id: \.self) { column in
+            if let text = grid.columnLabels[column] {
+                Text(text)
+                    .caption(size: 8.5)
+                    .fixedSize()
+                    // Months start at their week; weekdays sit centred over their cells.
+                    .frame(width: grid.layout == .weeks ? nil : cellWidth, alignment: grid.layout == .weeks ? .leading : .center)
+                    .offset(x: leading + CGFloat(column) * stepX)
+            }
+        }
     }
 
-    private var legend: some View {
-        HStack(spacing: Self.gap) {
-            Spacer(minLength: 0)
+    private var rowLabels: some View {
+        ForEach(grid.rowLabels.indices, id: \.self) { row in
+            if let text = grid.rowLabels[row] {
+                Text(text)
+                    .caption(size: 8.5)
+                    .fixedSize()
+                    .frame(height: cellHeight)
+                    .offset(y: Self.labelHeight + CGFloat(row) * stepY)
+            }
+        }
+    }
+
+    /// The hovered day's tokens in thousands, just above its cell, kept inside the graph.
+    @ViewBuilder
+    private var chip: some View {
+        if let hovered, let (row, column) = position(of: hovered.key) {
+            let text = TokenFormat.thousands(hovered.tokens)
+            // The font is monospaced, so the width is known before layout.
+            let chipWidth = CGFloat(text.count) * 5.6 + 12
+            let centre = leading + CGFloat(column) * stepX + cellWidth / 2
+            let x = min(max(centre - chipWidth / 2, 0), width - chipWidth)
+            let y = Self.labelHeight + CGFloat(row) * stepY - Self.chipHeight - 3
+            Text(text)
+                .font(.app(9))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .fixedSize()
+                .frame(width: chipWidth, height: Self.chipHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color(white: 0.16))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(DashboardStyle.accent(for: service).opacity(0.6), lineWidth: 1)
+                        )
+                )
+                .offset(x: x, y: y)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func position(of key: DayKey) -> (Int, Int)? {
+        for (row, days) in grid.cells.enumerated() {
+            if let column = days.firstIndex(where: { $0?.key == key }) { return (row, column) }
+        }
+        return nil
+    }
+}
+
+private struct Legend: View {
+    let service: Service
+
+    var body: some View {
+        HStack(spacing: 3) {
             Text("LESS").caption(size: 8.5).padding(.trailing, 3)
             ForEach(0..<5, id: \.self) { level in
-                ActivityCell(level: level, service: service, highlighted: false)
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(ActivityShade.color(level, accent: DashboardStyle.accent(for: service)))
+                    .frame(width: 10, height: 10)
             }
             Text("MORE").caption(size: 8.5).padding(.leading, 3)
         }
     }
 }
 
-/// Where the hovered cell is, for the chip above it.
-private struct HoveredCellKey: PreferenceKey {
-    static let defaultValue: Anchor<CGRect>? = nil
-
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
-        value = value ?? nextValue()
-    }
-}
-
-/// The hovered day's tokens in thousands, in a small chip just above its cell and
-/// kept inside the graph.
-struct TokenChip: View {
-    let tokens: Int
-    let service: Service
-    let cell: CGRect
-    let bounds: CGSize
-
-    private static let height: CGFloat = 16
-
-    var body: some View {
-        let text = TokenFormat.thousands(tokens)
-        // The font is monospaced, so the width is known before layout.
-        let width = CGFloat(text.count) * 5.6 + 12
-        let x = min(max(cell.midX, width / 2), bounds.width - width / 2)
-        Text(text)
-            .font(.app(9))
-            .monospacedDigit()
-            .foregroundStyle(.white)
-            .lineLimit(1)
-            .fixedSize()
-            .frame(width: width, height: Self.height)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color(white: 0.16))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .stroke(DashboardStyle.accent(for: service).opacity(0.6), lineWidth: 1)
-                    )
-            )
-            .position(x: x, y: cell.minY - Self.height / 2 - 3)
-            .allowsHitTesting(false)
-    }
-}
-
-struct ActivityCell: View {
-    let level: Int
-    let service: Service
-    let highlighted: Bool
-
+enum ActivityShade {
     /// Opacity of the service's colour for shades 1...4.
-    static let shades: [Double] = [0.28, 0.5, 0.74, 1]
+    static let opacities: [Double] = [0.28, 0.5, 0.74, 1]
 
-    var body: some View {
-        RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(level == 0 ? Color.white.opacity(0.07) : DashboardStyle.accent(for: service).opacity(Self.shades[level - 1]))
-            .overlay {
-                if highlighted {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .stroke(Color.white.opacity(0.85), lineWidth: 1)
-                }
-            }
-            .frame(width: ActivityGraph.cell, height: ActivityGraph.cell)
+    static func color(_ level: Int, accent: Color) -> Color {
+        level == 0 ? Color.white.opacity(0.07) : accent.opacity(opacities[level - 1])
     }
 }

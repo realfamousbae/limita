@@ -513,22 +513,59 @@ header {
   background: rgba(255, 255, 255, 0.07);
 }
 
-/* Activity: the panel under the columns, opened by the chevron. Mirrors ActivityView.swift. */
+/* Activity: the panel under the columns, opened by the capsule. Mirrors ActivityView.swift. */
+
+.activity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px 0;
+}
+
+.period-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.period-switch button {
+  height: 20px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  color: var(--caption);
+}
+
+.period-switch button.selected {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+}
 
 .activity-toggle-row {
   display: flex;
-  justify-content: center;
-  padding: 2px 0 8px;
+  justify-content: flex-end;
+  padding: 2px 18px 12px;
 }
 
-.round.activity-toggle {
-  width: 22px;
+.activity-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  color: var(--caption);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .activity-toggle .icon svg {
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   transition: transform 0.15s;
 }
 
@@ -538,84 +575,62 @@ header {
 
 .column.activity {
   position: relative;
+  padding-top: 12px;
   padding-bottom: 4px;
-  gap: 8px;
+  gap: 12px;
 }
 
 .column.activity.claude { --shade: 255, 148, 77; }
 .column.activity.codex { --shade: 79, 171, 255; }
 
-.activity-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
+.activity-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px 10px;
 }
 
-.activity-body {
-  display: flex;
-  min-width: 0;
+.activity-summary .tile-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.activity-weekdays {
-  display: flex;
-  flex-direction: column;
+.activity-graph {
+  display: grid;
+  grid-template-rows: 14px;
+  grid-auto-rows: auto;
+  gap: 4px;
+}
+
+.activity-graph.weeks {
   gap: 3px;
-  width: 24px;
-  flex: none;
-  padding-top: 13px;
 }
 
-.activity-weekdays span,
-.activity-months span,
+.column-label,
+.row-label,
 .activity-legend > span:not(.cell) {
   font-size: 8.5px;
   letter-spacing: 0.3px;
   color: var(--caption);
   line-height: 10px;
-  height: 10px;
-}
-
-.activity-scroll {
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.activity-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.activity-months {
-  position: relative;
-  height: 13px;
-  width: calc(53 * 13px - 3px);
-}
-
-.activity-months span {
-  position: absolute;
-  top: 0;
   white-space: nowrap;
 }
 
-.activity-cells {
-  display: flex;
-  gap: 3px;
-  width: max-content;
-}
+/* Weekdays sit centred over their cells; months start at their week and may run on. */
+.column-label { text-align: center; align-self: end; }
+.column-label.weeks { text-align: left; overflow: visible; width: 0; }
+.row-label { align-self: center; }
 
-.activity-week {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
+.activity-graph .cell { width: 100%; }
+.activity-graph.row .cell { height: 40px; }
+.activity-graph.calendar .cell { height: 26px; }
+.activity-graph.weeks .cell { aspect-ratio: 1; height: auto; }
 
 .cell {
   display: block;
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: 3px;
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.07);
 }
@@ -625,15 +640,24 @@ header {
 .cell.l2 { background: rgba(var(--shade), 0.5); }
 .cell.l3 { background: rgba(var(--shade), 0.74); }
 .cell.l4 { background: rgb(var(--shade)); }
-.cell.hovered { outline: 1px solid rgba(255, 255, 255, 0.85); outline-offset: -1px; }
+.cell.hovered { outline: 1px solid rgba(255, 255, 255, 0.9); outline-offset: -1px; }
+
+.activity-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 12px;
+}
 
 .activity-legend {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 3px;
+  margin-left: auto;
 }
 
+.activity-legend .cell { border-radius: 2px; }
 .activity-legend > span:first-child { margin-right: 3px; }
 .activity-legend > span:last-child { margin-left: 3px; }
 
@@ -643,7 +667,7 @@ header {
   height: 16px;
   padding: 0 6px;
   font-size: 9px;
-  line-height: 16px;
+  line-height: 14px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   background: rgb(41, 41, 41);
