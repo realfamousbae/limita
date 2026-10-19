@@ -512,3 +512,143 @@ header {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.07);
 }
+
+/* Activity: the panel under the columns, opened by the chevron. Mirrors ActivityView.swift. */
+
+.activity-toggle-row {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 8px;
+}
+
+.round.activity-toggle {
+  width: 22px;
+  height: 22px;
+}
+
+.activity-toggle .icon svg {
+  width: 11px;
+  height: 11px;
+  transition: transform 0.15s;
+}
+
+.activity-toggle.open .icon svg {
+  transform: rotate(180deg);
+}
+
+.column.activity {
+  position: relative;
+  padding-bottom: 4px;
+  gap: 8px;
+}
+
+.column.activity.claude { --shade: 255, 148, 77; }
+.column.activity.codex { --shade: 79, 171, 255; }
+
+.activity-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.activity-body {
+  display: flex;
+  min-width: 0;
+}
+
+.activity-weekdays {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 24px;
+  flex: none;
+  padding-top: 13px;
+}
+
+.activity-weekdays span,
+.activity-months span,
+.activity-legend > span:not(.cell) {
+  font-size: 8.5px;
+  letter-spacing: 0.3px;
+  color: var(--caption);
+  line-height: 10px;
+  height: 10px;
+}
+
+.activity-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.activity-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.activity-months {
+  position: relative;
+  height: 13px;
+  width: calc(53 * 13px - 3px);
+}
+
+.activity-months span {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+}
+
+.activity-cells {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+}
+
+.activity-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cell {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.cell.empty { background: transparent; }
+.cell.l1 { background: rgba(var(--shade), 0.28); }
+.cell.l2 { background: rgba(var(--shade), 0.5); }
+.cell.l3 { background: rgba(var(--shade), 0.74); }
+.cell.l4 { background: rgb(var(--shade)); }
+.cell.hovered { outline: 1px solid rgba(255, 255, 255, 0.85); outline-offset: -1px; }
+
+.activity-legend {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 3px;
+}
+
+.activity-legend > span:first-child { margin-right: 3px; }
+.activity-legend > span:last-child { margin-left: 3px; }
+
+.activity-chip {
+  display: none;
+  position: absolute;
+  height: 16px;
+  padding: 0 6px;
+  font-size: 9px;
+  line-height: 16px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  background: rgb(41, 41, 41);
+  border: 1px solid rgba(var(--shade), 0.6);
+  border-radius: 4px;
+  box-sizing: border-box;
+  pointer-events: none;
+}

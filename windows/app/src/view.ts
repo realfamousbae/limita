@@ -43,3 +43,26 @@ export interface PrimeTimeNotice {
   title: string;
   detail: string;
 }
+
+/** The activity panel under the dashboard (limita-core `activity.rs`). */
+export interface ActivityPanel {
+  expanded: boolean;
+  grids: ActivityGrid[];
+}
+
+export interface ActivityGrid {
+  id: Service;
+  /** `columns[week][weekday]`, Sunday first; `null` after today. */
+  columns: (ActivityDay | null)[][];
+  months: { column: number; text: string }[];
+  total: string;
+}
+
+export interface ActivityDay {
+  key: string;
+  /** 0 for no activity, 1...4 for the four shades. */
+  level: number;
+  label: string;
+  /** Tokens in thousands, for the chip over a hovered day. */
+  chip: string;
+}

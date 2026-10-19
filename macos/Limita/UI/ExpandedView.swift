@@ -38,9 +38,17 @@ struct ExpandedView: View {
                     }
                     // Columns and the divider take the height of the tallest column.
                     .fixedSize(horizontal: false, vertical: true)
+
+                    // The window grows to fit, so the panel drops down below the columns.
+                    if store.activity.isExpanded {
+                        divider.frame(height: 1).padding(.horizontal, 18)
+                        ActivitySection(store: store)
+                    }
+                    ActivityToggle(store: store)
                 }
             }
         }
+        .onAppear { store.activity.refresh(store.enabledServices, ifOlderThan: 60) }
         // Height follows the content; the panel controller sizes the window to it.
         .frame(maxWidth: .infinity)
         .fixedSize(horizontal: false, vertical: true)
