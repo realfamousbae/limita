@@ -4,18 +4,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { icons } from "./icons";
-import type { ActivityDay, ActivityGrid, ActivityPanel, Meter, Mode, PanelView, PrimeTimeNotice, ServiceView } from "./view";
+import type { ActivityDay, ActivityGrid, ActivityPanel, Meter, Mode, PanelView, Period, PrimeTimeNotice, ServiceView } from "./view";
 
 let mode: Mode = "hidden";
 let view: PanelView | null = null;
 let hoverPill = true;
 let version = "";
 let reported = "";
-let activity: ActivityPanel = { expanded: false, grids: [] };
+let activity: ActivityPanel = { expanded: false, period: "all", grids: [] };
 /** The day under the cursor, kept across re-renders. */
 let hovered: { service: ServiceView["id"]; day: ActivityDay } | null = null;
-/** Where each graph is scrolled; a graph not in here opens on the newest weeks. */
-const scrolled = new Map<ServiceView["id"], number>();
 
 const app = document.getElementById("app")!;
 
@@ -110,9 +108,10 @@ function dashboard(current: PanelView): HTMLElement {
     if (activity.expanded && activity.grids.length > 0) {
       dashboard.append(
         el("div", "divider horizontal"),
+        el("div", "activity-header", el("div", "caption", "ACTIVITY"), periodSwitch()),
         el("div", "columns", ...activity.grids.flatMap((grid, index) => [
           index > 0 ? el("div", "divider vertical") : null,
-          activityGraph(grid),
+          activityColumn(grid),
         ])),
       );
     }
@@ -123,21 +122,40 @@ function dashboard(current: PanelView): HTMLElement {
 
 // MARK: - Activity
 
-const CELL_STEP = 13;
+const PERIODS: { id: Period; title: string }[] = [
+  { id: "week", title: "WEEK" },
+  { id: "month", title: "MONTH" },
+  { id: "all", title: "ALL" },
+];
 
 async function loadActivity() {
   activity = await invoke<ActivityPanel>("activity");
   render();
 }
 
-/** The round button with a chevron under the dashboard that opens and closes the panel. */
+/** WEEK · MONTH · ALL, shared by every service's graph. */
+function periodSwitch(): HTMLElement {
+  return el("div", "period-switch", ...PERIODS.map(({ id, title }) => {
+    const button = el("button", id === activity.period ? "selected" : "", title);
+    button.addEventListener("click", async () => {
+      if (id === activity.period) return;
+      hovered = null;
+      activity = await invoke<ActivityPanel>("set_activity_period", { period: id });
+      render();
+    });
+    return button;
+  }));
+}
+
+/** A small capsule at the bottom right, in line with the columns' right edge, that opens
+ * and closes the panel. */
 function activityToggle(): HTMLElement {
-  const button = el("button", `round activity-toggle${activity.expanded ? " open" : ""}`, icon("chevron"));
+  const button = el("button", `activity-toggle${activity.expanded ? " open" : ""}`, el("span", "", "ACTIVITY"), icon("chevron"));
   button.setAttribute("aria-label", activity.expanded ? "Hide activity" : "Show activity");
   button.addEventListener("click", async () => {
     const expanded = !activity.expanded;
     if (!expanded) {
-      activity = { expanded, grids: [] };
+      activity = { ...activity, expanded, grids: [] };
       render();
     }
     activity = await invoke<ActivityPanel>("set_activity_expanded", { expanded });
@@ -146,24 +164,23 @@ function activityToggle(): HTMLElement {
   return el("div", "activity-toggle-row", button);
 }
 
-/** One service's year: weeks left to right, opened on the newest. Hovering a day shows
- * its tokens in a chip over it and its date in the caption. */
-function activityGraph(grid: ActivityGrid): HTMLElement {
-  const info = el("div", "caption faint nowrap", grid.total);
-  const chip = el("span", "activity-chip");
-  const months = el("div", "activity-months", ...grid.months.map((month) => {
-    const label = el("span", "", month.text);
-    label.style.left = `${month.column * CELL_STEP}px`;
-    return label;
-  }));
-  const cells = el("div", "activity-cells");
+/** One service: the summary tiles, the graph, and under it the hovered day and the
+ * legend. Cells fill the column; nothing scrolls or is cut off. Hovering a day shows its
+ * tokens in a chip over it. */
+function activityColumn(grid: ActivityGrid): HTMLElement {
   const node = el("section", `column activity ${grid.id}`);
+  const chip = el("span", "activity-chip");
+  const date = el("div", "caption nowrap activity-date");
+  const columns = grid.cells[0]?.length ?? 0;
+  const labelled = grid.rowLabels.some((label) => label !== null);
+
+  const graph = el("div", `activity-graph ${grid.layout}`);
+  graph.style.gridTemplateColumns = `${labelled ? "26px " : ""}repeat(${columns}, ${grid.layout === "weeks" ? "minmax(0, 19px)" : "minmax(0, 1fr)"})`;
 
   const show = (day: ActivityDay | null, cell: HTMLElement | null) => {
-    node.querySelector(".cell.hovered")?.classList.remove("hovered");
+    graph.querySelector(".cell.hovered")?.classList.remove("hovered");
     hovered = day && { service: grid.id, day };
-    info.textContent = day ? day.label : grid.total;
-    info.classList.toggle("faint", !day);
+    date.textContent = day ? day.label : "";
     if (!day || !cell) {
       chip.style.display = "none";
       return;
@@ -171,7 +188,7 @@ function activityGraph(grid: ActivityGrid): HTMLElement {
     cell.classList.add("hovered");
     chip.textContent = day.chip;
     chip.style.display = "block";
-    // Centred over the cell, kept inside the graph.
+    // Centred over the cell, kept inside the column.
     const box = node.getBoundingClientRect();
     const rect = cell.getBoundingClientRect();
     const width = chip.getBoundingClientRect().width;
@@ -180,54 +197,38 @@ function activityGraph(grid: ActivityGrid): HTMLElement {
     chip.style.top = `${rect.top - box.top - 19}px`;
   };
 
-  for (const week of grid.columns) {
-    const column = el("div", "activity-week");
-    for (const day of week) {
+  // Labels over the columns, then one grid row per row of days.
+  if (labelled) graph.append(el("span"));
+  for (const label of grid.columnLabels) graph.append(el("span", `column-label ${grid.layout}`, label ?? ""));
+  grid.cells.forEach((row, index) => {
+    if (labelled) graph.append(el("span", "row-label", grid.rowLabels[index] ?? ""));
+    for (const day of row) {
       const cell = el("span", day ? `cell l${day.level}` : "cell empty");
       if (day) {
         cell.dataset.key = day.key;
         cell.addEventListener("mouseenter", () => show(day, cell));
         cell.addEventListener("click", () => show(day, cell));
       }
-      column.append(cell);
+      graph.append(cell);
     }
-    cells.append(column);
-  }
-  cells.addEventListener("mouseleave", () => show(null, null));
-
-  const scroller = el("div", "activity-scroll", months, cells);
-  scroller.dataset.service = grid.id;
-  scroller.addEventListener("scroll", () => {
-    // Restoring the position after a re-render fires this too; that is no real scroll.
-    if (scroller.scrollLeft === scrolled.get(grid.id)) return;
-    scrolled.set(grid.id, scroller.scrollLeft);
-    if (hovered?.service === grid.id) show(null, null);
   });
-  // Restores the hovered day once the graph is laid out (see `render`).
+  graph.addEventListener("mouseleave", () => show(null, null));
+  // Puts the chip back over the hovered day once the column is laid out (see `render`).
   node.addEventListener("restore", () => {
     if (hovered?.service !== grid.id) return;
-    const cell = cells.querySelector<HTMLElement>(`[data-key="${hovered.day.key}"]`);
+    const cell = graph.querySelector<HTMLElement>(`[data-key="${hovered.day.key}"]`);
     show(cell ? hovered.day : null, cell);
   });
 
-  const weekdays = el("div", "activity-weekdays", ...["", "Mon", "", "Wed", "", "Fri", ""].map((d) => el("span", "", d)));
+  const summary = el("div", "activity-summary", ...grid.summary.map((tile) =>
+    el("div", "tile", el("div", "caption nowrap", tile.label), el("div", "tile-value digits", tile.value))));
   const legend = el("div", "activity-legend", el("span", "", "LESS"), ...[0, 1, 2, 3, 4].map((l) => el("span", `cell l${l}`)), el("span", "", "MORE"));
-  node.append(
-    el("div", "activity-head", el("div", "caption", "ACTIVITY"), info),
-    el("div", "activity-body", weekdays, scroller),
-    legend,
-    chip,
-  );
+  node.append(summary, graph, el("div", "activity-footer", date, legend), chip);
   return node;
 }
 
-/** Puts each graph back where it was scrolled, or on the newest weeks, and the hover chip
- * back over its day. Runs after the dashboard is in the document. */
+/** Puts each hover chip back over its day. Runs after the dashboard is in the document. */
 function restoreActivity() {
-  for (const scroller of Array.from(app.querySelectorAll<HTMLElement>(".activity-scroll"))) {
-    const service = scroller.dataset.service as ServiceView["id"];
-    scroller.scrollLeft = scrolled.get(service) ?? scroller.scrollWidth;
-  }
   for (const node of Array.from(app.querySelectorAll(".column.activity"))) node.dispatchEvent(new Event("restore"));
 }
 
@@ -319,8 +320,6 @@ function meter(m: Meter, stale: boolean): HTMLElement {
 function render(modeChanged = false) {
   if (!view || mode === "hidden") {
     app.replaceChildren();
-    // The next opening starts on the newest weeks.
-    scrolled.clear();
     hovered = null;
     reported = "";
     return;

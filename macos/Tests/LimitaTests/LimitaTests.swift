@@ -780,6 +780,17 @@ final class LimitaTests: XCTestCase {
 
     // MARK: - Activity
 
+    private var moscow: Calendar {
+        var calendar = Calendar.activity
+        calendar.timeZone = TimeZone(identifier: "Europe/Moscow")!
+        return calendar
+    }
+
+    /// Monday, 19 October 2026, 15:00 in Moscow.
+    private var monday: Date {
+        moscow.date(from: DateComponents(year: 2026, month: 10, day: 19, hour: 15))!
+    }
+
     func testActivityLevelsSplitActiveDaysIntoQuarters() {
         let active = [10, 20, 30, 40]
         XCTAssertEqual(active.map { ActivityGrid.level($0, active: active) }, [1, 2, 3, 4])
@@ -789,23 +800,78 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual([1, 1_000_000].map { ActivityGrid.level($0, active: [1, 1_000_000]) }, [2, 4])
     }
 
-    func testActivityGridEndsTodayWithSundayOnTop() throws {
-        var calendar = Calendar.activity
-        calendar.timeZone = TimeZone(identifier: "Europe/Moscow")!
-        // Monday, 19 October 2026, local time.
-        let today = calendar.date(from: DateComponents(year: 2026, month: 10, day: 19, hour: 15))!
-        let grid = ActivityGrid(days: ["2026-10-18": 100, "2026-10-19": 300, "2025-01-01": 999], today: today, calendar: calendar)
+    func testActivityWeekIsTheLastSevenDaysInARow() {
+        let grid = ActivityGrid(days: ["2026-10-13": DayStats(tokens: 5)], period: .week, today: monday, calendar: moscow)
+        XCTAssertEqual(grid.layout, .row)
+        XCTAssertEqual(grid.cells.map { $0.map { $0?.key } }, [[
+            "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18", "2026-10-19",
+        ]])
+        XCTAssertEqual(grid.columnLabels.first, "Tue 13")
+        XCTAssertEqual(grid.cells[0][0]?.level, 4)
+    }
 
-        XCTAssertEqual(grid.columns.count, ActivityGrid.weeks)
-        let last = try XCTUnwrap(grid.columns.last)
-        XCTAssertEqual(last[0]?.key, "2026-10-18")
-        XCTAssertEqual(last[1]?.key, "2026-10-19")
-        XCTAssertNil(last[2])
-        XCTAssertEqual(last[1]?.level, 4)
-        XCTAssertEqual(last[0]?.level, 2)
-        // Days before the first week are not counted.
-        XCTAssertEqual(grid.total, 400)
-        XCTAssertEqual(grid.months.last?.text, "Oct")
+    func testActivityMonthIsFiveCalendarWeeksFromMonday() throws {
+        let grid = ActivityGrid(days: [:], period: .month, today: monday, calendar: moscow)
+        XCTAssertEqual(grid.layout, .calendar)
+        XCTAssertEqual(grid.rows, 5)
+        XCTAssertEqual(grid.cells[0][0]?.key, "2026-09-21")
+        let last = try XCTUnwrap(grid.cells.last)
+        XCTAssertEqual(last[0]?.key, "2026-10-19")
+        XCTAssertNil(last[1])
+        XCTAssertEqual(grid.columnLabels.first, "Mon")
+    }
+
+    func testActivityAllStartsAtTheFirstSavedWeekWithinHalfAYear() throws {
+        let recent = ActivityGrid(days: ["2026-10-16": DayStats(tokens: 1)], period: .all, today: monday, calendar: moscow)
+        XCTAssertEqual(recent.layout, .weeks)
+        XCTAssertEqual(recent.rows, 7)
+        XCTAssertEqual(recent.columns, ActivityGrid.minWeeks)
+        XCTAssertEqual(recent.rowLabels, ["Mon", nil, "Wed", nil, "Fri", nil, nil])
+        let lastWeek = recent.cells.map { $0.last! }
+        XCTAssertEqual(lastWeek[0]?.key, "2026-10-19")
+        XCTAssertNil(lastWeek[1])
+
+        XCTAssertEqual(recent.cells[0][0]?.key, "2026-06-22")
+
+        let fiveMonths = ActivityGrid(days: ["2026-05-20": DayStats(tokens: 1)], period: .all, today: monday, calendar: moscow)
+        XCTAssertEqual(fiveMonths.columns, 23)
+        XCTAssertEqual(fiveMonths.cells[0][0]?.key, "2026-05-18")
+
+        let old = ActivityGrid(days: ["2025-01-01": DayStats(tokens: 1)], period: .all, today: monday, calendar: moscow)
+        XCTAssertEqual(old.columns, ActivityGrid.maxWeeks)
+        XCTAssertEqual(old.summary.tokens, 0, "days before the first week are not counted")
+    }
+
+    func testActivitySummaryCountsThePeriod() {
+        var sunday = DayStats(tokens: 300)
+        sunday.input = 10
+        sunday.output = 40
+        sunday.cacheWrite = 50
+        sunday.cacheRead = 200
+        sunday.messages = 4
+        sunday.models = ["claude-opus-5-5": 250, "claude-sonnet-5-5": 50]
+        sunday.hours[15] = 4
+        sunday.hours[9] = 1
+        var saturday = DayStats(tokens: 100)
+        saturday.cacheRead = 100
+        saturday.messages = 2
+        saturday.models = ["claude-sonnet-5-5": 100]
+        saturday.hours[9] = 2
+        let days = ["2026-10-17": saturday, "2026-10-18": sunday, "2026-09-01": DayStats(tokens: 999)]
+        let summary = ActivityGrid(days: days, period: .week, today: monday, calendar: moscow).summary
+
+        XCTAssertEqual(summary.tokens, 400)
+        XCTAssertEqual(summary.usage, TokenUsage(input: 10, output: 40, cacheWrite: 50, cacheRead: 300))
+        XCTAssertEqual(summary.favoriteModel, "Opus 5.5")
+        XCTAssertEqual(summary.messages, 6)
+        XCTAssertEqual(summary.peakHourText, "15:00")
+    }
+
+    func testModelNames() {
+        XCTAssertEqual(ActivitySummary.modelName("claude-opus-5-5"), "Opus 5.5")
+        XCTAssertEqual(ActivitySummary.modelName("claude-3-5-haiku-20241022"), "Haiku 3.5")
+        XCTAssertEqual(ActivitySummary.modelName("claude-sonnet-4-20250514"), "Sonnet 4")
+        XCTAssertEqual(ActivitySummary.modelName("gpt-5.5-codex"), "gpt-5.5-codex")
     }
 
     func testTokenFormats() {
@@ -818,43 +884,85 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(TokenFormat.thousands(12_345_678), "12,346K")
     }
 
-    func testActivityReaderCountsClaudeRequestsOnceAcrossFilesAndKeepsHistory() throws {
+    func testDayStatsReadsTheOldFormatAndMergesUpwards() throws {
+        let old = try JSONDecoder().decode([String: DayStats].self, from: Data(#"{"2026-10-16":42}"#.utf8))
+        XCTAssertEqual(old["2026-10-16"], DayStats(tokens: 42))
+
+        var saved = DayStats(tokens: 10)
+        saved.cacheRead = 10
+        saved.hours[3] = 5
+        var scanned = DayStats(tokens: 8)
+        scanned.input = 8
+        scanned.messages = 2
+        scanned.hours[3] = 1
+        let merged = saved.merged(with: scanned)
+        XCTAssertEqual(merged.tokens, 10)
+        XCTAssertEqual(merged.input, 8)
+        XCTAssertEqual(merged.cacheRead, 10)
+        XCTAssertEqual(merged.messages, 2)
+        XCTAssertEqual(merged.hours[3], 5)
+    }
+
+    func testActivityReaderCountsClaudeRequestsAndPromptsOnceAcrossFiles() throws {
         let home = try temporaryDirectory()
         let project = home.appendingPathComponent(".claude/projects/-p")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        func line(_ id: String, _ time: String, _ input: Int) -> String {
-            #"{"type":"assistant","requestId":"r\#(id)","timestamp":"\#(time)","message":{"id":"m\#(id)","usage":{"input_tokens":\#(input),"output_tokens":1,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}}}"#
+        func reply(_ id: String, _ time: String, _ input: Int) -> String {
+            #"{"type":"assistant","sessionId":"s1","requestId":"r\#(id)","timestamp":"\#(time)","message":{"id":"m\#(id)","model":"claude-opus-5-5","usage":{"input_tokens":\#(input),"output_tokens":1,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}}}"#
         }
-        let original = [line("1", "2026-10-16T10:00:00.000Z", 10), line("2", "2026-10-16T23:30:00Z", 20)]
+        let prompt = #"{"type":"user","sessionId":"s1","uuid":"u1","timestamp":"2026-10-16T09:59:00Z","message":{"role":"user","content":"hi"}}"#
+        let toolResult = #"{"type":"user","sessionId":"s1","uuid":"u2","timestamp":"2026-10-16T10:00:30Z","message":{"role":"user","content":[{"type":"tool_result","content":"x"}]}}"#
+        let original = [prompt, reply("1", "2026-10-16T10:00:00.000Z", 10), toolResult, reply("2", "2026-10-16T23:30:00Z", 20)]
         try Data(original.joined(separator: "\n").utf8).write(to: project.appendingPathComponent("a.jsonl"))
-        // A resumed session repeats request 1 and adds request 3.
-        let resumed = [line("1", "2026-10-16T10:00:00.000Z", 10), #"{"type":"user"}"#, line("3", "2026-10-17T09:00:00Z", 30)]
+        // A resumed session repeats the prompt and request 1, then adds request 3.
+        let resumed = [prompt, reply("1", "2026-10-16T10:00:00.000Z", 10), reply("3", "2026-10-17T09:00:00Z", 30)]
         try Data(resumed.joined(separator: "\n").utf8).write(to: project.appendingPathComponent("b.jsonl"))
 
         let history = home.appendingPathComponent("activity.json")
-        let reader = ActivityReader(home: home, historyURL: history)
-        let moscow = TimeZone(identifier: "Europe/Moscow")!
+        let moscowZone = TimeZone(identifier: "Europe/Moscow")!
+        let days = try XCTUnwrap(ActivityReader(home: home, historyURL: history).read([.claude], timeZone: moscowZone)[.claude])
         // 23:30 UTC is already the 17th in Moscow.
-        XCTAssertEqual(reader.read([.claude], timeZone: moscow)[.claude], ["2026-10-16": 16, "2026-10-17": 62])
+        XCTAssertEqual(days.mapValues(\.tokens), ["2026-10-16": 16, "2026-10-17": 62])
+        XCTAssertEqual(days["2026-10-16"]?.messages, 2, "the prompt and one reply; tool results are not prompts")
+        XCTAssertEqual(days["2026-10-16"]?.hours[12], 1)
+        XCTAssertEqual(days["2026-10-16"]?.hours[13], 1)
+        XCTAssertEqual(days["2026-10-17"]?.models, ["claude-opus-5-5": 62])
+        XCTAssertEqual(days["2026-10-17"]?.input, 50)
+        XCTAssertEqual(days["2026-10-17"]?.output, 2)
+        XCTAssertEqual(days["2026-10-17"]?.cacheWrite, 4)
+        XCTAssertEqual(days["2026-10-17"]?.cacheRead, 6)
 
         // Deleted transcripts do not lower the saved days.
         try FileManager.default.removeItem(at: project.appendingPathComponent("a.jsonl"))
-        let fresh = ActivityReader(home: home, historyURL: history)
-        XCTAssertEqual(fresh.read([.claude], timeZone: moscow)[.claude], ["2026-10-16": 16, "2026-10-17": 62])
+        let fresh = ActivityReader(home: home, historyURL: history).read([.claude], timeZone: moscowZone)[.claude]
+        XCTAssertEqual(fresh?.mapValues(\.tokens), ["2026-10-16": 16, "2026-10-17": 62])
     }
 
-    func testActivityReaderCountsCodexGrowthOfTheRunningTotal() {
-        func event(_ time: String, _ total: Int) -> String {
-            #"{"timestamp":"\#(time)","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":\#(total)}}}}"#
+    func testActivityReaderCountsCodexGrowthMessagesAndModel() {
+        // Input 100 of which 30 cached, output 20 at first; 200 / 80 cached / 50 later.
+        func event(_ time: String, _ input: Int, _ cached: Int, _ output: Int) -> String {
+            #"{"timestamp":"\#(time)","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":\#(input),"cached_input_tokens":\#(cached),"output_tokens":\#(output),"total_tokens":\#(input + output)}}}}"#
         }
         let log = [
-            event("2026-10-16T10:00:00Z", 100),
-            event("2026-10-16T10:00:01Z", 100),
+            #"{"timestamp":"2026-10-16T09:00:00Z","type":"session_meta","payload":{"id":"codex-1"}}"#,
+            #"{"timestamp":"2026-10-16T09:00:01Z","type":"turn_context","payload":{"model":"gpt-5.5-codex"}}"#,
+            #"{"timestamp":"2026-10-16T09:59:00Z","type":"event_msg","payload":{"type":"user_message","message":"hi"}}"#,
+            event("2026-10-16T10:00:00Z", 100, 30, 20),
+            event("2026-10-16T10:00:01Z", 100, 30, 20),
+            #"{"timestamp":"2026-10-16T10:00:02Z","type":"event_msg","payload":{"type":"agent_message","message":"hello"}}"#,
             #"{"timestamp":"2026-10-16T11:00:00Z","type":"event_msg","payload":{"type":"token_count","info":null}}"#,
-            event("2026-10-17T10:00:00Z", 250),
+            event("2026-10-17T10:00:00Z", 200, 80, 50),
         ].joined(separator: "\n")
-        let days = ActivityReader.codexDays(in: Data(log.utf8), formatter: DayKeys.formatter(timeZone: TimeZone(identifier: "UTC")!))
-        XCTAssertEqual(days, ["2026-10-16": 100, "2026-10-17": 150])
+        let days = ActivityReader.codexDays(in: Data(log.utf8), clock: LocalClock(timeZone: TimeZone(identifier: "UTC")!))
+        XCTAssertEqual(days.mapValues(\.tokens), ["2026-10-16": 120, "2026-10-17": 130])
+        XCTAssertEqual(days["2026-10-16"]?.input, 70)
+        XCTAssertEqual(days["2026-10-16"]?.cacheRead, 30)
+        XCTAssertEqual(days["2026-10-16"]?.output, 20)
+        XCTAssertEqual(days["2026-10-17"]?.input, 50)
+        XCTAssertEqual(days["2026-10-17"]?.cacheRead, 50)
+        XCTAssertEqual(days["2026-10-17"]?.output, 30)
+        XCTAssertEqual(days["2026-10-16"]?.messages, 2)
+        XCTAssertEqual(days["2026-10-16"]?.models, ["gpt-5.5-codex": 120])
     }
 
     private func temporaryDirectory() throws -> URL {

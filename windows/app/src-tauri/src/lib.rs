@@ -89,20 +89,23 @@ fn panel_resized(width: f64, height: f64, panel: State<'_, Arc<Panel>>) {
 #[serde(rename_all = "camelCase")]
 struct ActivityPanel {
     expanded: bool,
+    period: activity::Period,
     grids: Vec<activity::ActivityGrid>,
 }
 
 fn activity_panel(store: &Store, reader: &ActivityReader) -> ActivityPanel {
-    let expanded = ServiceSettings::default().activity_expanded();
+    let settings = ServiceSettings::default();
+    let expanded = settings.activity_expanded();
+    let period = settings.activity_period();
     let grids = if expanded {
         let enabled = store.snapshot().enabled;
         let today = Local::now().date_naive();
         let days = reader.read(&enabled, &Local);
-        enabled.iter().map(|&service| activity::grid(service, &days[&service], today)).collect()
+        enabled.iter().map(|&service| activity::grid(service, &days[&service], period, today)).collect()
     } else {
         Vec::new()
     };
-    ActivityPanel { expanded, grids }
+    ActivityPanel { expanded, period, grids }
 }
 
 #[tauri::command(async)]
@@ -113,6 +116,14 @@ fn activity(store: State<'_, Store>, reader: State<'_, Arc<ActivityReader>>) -> 
 #[tauri::command(async)]
 fn set_activity_expanded(expanded: bool, store: State<'_, Store>, reader: State<'_, Arc<ActivityReader>>) -> ActivityPanel {
     ServiceSettings::default().set_activity_expanded(expanded);
+    activity_panel(&store, &reader)
+}
+
+#[tauri::command(async)]
+fn set_activity_period(period: String, store: State<'_, Store>, reader: State<'_, Arc<ActivityReader>>) -> ActivityPanel {
+    if let Some(period) = activity::Period::from_id(&period) {
+        ServiceSettings::default().set_activity_period(period);
+    }
     activity_panel(&store, &reader)
 }
 
@@ -165,7 +176,8 @@ pub fn run() {
             toggle_hover_pill,
             panel_resized,
             activity,
-            set_activity_expanded
+            set_activity_expanded,
+            set_activity_period
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
