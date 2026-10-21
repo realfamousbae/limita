@@ -76,6 +76,20 @@ struct LimitWindow: Codable, Sendable, Equatable {
     static let longestResetText = "resets in 6 days 23 hours 59 min"
 }
 
+/// A window that covers one model only, e.g. Fable's own weekly limit on a Max plan.
+struct ScopedWindow: Codable, Sendable, Equatable {
+    /// The model's name as the service reports it, e.g. "Fable".
+    let name: String
+    /// A weekly window; otherwise a 5-hour one.
+    let isWeekly: Bool
+    let window: LimitWindow
+
+    /// "FABLE 7 DAYS", in the style of the other meters' titles.
+    var title: String {
+        "\(name.uppercased()) \(isWeekly ? "7 DAYS" : "5 HOURS")"
+    }
+}
+
 /// The pair of windows a service reports, plus when we read them.
 struct LimitSnapshot: Codable, Sendable, Equatable {
     let fiveHour: LimitWindow?
@@ -85,12 +99,34 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
     /// puts the weekly window where the 5-hour one goes). A merely missing `fiveHour`
     /// means "unknown", never "no limit".
     let hasNoFiveHourLimit: Bool
+    /// Per-model windows on top of the two above. Only Claude's network source reports
+    /// them; with any, the dashboard stacks the meters one per row.
+    let scoped: [ScopedWindow]
 
-    init(fiveHour: LimitWindow?, sevenDay: LimitWindow?, capturedAt: Date, hasNoFiveHourLimit: Bool = false) {
+    init(
+        fiveHour: LimitWindow?, sevenDay: LimitWindow?, capturedAt: Date,
+        hasNoFiveHourLimit: Bool = false, scoped: [ScopedWindow] = []
+    ) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.capturedAt = capturedAt
         self.hasNoFiveHourLimit = hasNoFiveHourLimit && fiveHour == nil && sevenDay != nil
+        self.scoped = scoped
+    }
+
+    /// This snapshot with `scoped` windows from another source. The status line reports
+    /// no per-model windows, so a newer one keeps those of the last network read.
+    func keepingScoped(from other: LimitSnapshot) -> LimitSnapshot {
+        guard scoped.isEmpty, !other.scoped.isEmpty else { return self }
+        return LimitSnapshot(
+            fiveHour: fiveHour, sevenDay: sevenDay, capturedAt: capturedAt,
+            hasNoFiveHourLimit: hasNoFiveHourLimit, scoped: other.scoped
+        )
+    }
+
+    /// Every reset time the snapshot reports, for the countdown ticks.
+    var resetDates: [Date] {
+        ([fiveHour, sevenDay] + scoped.map(\.window)).compactMap { $0?.resetsAt }
     }
 
     var isEmpty: Bool {

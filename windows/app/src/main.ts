@@ -291,7 +291,10 @@ function column(service: ServiceView): HTMLElement {
     node.append(el("p", "value muted", service.message ?? "No data"));
     return node;
   }
-  node.append(el("div", "meters", ...service.meters.map((m) => meter(m, service.stale))));
+  node.append(el("div", `meters${service.stacked ? " stacked" : ""}`, ...service.meters.map((m) => meter(m, service.stale))));
+  if (service.credits.length > 0) {
+    node.append(el("div", "credits", ...service.credits.map((m) => meter(m, service.stale))));
+  }
   // Tiles two to a row, on the meters' grid.
   if (service.details.length > 0) {
     node.append(
@@ -309,7 +312,7 @@ function meter(m: Meter, stale: boolean): HTMLElement {
     "div",
     `meter${stale ? " stale" : ""}`,
     el("div", "caption meter-caption", m.title),
-    el("div", "big digits", m.value),
+    el("div", "value-line", el("span", "big digits", m.value), m.amount ? el("span", "caption meter-caption digits nowrap", m.amount) : null),
     el("div", "bar", fill),
     el("div", "caption meter-caption nowrap", m.caption),
   );

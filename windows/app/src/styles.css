@@ -397,6 +397,32 @@ header {
   gap: 10px;
 }
 
+/* Three or more windows, one per row. */
+.meters.stacked {
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* In a column the meters' flex basis would set their height. */
+.meters.stacked .meter {
+  flex: none;
+}
+
+/* Claude's credits, two to a row on the meters' grid. */
+.credits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(var(--meter), 1fr));
+  gap: 12px 10px;
+}
+
+/* The value, with dollars beside it for credits. */
+.value-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
 .meter {
   /* At least the longest countdown; wider columns share the extra room, so the bars
      always run the full width. */
@@ -416,7 +442,7 @@ header {
   font-size: 10.5px;
 }
 
-.meter.stale .big,
+.meter.stale .value-line,
 .meter.stale .fill {
   opacity: 0.55;
 }

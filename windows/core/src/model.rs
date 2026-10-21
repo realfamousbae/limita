@@ -97,8 +97,25 @@ pub fn longest_reset_text() -> String {
     format!("resets in {}", duration_text(7.0 * 86400.0 - 60.0))
 }
 
+/// A window that covers one model only, e.g. Fable's own weekly limit on a Max plan.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScopedWindow {
+    /// The model's name as the service reports it, e.g. "Fable".
+    pub name: String,
+    /// A weekly window; otherwise a 5-hour one.
+    pub is_weekly: bool,
+    pub window: LimitWindow,
+}
+
+impl ScopedWindow {
+    /// "FABLE 7 DAYS", in the style of the other meters' titles.
+    pub fn title(&self) -> String {
+        format!("{} {}", self.name.to_uppercase(), if self.is_weekly { "7 DAYS" } else { "5 HOURS" })
+    }
+}
+
 /// The pair of windows a service reports, plus when we read them.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LimitSnapshot {
     pub five_hour: Option<LimitWindow>,
     pub seven_day: Option<LimitWindow>,
@@ -107,6 +124,9 @@ pub struct LimitSnapshot {
     /// puts the weekly window where the 5-hour one goes). A merely missing `five_hour`
     /// means "unknown", never "no limit".
     pub has_no_five_hour_limit: bool,
+    /// Per-model windows on top of the two above. Only Claude's network source reports
+    /// them; with any, the dashboard stacks the meters one per row.
+    pub scoped: Vec<ScopedWindow>,
 }
 
 impl LimitSnapshot {
@@ -125,7 +145,23 @@ impl LimitSnapshot {
             seven_day,
             captured_at,
             has_no_five_hour_limit: has_no_five_hour_limit && five_hour.is_none() && seven_day.is_some(),
+            scoped: Vec::new(),
         }
+    }
+
+    pub fn with_scoped(mut self, scoped: Vec<ScopedWindow>) -> Self {
+        self.scoped = scoped;
+        self
+    }
+
+    /// Every reset time the snapshot reports, for the countdown ticks.
+    pub fn reset_dates(&self) -> Vec<Timestamp> {
+        [self.five_hour, self.seven_day]
+            .into_iter()
+            .chain(self.scoped.iter().map(|s| Some(s.window)))
+            .flatten()
+            .filter_map(|window| window.resets_at)
+            .collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -369,7 +405,7 @@ mod tests {
             Some(LimitWindow::new(95.0, None)),
             now,
         );
-        assert_eq!(ServiceState::Fresh(snapshot).level(now), Some(LimitLevel::Normal), "the weekly window does not count");
+        assert_eq!(ServiceState::Fresh(snapshot.clone()).level(now), Some(LimitLevel::Normal), "the weekly window does not count");
         assert_eq!(ServiceState::Stale(snapshot).level(now), Some(LimitLevel::Normal));
         assert_eq!(ServiceState::Unavailable("x".into()).level(now), None);
     }

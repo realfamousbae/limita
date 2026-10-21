@@ -195,13 +195,13 @@ final class LimitsStore {
             if isEnabled(.codex) {
                 apply(codexResult, to: .codex)
                 if let codexState {
-                    states[.codex] = merge(codexState, live: liveSnapshots[.codex], staleAfter: CodexLimitsReader.staleAfter)
+                    states[.codex] = Self.merge(codexState, live: liveSnapshots[.codex], staleAfter: CodexLimitsReader.staleAfter)
                 }
             }
             if isEnabled(.claude) {
                 apply(claudeResult, to: .claude)
                 if let claudeState {
-                    states[.claude] = merge(claudeState, live: liveSnapshots[.claude], staleAfter: ClaudeLimitsReader.staleAfter)
+                    states[.claude] = Self.merge(claudeState, live: liveSnapshots[.claude], staleAfter: ClaudeLimitsReader.staleAfter)
                 }
             }
             lastRefresh = Date()
@@ -240,12 +240,15 @@ final class LimitsStore {
     }
 
     /// Shows whichever of the local and network snapshots is newer.
-    private func merge(_ local: ServiceState, live: LimitSnapshot?, staleAfter: TimeInterval) -> ServiceState {
+    nonisolated static func merge(
+        _ local: ServiceState, live: LimitSnapshot?, staleAfter: TimeInterval, now: Date = Date()
+    ) -> ServiceState {
         guard let live else { return local }
         if let localSnapshot = local.snapshot, localSnapshot.capturedAt >= live.capturedAt {
-            return local
+            // Otherwise the per-model meters would vanish after every Claude Code reply.
+            return .from(localSnapshot.keepingScoped(from: live), staleAfter: staleAfter, now: now)
         }
-        return .from(live, staleAfter: staleAfter)
+        return .from(live, staleAfter: staleAfter, now: now)
     }
 
     // MARK: - Connecting services

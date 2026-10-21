@@ -16,7 +16,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::model::{AccountDetails, Allowance, LimitSnapshot, LimitWindow, LiveReading, UsageCredits};
+use crate::model::{AccountDetails, Allowance, LimitSnapshot, LimitWindow, LiveReading, ScopedWindow, UsageCredits};
 use crate::paths;
 use crate::time::{from_unix, parse_flexible, relative_text, Timestamp};
 
@@ -128,7 +128,8 @@ pub fn access_token_from_credentials(data: &[u8], now: Timestamp) -> Result<Stri
 pub fn reading_from_response(data: &[u8], captured_at: Timestamp) -> Result<LiveReading, String> {
     let usage: Value =
         serde_json::from_slice(data).map_err(|error| format!("Claude usage API returned invalid JSON: {error}"))?;
-    let snapshot = LimitSnapshot::new(window(&usage["five_hour"]), window(&usage["seven_day"]), captured_at);
+    let snapshot = LimitSnapshot::new(window(&usage["five_hour"]), window(&usage["seven_day"]), captured_at)
+        .with_scoped(scoped_windows(&usage["limits"]));
     if snapshot.is_empty() {
         return Err("Claude usage API returned no limit windows".into());
     }
@@ -146,6 +147,25 @@ fn window(value: &Value) -> Option<LimitWindow> {
     // `utilization` is already a percentage, 0...100.
     let used = value.get("utilization")?.as_f64().filter(|v| v.is_finite())?;
     Some(LimitWindow::new(used, value.get("resets_at").and_then(Value::as_str).and_then(parse_flexible)))
+}
+
+/// Windows scoped to one model, from `limits`: `{"kind": "weekly_scoped", "group":
+/// "weekly", "percent": 4, "resets_at": "…", "scope": {"model": {"display_name": "Fable"}}}`.
+/// The plan-wide entries have keys of their own; an odd entry is skipped.
+fn scoped_windows(limits: &Value) -> Vec<ScopedWindow> {
+    let Some(limits) = limits.as_array() else { return Vec::new() };
+    limits
+        .iter()
+        .filter_map(|limit| {
+            let name = limit.pointer("/scope/model/display_name")?.as_str()?.trim();
+            let percent = limit.get("percent")?.as_f64().filter(|v| v.is_finite())?;
+            (!name.is_empty()).then(|| ScopedWindow {
+                name: name.to_string(),
+                is_weekly: limit.get("group").and_then(Value::as_str) != Some("session"),
+                window: LimitWindow::new(percent, limit.get("resets_at").and_then(Value::as_str).and_then(parse_flexible)),
+            })
+        })
+        .collect()
 }
 
 /// `{"amount_minor": 1234, "currency": "USD", "exponent": 2}`, or a plain number.
@@ -199,6 +219,31 @@ mod tests {
         assert_eq!(five.resets_at.unwrap().timestamp(), parse_flexible("2026-09-24T04:59:59Z").unwrap().timestamp());
         assert_eq!(snapshot.seven_day.unwrap().used_percent, 37.0);
         assert!(reading_from_response(b"{}", now()).is_err());
+    }
+
+    #[test]
+    fn per_model_windows_come_from_the_limits_list() {
+        // Trimmed from a real Max-plan response: the Fable window has no key of its own.
+        let response = r#"
+        {"five_hour":{"utilization":19.0,"resets_at":"2026-10-21T20:39:59.943268+00:00"},
+         "seven_day":{"utilization":3.0,"resets_at":"2026-10-26T10:59:59.943294+00:00"},
+         "limits":[
+          {"kind":"session","group":"session","percent":19,"resets_at":"2026-10-21T20:39:59.943268+00:00","scope":null},
+          {"kind":"weekly_all","group":"weekly","percent":3,"resets_at":"2026-10-26T10:59:59.943294+00:00","scope":null},
+          {"kind":"weekly_scoped","group":"weekly","percent":4,"resets_at":"2026-10-26T10:59:59.943559+00:00",
+           "scope":{"model":{"id":null,"display_name":"Fable"},"surface":null}},
+          {"kind":"weekly_scoped","group":"weekly","percent":"odd","scope":{"model":{"display_name":"Broken"}}}
+         ]}"#;
+        let snapshot = reading_from_response(response.as_bytes(), now()).unwrap().snapshot;
+        assert_eq!(snapshot.scoped.len(), 1, "plan-wide and malformed entries are skipped");
+        assert_eq!(snapshot.scoped[0].title(), "FABLE 7 DAYS");
+        assert_eq!(snapshot.scoped[0].window.used_percent, 4.0);
+        assert!(snapshot.scoped[0].window.resets_at.is_some());
+
+        let odd = r#"{"five_hour":{"utilization":1},"seven_day":{"utilization":2},"limits":"unexpected"}"#;
+        let plain = reading_from_response(odd.as_bytes(), now()).unwrap().snapshot;
+        assert!(plain.scoped.is_empty(), "an odd limits list costs only the per-model windows");
+        assert_eq!(plain.seven_day.unwrap().used_percent, 2.0);
     }
 
     #[test]

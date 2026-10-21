@@ -50,7 +50,8 @@ struct ClaudeLiveClient: Sendable {
         let snapshot = LimitSnapshot(
             fiveHour: usage.fiveHour?.limitWindow,
             sevenDay: usage.sevenDay?.limitWindow,
-            capturedAt: capturedAt
+            capturedAt: capturedAt,
+            scoped: usage.limits?.compactMap(\.scopedWindow) ?? []
         )
         guard !snapshot.isEmpty else {
             throw FetchError(message: "Claude usage API returned no limit windows")
@@ -134,6 +135,9 @@ struct ClaudeLiveClient: Sendable {
         let fiveHour: Window?
         let sevenDay: Window?
         let spend: Spend?
+        /// Every window again, including the per-model ones (`weekly_scoped`) that have
+        /// no key of their own.
+        let limits: [Limit]?
         /// Cloud session credits. The key is an internal code name, so it may change;
         /// the row then disappears instead of breaking the parse.
         let cloudCredits: DollarWindow?
@@ -142,6 +146,7 @@ struct ClaudeLiveClient: Sendable {
             case fiveHour = "five_hour"
             case sevenDay = "seven_day"
             case spend
+            case limits
             case cloudCredits = "iguana_necktie"
         }
 
@@ -151,7 +156,55 @@ struct ClaudeLiveClient: Sendable {
             sevenDay = try container.decodeIfPresent(Window.self, forKey: .sevenDay)
             // Extras must never cost us the limits themselves.
             spend = try? container.decodeIfPresent(Spend.self, forKey: .spend)
+            limits = try? container.decodeIfPresent([Lossy<Limit>].self, forKey: .limits)?.compactMap(\.value)
             cloudCredits = try? container.decodeIfPresent(DollarWindow.self, forKey: .cloudCredits)
+        }
+    }
+
+    /// Decodes to `nil` instead of failing, so one odd entry does not cost the others.
+    private struct Lossy<Value: Decodable>: Decodable {
+        let value: Value?
+
+        init(from decoder: Decoder) throws {
+            value = try? Value(from: decoder)
+        }
+    }
+
+    /// `{"kind": "weekly_scoped", "group": "weekly", "percent": 4, "resets_at": "…",
+    /// "scope": {"model": {"display_name": "Fable"}}}`.
+    private struct Limit: Decodable {
+        let group: String?
+        let percent: Double?
+        let resetsAt: String?
+        let scope: Scope?
+
+        struct Scope: Decodable {
+            let model: Model?
+        }
+
+        struct Model: Decodable {
+            let displayName: String?
+
+            enum CodingKeys: String, CodingKey {
+                case displayName = "display_name"
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case group, percent, scope
+            case resetsAt = "resets_at"
+        }
+
+        /// Only a window scoped to a model; the plan-wide ones have their own keys.
+        var scopedWindow: ScopedWindow? {
+            guard let name = scope?.model?.displayName?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
+                  let percent, percent.isFinite
+            else { return nil }
+            return ScopedWindow(
+                name: name,
+                isWeekly: group != "session",
+                window: LimitWindow(usedPercent: percent, resetsAt: resetsAt.flatMap(ISO8601DateFormatter.parseFlexible))
+            )
         }
     }
 
