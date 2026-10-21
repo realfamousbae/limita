@@ -39,10 +39,7 @@ pub struct ServiceView {
     /// Outcome of connecting, shown instead of the meters until dismissed.
     pub setup_message: Option<String>,
     pub meters: Vec<MeterView>,
-    /// Three or more windows: the meters go one compact row each instead of side by
-    /// side, and the credits follow them as rows.
-    pub stacked: bool,
-    /// Claude's credits as meters, two to a row under the limits unless `stacked`.
+    /// Claude's credits as meters, in rows after the limits.
     pub credits: Vec<MeterView>,
     pub details: Vec<DetailRow>,
     /// "UPDATED 2 MIN AGO"; absent without data.
@@ -170,7 +167,6 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
         status: status.into(),
         setup_message: setup_message.clone(),
         meters: Vec::new(),
-        stacked: false,
         credits: Vec::new(),
         details: Vec::new(),
         updated: None,
@@ -201,7 +197,6 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
     view.meters = vec![five_hour, meter("7 DAYS", service, data.seven_day, BarTone::AccentSoft, now)];
     // Per-model windows last, one per row.
     view.meters.extend(data.scoped.iter().map(|s| meter(&s.title(), service, Some(s.window), BarTone::AccentSoft, now)));
-    view.stacked = !data.scoped.is_empty();
     let details = snapshot.details.get(&service).cloned().unwrap_or_default();
     view.credits = credit_meters(service, &details, now);
     view.details = detail_rows(service, &details);
@@ -235,9 +230,9 @@ fn pressure_tone(used: f64, tone: BarTone) -> BarTone {
     }
 }
 
-/// Usage credits as spent, cloud credits as left; the bar's colour follows what is spent.
-/// A meter is hidden when the service did not report it, and usage credits also while
-/// they are turned off.
+/// Like Claude's own settings: the percentage and the bar show what is spent, the dollars
+/// what is left. A meter is hidden when the service did not report it, and usage credits
+/// also while they are turned off.
 pub fn credit_meters(service: Service, details: &AccountDetails, now: Timestamp) -> Vec<MeterView> {
     if service != Service::Claude {
         return Vec::new();
@@ -254,15 +249,15 @@ pub fn credit_meters(service: Service, details: &AccountDetails, now: Timestamp)
     let mut meters = Vec::new();
     match &details.claude_usage_credits {
         Some(UsageCredits::Balance { dollars }) => {
-            meters.push(credit("USAGE CREDITS", usd(*dollars), None, 0.0, 0.0, "BALANCE"))
+            meters.push(credit("USAGE CREDITS", usd(*dollars), Some("LEFT".into()), 0.0, 0.0, "BALANCE"))
         }
         Some(UsageCredits::Spent { dollars, limit: Some(limit) }) if *limit > 0.0 => {
             let used = (dollars / limit).clamp(0.0, 1.0);
-            let amount = format!("{} OF {}", usd(*dollars), usd(*limit));
-            meters.push(credit("USAGE CREDITS USED", percent(used), Some(amount), used, used, "SPEND LIMIT"));
+            let amount = format!("{} OF {} LEFT", dollars_text((limit - dollars).max(0.0)), dollars_text(*limit));
+            meters.push(credit("USAGE CREDITS", percent(used), Some(amount), used, used, "SPEND LIMIT"));
         }
         Some(UsageCredits::Spent { dollars, .. }) => {
-            meters.push(credit("USAGE CREDITS USED", usd(*dollars), None, 0.0, 0.0, "NO SPEND LIMIT"))
+            meters.push(credit("USAGE CREDITS", usd(*dollars), Some("SPENT".into()), 0.0, 0.0, "NO SPEND LIMIT"))
         }
         Some(UsageCredits::Off) | None => {}
     }
@@ -270,11 +265,11 @@ pub fn credit_meters(service: Service, details: &AccountDetails, now: Timestamp)
         let caption = cloud_reset_text(cloud.expires_at, now);
         match cloud.limit.filter(|limit| *limit > 0.0) {
             Some(limit) => {
-                let left = (cloud.remaining / limit).clamp(0.0, 1.0);
-                let amount = format!("{} OF {}", usd(cloud.remaining), usd(limit));
-                meters.push(credit("CLOUD CREDITS LEFT", percent(left), Some(amount), left, 1.0 - left, &caption));
+                let used = 1.0 - (cloud.remaining / limit).clamp(0.0, 1.0);
+                let amount = format!("{} OF {} LEFT", dollars_text(cloud.remaining), dollars_text(limit));
+                meters.push(credit("CLOUD CREDITS", percent(used), Some(amount), used, used, &caption));
             }
-            None => meters.push(credit("CLOUD CREDITS LEFT", usd(cloud.remaining), None, 0.0, 0.0, &caption)),
+            None => meters.push(credit("CLOUD CREDITS", usd(cloud.remaining), Some("LEFT".into()), 0.0, 0.0, &caption)),
         }
     }
     meters
@@ -331,6 +326,16 @@ pub fn detail_rows(service: Service, details: &AccountDetails) -> Vec<DetailRow>
 }
 
 /// "$1,234.50"; negative amounts as "-$1.00".
+/// Whole dollars, as Claude's settings show them, but cents below $10 so a small balance
+/// does not round to nothing.
+pub fn dollars_text(value: f64) -> String {
+    if value >= 10.0 {
+        format!("${}", number(value, 0, 0))
+    } else {
+        usd(value)
+    }
+}
+
 pub fn usd(value: f64) -> String {
     let sign = if value < 0.0 { "-" } else { "" };
     format!("{sign}${}", number(value.abs(), 2, 2))
@@ -433,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn credit_meters_show_usage_spent_and_cloud_left() {
+    fn credit_meters_show_spent_with_dollars_left() {
         let now = crate::time::parse_flexible("2026-10-21T19:00:00Z").unwrap();
         let mut details = AccountDetails {
             claude_usage_credits: Some(UsageCredits::Off),
@@ -447,10 +452,10 @@ mod tests {
         let meters = credit_meters(Service::Claude, &details, now);
         assert_eq!(meters.len(), 1, "usage credits that are off are hidden");
         let cloud = &meters[0];
-        assert_eq!(cloud.title, "CLOUD CREDITS LEFT");
-        assert_eq!(cloud.value, "65%");
-        assert_eq!(cloud.amount.as_deref(), Some("$163.05 OF $250.00"));
-        assert!((cloud.fill - 0.652).abs() < 0.001, "the bar shows what is left");
+        assert_eq!(cloud.title, "CLOUD CREDITS");
+        assert_eq!(cloud.value, "35%", "the percentage is what is spent");
+        assert_eq!(cloud.amount.as_deref(), Some("$163 OF $250 LEFT"), "the dollars are what is left");
+        assert!((cloud.fill - 0.348).abs() < 0.001, "the bar shows what is spent");
         assert_eq!(cloud.tone, BarTone::AccentSoft);
         assert!(cloud.caption.starts_with("RESETS ON NOV"), "{}", cloud.caption);
 
@@ -458,7 +463,9 @@ mod tests {
         details.cloud_credits = Some(Allowance { remaining: 5.0, limit: Some(100.0), expires_at: Some(now + chrono::Duration::minutes(90)) });
         let meters = credit_meters(Service::Claude, &details, now);
         assert_eq!(meters[0].value, "25%");
-        assert_eq!(meters[0].amount.as_deref(), Some("$12.50 OF $50.00"));
+        assert_eq!(meters[0].title, "USAGE CREDITS");
+        assert_eq!(meters[0].amount.as_deref(), Some("$38 OF $50 LEFT"));
+        assert_eq!(meters[1].amount.as_deref(), Some("$5.00 OF $100 LEFT"), "cents below $10");
         assert_eq!(meters[1].tone, BarTone::Critical, "the colour follows what is spent");
         assert_eq!(meters[1].caption, "RESETS IN 1 HOUR 30 MIN", "a near reset counts down");
         assert!(credit_meters(Service::Claude, &AccountDetails::default(), now).is_empty(), "missing values hide meters");
@@ -466,21 +473,19 @@ mod tests {
     }
 
     #[test]
-    fn per_model_windows_stack_the_meters() {
+    fn per_model_windows_get_their_own_meters() {
         let now = at(1_800_000_000.0);
         let reset = at(1_800_000_000.0 + 3600.0);
         let mut snapshot = Snapshot { enabled: vec![Service::Claude], ..Default::default() };
         let two = LimitSnapshot::new(Some(LimitWindow::new(19.0, None)), Some(LimitWindow::new(3.0, None)), now);
         snapshot.states.insert(Service::Claude, ServiceState::Fresh(two.clone()));
         let view = panel(&snapshot, now);
-        assert!(!view.services[0].stacked, "two windows stay side by side");
         assert_eq!(view.services[0].meters.len(), 2);
 
         let fable = crate::model::ScopedWindow { name: "Fable".into(), is_weekly: true, window: LimitWindow::new(4.0, Some(reset)) };
         snapshot.states.insert(Service::Claude, ServiceState::Fresh(two.with_scoped(vec![fable])));
         let view = panel(&snapshot, now);
         let claude = &view.services[0];
-        assert!(claude.stacked);
         assert_eq!(claude.meters[2].title, "FABLE 7 DAYS USED");
         assert_eq!(claude.meters[2].value, "4%");
         assert_eq!(reset_dates(&snapshot), [reset], "the per-model countdown ticks too");

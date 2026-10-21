@@ -190,18 +190,19 @@ final class LimitaTests: XCTestCase {
         )
         let meters = ExpandedView.creditMeters(for: .claude, details: details, now: now)
         XCTAssertEqual(meters.count, 1, "usage credits that are off are hidden")
-        XCTAssertEqual(meters[0].title, "CLOUD CREDITS LEFT")
-        XCTAssertEqual(meters[0].value, "65%")
-        XCTAssertEqual(meters[0].amount, "$163.05 OF $250.00")
-        XCTAssertEqual(meters[0].fill, 0.652, accuracy: 0.001, "the bar shows what is left")
-        XCTAssertEqual(meters[0].used, 0.348, accuracy: 0.001, "the colour follows what is spent")
+        XCTAssertEqual(meters[0].title, "CLOUD CREDITS")
+        XCTAssertEqual(meters[0].value, "35%", "the percentage is what is spent")
+        XCTAssertEqual(meters[0].amount, "$163 OF $250 LEFT", "the dollars are what is left")
+        XCTAssertEqual(meters[0].fill, 0.348, accuracy: 0.001, "the bar shows what is spent")
+        XCTAssertEqual(meters[0].used, 0.348, accuracy: 0.001)
         XCTAssertTrue(meters[0].caption.hasPrefix("RESETS ON NOV"), meters[0].caption)
 
         details.claudeUsageCredits = .spent(dollars: 12.5, limit: 50)
-        details.cloudCredits = .init(remaining: 10, limit: 100, expiresAt: now.addingTimeInterval(90 * 60))
+        details.cloudCredits = .init(remaining: 5.5, limit: 100, expiresAt: now.addingTimeInterval(90 * 60))
         let spent = ExpandedView.creditMeters(for: .claude, details: details, now: now)
-        XCTAssertEqual(spent[0], .init(title: "USAGE CREDITS USED", value: "25%", amount: "$12.50 OF $50.00",
+        XCTAssertEqual(spent[0], .init(title: "USAGE CREDITS", value: "25%", amount: "$38 OF $50 LEFT",
                                        fill: 0.25, used: 0.25, caption: "SPEND LIMIT"))
+        XCTAssertEqual(spent[1].amount, "$5.50 OF $100 LEFT", "cents below $10")
         XCTAssertEqual(spent[1].caption, "RESETS IN 1 HOUR 30 MIN", "a near reset counts down")
 
         details.claudeUsageCredits = .balance(dollars: 20)
