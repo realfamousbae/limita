@@ -181,7 +181,9 @@ private struct ActivityGraph: View {
     /// The column's width once laid out; until then a guess from the dashboard's width.
     @State private var width: CGFloat = BezelPanelController.columnWidth - 2 * ExpandedView.columnPadding
 
-    private static let labelHeight: CGFloat = 14
+    private var labelHeight: CGFloat { grid.layout == .row ? 16 : 14 }
+    /// The week's few labels are larger, to be read at a glance.
+    private var labelSize: CGFloat { grid.layout == .row ? 10 : 8.5 }
     private static let rowLabelWidth: CGFloat = 26
     private static let chipHeight: CGFloat = 16
 
@@ -195,14 +197,14 @@ private struct ActivityGraph: View {
     }
     private var stepY: CGFloat {
         switch grid.layout {
-        case .row: 44
+        case .row: 34
         case .calendar: 30
         case .weeks: stepX
         }
     }
     private var cellWidth: CGFloat { stepX - gap }
     private var cellHeight: CGFloat { stepY - gap }
-    private var height: CGFloat { Self.labelHeight + CGFloat(grid.rows) * stepY - gap }
+    private var height: CGFloat { labelHeight + CGFloat(grid.rows) * stepY - gap }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -210,7 +212,7 @@ private struct ActivityGraph: View {
             rowLabels
             cells
                 .frame(width: CGFloat(grid.columns) * stepX - gap, height: CGFloat(grid.rows) * stepY - gap)
-                .offset(x: leading, y: Self.labelHeight)
+                .offset(x: leading, y: labelHeight)
             chip
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -271,7 +273,7 @@ private struct ActivityGraph: View {
         ForEach(grid.columnLabels.indices, id: \.self) { column in
             if let text = grid.columnLabels[column] {
                 Text(text)
-                    .caption(size: 8.5)
+                    .caption(size: labelSize)
                     .fixedSize()
                     // Months start at their week; weekdays sit centred over their cells.
                     .frame(width: grid.layout == .weeks ? nil : cellWidth, alignment: grid.layout == .weeks ? .leading : .center)
@@ -284,10 +286,10 @@ private struct ActivityGraph: View {
         ForEach(grid.rowLabels.indices, id: \.self) { row in
             if let text = grid.rowLabels[row] {
                 Text(text)
-                    .caption(size: 8.5)
+                    .caption(size: labelSize)
                     .fixedSize()
                     .frame(height: cellHeight)
-                    .offset(y: Self.labelHeight + CGFloat(row) * stepY)
+                    .offset(y: labelHeight + CGFloat(row) * stepY)
             }
         }
     }
@@ -301,7 +303,7 @@ private struct ActivityGraph: View {
             let chipWidth = CGFloat(text.count) * 5.6 + 12
             let centre = leading + CGFloat(column) * stepX + cellWidth / 2
             let x = min(max(centre - chipWidth / 2, 0), width - chipWidth)
-            let y = Self.labelHeight + CGFloat(row) * stepY - Self.chipHeight - 3
+            let y = labelHeight + CGFloat(row) * stepY - Self.chipHeight - 3
             Text(text)
                 .font(.app(9))
                 .monospacedDigit()

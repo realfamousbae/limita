@@ -392,70 +392,53 @@ header {
 .badge.claude { color: var(--claude); background: rgba(255, 148, 77, 0.14); }
 .badge.codex { color: var(--codex); background: rgba(79, 171, 255, 0.14); }
 
+/* One row per meter, with empty space between rows. */
 .meters {
   display: flex;
-  gap: 10px;
-}
-
-/* Three or more windows, one compact row each, with a divider between rows. */
-.meters.stacked {
   flex-direction: column;
-  gap: 0;
+  gap: 16px;
 }
 
-/* In a column the meters' flex basis would set their height. */
-.meters.stacked .meter {
-  flex: none;
-  gap: 6px;
-}
-
-.meters.stacked .meter + .meter {
-  margin-top: 9px;
-  padding-top: 9px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* The title on the left, the value on the right of the same line. */
-.meter-head {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  min-width: 0;
-}
-
-.meter.compact .big {
-  font-size: 18px;
-}
-
-/* Brighter and larger than the captions, so the rows read by name. */
-.caption.meter-caption.meter-title {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-/* Claude's credits, two to a row on the meters' grid. */
-.credits {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(var(--meter), 1fr));
-  gap: 12px 10px;
-}
-
-/* The value, with dollars beside it for credits. */
-.value-line {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  min-width: 0;
-}
-
+/* The title on top; under it the value, then the bar and the countdown. */
 .meter {
-  /* At least the longest countdown; wider columns share the extra room, so the bars
-     always run the full width. */
-  flex: 1 0 var(--meter);
-  min-width: var(--meter);
   display: flex;
   flex-direction: column;
   gap: 5px;
+  min-width: 0;
+}
+
+/* The value is as tall as the bar and countdown beside it. Its column fits "100%",
+   so the bars of all rows start at the same place. */
+.meter-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.meter-body .big {
+  flex: none;
+  min-width: 4ch;
+  white-space: nowrap;
+}
+
+.meter-track {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Credits put their dollars right of the bar. */
+.bar-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar-line .bar {
+  flex: 1;
 }
 
 .big {
@@ -467,7 +450,8 @@ header {
   font-size: 10.5px;
 }
 
-.meter.stale .value-line,
+.meter.stale .big,
+.meter.stale .amount,
 .meter.stale .fill {
   opacity: 0.55;
 }
@@ -671,9 +655,12 @@ header {
 .column-label { text-align: center; align-self: end; }
 .column-label.weeks { text-align: left; overflow: visible; width: 0; }
 .row-label { align-self: center; }
+/* The week's few labels are larger, to be read at a glance. */
+.activity-graph.row { grid-template-rows: 16px; }
+.activity-graph.row .column-label { font-size: 10px; line-height: 12px; }
 
 .activity-graph .cell { width: 100%; }
-.activity-graph.row .cell { height: 40px; }
+.activity-graph.row .cell { height: 30px; }
 .activity-graph.calendar .cell { height: 26px; }
 .activity-graph.weeks .cell { aspect-ratio: 1; height: auto; }
 

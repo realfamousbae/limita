@@ -291,16 +291,8 @@ function column(service: ServiceView): HTMLElement {
     node.append(el("p", "value muted", service.message ?? "No data"));
     return node;
   }
-  if (service.stacked) {
-    // One compact row per meter, credits included, with a divider between rows.
-    const rows = [...service.meters, ...service.credits].map((m) => meter(m, service.stale, true));
-    node.append(el("div", "meters stacked", ...rows));
-  } else {
-    node.append(el("div", "meters", ...service.meters.map((m) => meter(m, service.stale))));
-    if (service.credits.length > 0) {
-      node.append(el("div", "credits", ...service.credits.map((m) => meter(m, service.stale))));
-    }
-  }
+  // One row per meter: the limits, then the credits.
+  node.append(el("div", "meters", ...[...service.meters, ...service.credits].map((m) => meter(m, service.stale))));
   // Tiles two to a row, on the meters' grid.
   if (service.details.length > 0) {
     node.append(
@@ -311,23 +303,23 @@ function column(service: ServiceView): HTMLElement {
   return node;
 }
 
-/** Compact, a meter is one row: the value sits on the title's line, on the right, with
- *  the dollars before it so the number ends the row. */
-function meter(m: Meter, stale: boolean, compact = false): HTMLElement {
+/** The title on top; under it the value, then the bar (with the dollars right of it, for
+ *  credits) over the countdown. */
+function meter(m: Meter, stale: boolean): HTMLElement {
   const fill = el("span", `fill ${m.tone}`);
   fill.style.width = `${Math.round(m.fill * 1000) / 10}%`;
-  const amount = m.amount ? el("span", "caption meter-caption digits nowrap", m.amount) : null;
-  const value = el("span", "big digits", m.value);
-  const title = el("div", "caption meter-caption nowrap", m.title);
-  const node = el("div", `meter${compact ? " compact" : ""}${stale ? " stale" : ""}`);
-  if (compact) {
-    title.classList.add("meter-title");
-    node.append(el("div", "meter-head", title, el("span", "spacer"), el("div", "value-line", amount, value)));
-  } else {
-    node.append(title, el("div", "value-line", value, amount));
-  }
-  node.append(el("div", "bar", fill), el("div", "caption meter-caption nowrap", m.caption));
-  return node;
+  const amount = m.amount ? el("span", "caption meter-caption digits nowrap amount", m.amount) : null;
+  return el(
+    "div",
+    `meter${stale ? " stale" : ""}`,
+    el("div", "caption meter-caption nowrap", m.title),
+    el(
+      "div",
+      "meter-body",
+      el("span", "big digits", m.value),
+      el("div", "meter-track", el("div", "bar-line", el("div", "bar", fill), amount), el("div", "caption meter-caption nowrap", m.caption)),
+    ),
+  );
 }
 
 // MARK: - Rendering and sizing
