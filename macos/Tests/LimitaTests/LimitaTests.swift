@@ -178,8 +178,84 @@ final class LimitaTests: XCTestCase {
         var claude = AccountDetails()
         claude.claudeUsageCredits = .off
         claude.cloudCredits = .init(remaining: 95.089746, limit: 100, expiresAt: nil)
-        XCTAssertEqual(ExpandedView.detailRows(for: .claude, details: claude).map(\.value), ["Off", "$95.09 / $100.00"])
-        XCTAssertEqual(ExpandedView.detailRows(for: .claude, details: AccountDetails()), [], "missing values hide rows")
+        XCTAssertEqual(ExpandedView.detailRows(for: .claude, details: claude), [], "Claude's credits are meters")
+    }
+
+    func testCreditMeters() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter.parseFlexible("2026-10-21T19:00:00Z"))
+        var details = AccountDetails()
+        details.claudeUsageCredits = .off
+        details.cloudCredits = .init(
+            remaining: 163.053854, limit: 250, expiresAt: ISO8601DateFormatter.parseFlexible("2026-11-05T07:59:00Z")
+        )
+        let meters = ExpandedView.creditMeters(for: .claude, details: details, now: now)
+        XCTAssertEqual(meters.count, 2)
+        XCTAssertEqual(meters[0], .init(title: "USAGE CREDITS", value: "—", amount: nil, fill: 0, used: 0, caption: "OFF"),
+                       "off is an empty bar")
+        XCTAssertEqual(meters[1].title, "CLOUD CREDITS LEFT")
+        XCTAssertEqual(meters[1].value, "65%")
+        XCTAssertEqual(meters[1].amount, "$163.05 OF $250.00")
+        XCTAssertEqual(meters[1].fill, 0.652, accuracy: 0.001, "the bar shows what is left")
+        XCTAssertEqual(meters[1].used, 0.348, accuracy: 0.001, "the colour follows what is spent")
+        XCTAssertTrue(meters[1].caption.hasPrefix("RESETS ON NOV"), meters[1].caption)
+
+        details.claudeUsageCredits = .spent(dollars: 12.5, limit: 50)
+        details.cloudCredits = .init(remaining: 10, limit: 100, expiresAt: now.addingTimeInterval(90 * 60))
+        let spent = ExpandedView.creditMeters(for: .claude, details: details, now: now)
+        XCTAssertEqual(spent[0], .init(title: "USAGE CREDITS USED", value: "25%", amount: "$12.50 OF $50.00",
+                                       fill: 0.25, used: 0.25, caption: "SPEND LIMIT"))
+        XCTAssertEqual(spent[1].caption, "RESETS IN 1 HOUR 30 MIN", "a near reset counts down")
+
+        details.claudeUsageCredits = .balance(dollars: 20)
+        details.cloudCredits = nil
+        XCTAssertEqual(ExpandedView.creditMeters(for: .claude, details: details, now: now).map(\.value), ["$20.00"])
+        XCTAssertEqual(ExpandedView.creditMeters(for: .claude, details: AccountDetails(), now: now), [], "missing values hide meters")
+        XCTAssertEqual(ExpandedView.creditMeters(for: .codex, details: details, now: now), [])
+    }
+
+    func testClaudeUsageResponseReadsPerModelLimits() throws {
+        // Trimmed from a real Max-plan response: the Fable window has no key of its own.
+        let response = #"""
+        {"five_hour":{"utilization":19.0,"resets_at":"2026-10-21T20:39:59.943268+00:00"},
+         "seven_day":{"utilization":3.0,"resets_at":"2026-10-26T10:59:59.943294+00:00"},
+         "seven_day_opus":null,
+         "limits":[
+          {"kind":"session","group":"session","percent":19,"resets_at":"2026-10-21T20:39:59.943268+00:00","scope":null},
+          {"kind":"weekly_all","group":"weekly","percent":3,"resets_at":"2026-10-26T10:59:59.943294+00:00","scope":null},
+          {"kind":"weekly_scoped","group":"weekly","percent":4,"resets_at":"2026-10-26T10:59:59.943559+00:00",
+           "scope":{"model":{"id":null,"display_name":"Fable"},"surface":null}},
+          {"kind":"weekly_scoped","group":"weekly","percent":"odd","scope":{"model":{"display_name":"Broken"}}}
+         ]}
+        """#
+        let snapshot = try ClaudeLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: Date()).snapshot
+        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 19)
+        XCTAssertEqual(snapshot.scoped.count, 1, "plan-wide and malformed entries are skipped")
+        XCTAssertEqual(snapshot.scoped.first?.title, "FABLE 7 DAYS")
+        XCTAssertEqual(snapshot.scoped.first?.window.usedPercent, 4)
+        XCTAssertNotNil(snapshot.scoped.first?.window.resetsAt)
+        XCTAssertEqual(snapshot.resetDates.count, 3)
+
+        let twoLimits = #"{"five_hour":{"utilization":1},"seven_day":{"utilization":2},"limits":"unexpected"}"#
+        let plain = try ClaudeLiveClient.reading(fromResponse: Data(twoLimits.utf8), capturedAt: Date()).snapshot
+        XCTAssertEqual(plain.scoped, [], "an odd limits list costs only the per-model windows")
+        XCTAssertEqual(plain.sevenDay?.usedPercent, 2)
+    }
+
+    func testNewerStatusLineKeepsThePerModelWindows() {
+        let live = LimitSnapshot(
+            fiveHour: .init(usedPercent: 19, resetsAt: nil), sevenDay: .init(usedPercent: 3, resetsAt: nil),
+            capturedAt: Date(timeIntervalSince1970: 100),
+            scoped: [ScopedWindow(name: "Fable", isWeekly: true, window: .init(usedPercent: 4, resetsAt: nil))]
+        )
+        let local = LimitSnapshot(
+            fiveHour: .init(usedPercent: 21, resetsAt: nil), sevenDay: .init(usedPercent: 3, resetsAt: nil),
+            capturedAt: Date(timeIntervalSince1970: 200)
+        )
+        let now = Date(timeIntervalSince1970: 210)
+        let merged = LimitsStore.merge(.fresh(local), live: live, staleAfter: 1800, now: now).snapshot
+        XCTAssertEqual(merged?.fiveHour?.usedPercent, 21, "the newer numbers win")
+        XCTAssertEqual(merged?.scoped, live.scoped, "the Fable meter stays")
+        XCTAssertEqual(LimitsStore.merge(.unavailable(reason: "x"), live: live, staleAfter: 1800, now: now).snapshot, live)
     }
 
     func testCodexShowsRemainingAndClaudeShowsUsed() {

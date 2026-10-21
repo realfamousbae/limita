@@ -237,7 +237,7 @@ impl Store {
                     }
                     apply(&mut inner, service, remote);
                     if let Some(local) = local {
-                        let merged = merge(local, inner.live_snapshots.get(&service).copied(), stale_after);
+                        let merged = merge(local, inner.live_snapshots.get(&service).cloned(), stale_after, Utc::now());
                         inner.public.states.insert(service, merged);
                     }
                 }
@@ -371,12 +371,20 @@ fn apply(inner: &mut Inner, service: Service, result: Option<Result<LiveReading,
 }
 
 /// Shows whichever of the local and network snapshots is newer.
-fn merge(local: ServiceState, live: Option<LimitSnapshot>, stale_after: f64) -> ServiceState {
+fn merge(local: ServiceState, live: Option<LimitSnapshot>, stale_after: f64, now: Timestamp) -> ServiceState {
     let Some(live) = live else { return local };
-    if local.snapshot().is_some_and(|l| l.captured_at >= live.captured_at) {
-        return local;
+    match local.snapshot() {
+        Some(newer) if newer.captured_at >= live.captured_at => {
+            // The status line reports no per-model windows; keep those of the last network
+            // read, or the per-model meters would vanish after every Claude Code reply.
+            let mut newer = newer.clone();
+            if newer.scoped.is_empty() {
+                newer.scoped = live.scoped;
+            }
+            ServiceState::from_snapshot(newer, stale_after, now)
+        }
+        _ => ServiceState::from_snapshot(live, stale_after, now),
     }
-    ServiceState::from_snapshot(live, stale_after, Utc::now())
 }
 
 #[cfg(test)]
@@ -403,6 +411,20 @@ mod tests {
 
     fn no_token() -> LiveFetch {
         Arc::new(|_| Err("no token in tests".into()))
+    }
+
+    #[test]
+    fn newer_status_line_keeps_the_per_model_windows() {
+        let at = |seconds: f64| crate::time::from_unix(seconds).unwrap();
+        let fable = crate::model::ScopedWindow { name: "Fable".into(), is_weekly: true, window: LimitWindow::new(4.0, None) };
+        let live = LimitSnapshot::new(Some(LimitWindow::new(19.0, None)), Some(LimitWindow::new(3.0, None)), at(100.0))
+            .with_scoped(vec![fable.clone()]);
+        let local = LimitSnapshot::new(Some(LimitWindow::new(21.0, None)), Some(LimitWindow::new(3.0, None)), at(200.0));
+        let merged = merge(ServiceState::Fresh(local), Some(live.clone()), 1800.0, at(210.0));
+        let merged = merged.snapshot().unwrap();
+        assert_eq!(merged.five_hour.unwrap().used_percent, 21.0, "the newer numbers win");
+        assert_eq!(merged.scoped, [fable], "the Fable meter stays");
+        assert_eq!(merge(ServiceState::Unavailable("x".into()), Some(live.clone()), 1800.0, at(210.0)).snapshot(), Some(&live));
     }
 
     #[test]

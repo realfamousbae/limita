@@ -63,7 +63,8 @@ struct ExpandedView: View {
     private var resetDates: [Date] {
         store.enabledServices.flatMap { service -> [Date] in
             guard let snapshot = store.state(for: service).snapshot else { return [] }
-            return [snapshot.fiveHour?.resetsAt, snapshot.sevenDay?.resetsAt].compactMap { $0 }
+            let cloud = store.details[service]?.cloudCredits?.expiresAt
+            return snapshot.resetDates + [cloud].compactMap { $0 }
         }
     }
 
@@ -232,21 +233,26 @@ struct ExpandedView: View {
             if let message = store.setupMessage, message.service == service {
                 SetupMessage(text: message.text) { store.setupMessage = nil }
             } else if let snapshot = state.snapshot {
-                HStack(spacing: Self.meterSpacing) {
-                    Group {
-                        if snapshot.hasNoFiveHourLimit {
-                            unlimitedMetric("5 HOURS")
-                        } else {
-                            metric("5 HOURS", service: service, window: snapshot.fiveHour,
-                                   color: DashboardStyle.fiveHourBar(for: service), stale: state.isStale, now: now)
+                if snapshot.scoped.isEmpty {
+                    HStack(spacing: Self.meterSpacing) {
+                        fiveHourMetric(service: service, snapshot: snapshot, stale: state.isStale, now: now)
+                            .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
+                        sevenDayMetric(service: service, snapshot: snapshot, stale: state.isStale, now: now)
+                            .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
+                    }
+                } else {
+                    // Three or more windows: one per row, the per-model ones last.
+                    VStack(alignment: .leading, spacing: Self.rowSpacing) {
+                        fiveHourMetric(service: service, snapshot: snapshot, stale: state.isStale, now: now)
+                        sevenDayMetric(service: service, snapshot: snapshot, stale: state.isStale, now: now)
+                        ForEach(Array(snapshot.scoped.enumerated()), id: \.offset) { _, scoped in
+                            metric(scoped.title, service: service, window: scoped.window,
+                                   color: DashboardStyle.accent(for: service).opacity(0.72), stale: state.isStale, now: now)
                         }
                     }
-                    .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
-                    metric("7 DAYS", service: service, window: snapshot.sevenDay,
-                           color: DashboardStyle.accent(for: service).opacity(0.72), stale: state.isStale, now: now)
-                        .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
                 }
 
+                creditMeters(for: service, stale: state.isStale, now: now)
                 detailTiles(for: service)
 
                 if let error = store.liveErrors[service] {
@@ -276,40 +282,39 @@ struct ExpandedView: View {
         return state.isStale ? "STALE DATA" : "LIVE DATA"
     }
 
+    /// Between the meters when they are stacked one per row.
+    static let rowSpacing: CGFloat = 12
+
+    @ViewBuilder
+    private func fiveHourMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> some View {
+        if snapshot.hasNoFiveHourLimit {
+            unlimitedMetric("5 HOURS")
+        } else {
+            metric("5 HOURS", service: service, window: snapshot.fiveHour,
+                   color: DashboardStyle.fiveHourBar(for: service), stale: stale, now: now)
+        }
+    }
+
+    private func sevenDayMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> some View {
+        metric("7 DAYS", service: service, window: snapshot.sevenDay,
+               color: DashboardStyle.accent(for: service).opacity(0.72), stale: stale, now: now)
+    }
+
     /// One window's meter. The number and bar show what `service` is displayed as (left
     /// or used). The number stays white; the bar's colour follows usage, so red still
     /// means "almost out". Stale numbers are dimmed so they don't read as current.
     private func metric(
         _ title: String, service: Service, window: LimitWindow?, color: Color, stale: Bool, now: Date
     ) -> some View {
-        let used = window?.displayFraction(at: now) ?? 0
-        let shown = (window?.shownPercent(for: service, at: now) ?? 0) / 100
-        return VStack(alignment: .leading, spacing: 5) {
-            Text("\(title) \(service.percentMeaning.uppercased())")
-                .caption(size: DashboardStyle.meterCaptionSize)
-
-            Text(window?.shownText(for: service, at: now) ?? "—")
-                .font(.app(DashboardStyle.meterValueSize))
-                .monospacedDigit()
-                .opacity(stale ? 0.55 : 1)
-
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.09))
-                    Capsule()
-                        .fill(DashboardStyle.pressureColor(used, fallback: color))
-                        .frame(width: geometry.size.width * shown)
-                        .opacity(stale ? 0.55 : 1)
-                }
-            }
-            .frame(height: 4)
-
-            Text(window?.resetText(at: now)?.uppercased() ?? "NO WINDOW")
-                .caption(size: DashboardStyle.meterCaptionSize)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        MeterView(
+            title: "\(title) \(service.percentMeaning.uppercased())",
+            value: window?.shownText(for: service, at: now) ?? "—",
+            amount: nil,
+            fill: (window?.shownPercent(for: service, at: now) ?? 0) / 100,
+            color: DashboardStyle.pressureColor(window?.displayFraction(at: now) ?? 0, fallback: color),
+            caption: window?.resetText(at: now)?.uppercased() ?? "NO WINDOW",
+            stale: stale
+        )
     }
 
     /// Stands in for the 5-hour meter when the plan has no 5-hour limit.
@@ -330,6 +335,106 @@ struct ExpandedView: View {
     }
 
     // MARK: - Balances
+
+    /// Claude's credits as meters like the limits', two to a row on the meters' grid.
+    @ViewBuilder
+    private func creditMeters(for service: Service, stale: Bool, now: Date) -> some View {
+        let meters = Self.creditMeters(for: service, details: store.details[service] ?? AccountDetails(), now: now)
+        if !meters.isEmpty {
+            VStack(alignment: .leading, spacing: Self.rowSpacing) {
+                ForEach(Array(stride(from: 0, to: meters.count, by: 2)), id: \.self) { start in
+                    HStack(alignment: .top, spacing: Self.meterSpacing) {
+                        creditMeter(meters[start], service: service, stale: stale)
+                        if start + 1 < meters.count {
+                            creditMeter(meters[start + 1], service: service, stale: stale)
+                        } else {
+                            Color.clear.frame(height: 0)
+                                .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func creditMeter(_ meter: CreditMeter, service: Service, stale: Bool) -> some View {
+        MeterView(
+            title: meter.title,
+            value: meter.value,
+            amount: meter.amount,
+            fill: meter.fill,
+            color: DashboardStyle.pressureColor(meter.used, fallback: DashboardStyle.accent(for: service).opacity(0.72)),
+            caption: meter.caption,
+            stale: stale
+        )
+        .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
+    }
+
+    /// What a credit meter shows, worked out apart from the view so it can be tested.
+    struct CreditMeter: Equatable {
+        let title: String
+        let value: String
+        /// Dollars beside the value, e.g. "$163.05 OF $250.00".
+        let amount: String?
+        /// 0...1 of the bar that is filled.
+        let fill: Double
+        /// 0...1 spent, which picks the bar's colour.
+        let used: Double
+        let caption: String
+    }
+
+    /// Usage credits as spent (or "OFF" over an empty bar), cloud credits as left. A
+    /// meter is hidden when the service did not report its value.
+    static func creditMeters(for service: Service, details: AccountDetails, now: Date) -> [CreditMeter] {
+        guard service == .claude else { return [] }
+        var meters: [CreditMeter] = []
+        switch details.claudeUsageCredits {
+        case .off:
+            meters.append(CreditMeter(title: "USAGE CREDITS", value: "—", amount: nil, fill: 0, used: 0, caption: "OFF"))
+        case .balance(let dollars):
+            meters.append(CreditMeter(title: "USAGE CREDITS", value: usd(dollars), amount: nil, fill: 0, used: 0, caption: "BALANCE"))
+        case .spent(let dollars, let limit?) where limit > 0:
+            let used = min(max(dollars / limit, 0), 1)
+            meters.append(CreditMeter(
+                title: "USAGE CREDITS USED", value: percent(used), amount: "\(usd(dollars)) OF \(usd(limit))",
+                fill: used, used: used, caption: "SPEND LIMIT"
+            ))
+        case .spent(let dollars, _):
+            meters.append(CreditMeter(title: "USAGE CREDITS USED", value: usd(dollars), amount: nil, fill: 0, used: 0, caption: "NO SPEND LIMIT"))
+        case nil:
+            break
+        }
+        if let cloud = details.cloudCredits {
+            let caption = cloudResetText(cloud.expiresAt, now: now)
+            if let limit = cloud.limit, limit > 0 {
+                let left = min(max(cloud.remaining / limit, 0), 1)
+                meters.append(CreditMeter(
+                    title: "CLOUD CREDITS LEFT", value: percent(left), amount: "\(usd(cloud.remaining)) OF \(usd(limit))",
+                    fill: left, used: 1 - left, caption: caption
+                ))
+            } else {
+                meters.append(CreditMeter(title: "CLOUD CREDITS LEFT", value: usd(cloud.remaining), amount: nil, fill: 0, used: 0, caption: caption))
+            }
+        }
+        return meters
+    }
+
+    /// A countdown within a week, like the limits'; further out the date, which stays
+    /// within the meter's width.
+    static func cloudResetText(_ date: Date?, now: Date) -> String {
+        guard let date else { return "NO RESET DATE" }
+        if date.timeIntervalSince(now) <= 7 * 86400 {
+            return LimitWindow(usedPercent: 0, resetsAt: date).resetText(at: now)?.uppercased() ?? ""
+        }
+        let formatter = DateFormatter()
+        formatter.locale = .english
+        formatter.setLocalizedDateFormatFromTemplate("MMMd")
+        return "RESETS ON \(formatter.string(from: date).uppercased())"
+    }
+
+    private static func percent(_ fraction: Double) -> String {
+        String(format: "%.0f%%", fraction * 100)
+    }
 
     /// Tiles under the meters, two to a row on the meters' grid. A tile is hidden when
     /// the service did not report its value.
@@ -389,24 +494,8 @@ struct ExpandedView: View {
                 ))
             }
         case .claude:
-            switch details.claudeUsageCredits {
-            case .off:
-                rows.append(DetailRow(label: "USAGE CREDITS", value: "Off"))
-            case .balance(let dollars):
-                rows.append(DetailRow(label: "USAGE CREDITS", value: usd(dollars)))
-            case .spent(let dollars, let limit):
-                rows.append(DetailRow(
-                    label: "USAGE CREDITS",
-                    value: limit.map { "\(usd(dollars)) of \(usd($0)) used" } ?? "\(usd(dollars)) used"
-                ))
-            case nil:
-                break
-            }
-            if let cloud = details.cloudCredits {
-                var value = usd(cloud.remaining)
-                if let limit = cloud.limit { value += " / \(usd(limit))" }
-                rows.append(DetailRow(label: "CLOUD CREDITS", value: value))
-            }
+            // Claude's credits are meters; see `creditMeters`.
+            break
         }
         return rows
     }
@@ -417,6 +506,57 @@ struct ExpandedView: View {
 }
 
 // MARK: - Pieces
+
+/// A meter: title, big value (with dollars beside it, for credits), bar and caption.
+/// Stale numbers are dimmed so they don't read as current.
+struct MeterView: View {
+    let title: String
+    let value: String
+    let amount: String?
+    /// 0...1 of the bar that is filled.
+    let fill: Double
+    let color: Color
+    let caption: String
+    let stale: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .caption(size: DashboardStyle.meterCaptionSize)
+
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text(value)
+                    .font(.app(DashboardStyle.meterValueSize))
+                    .monospacedDigit()
+                if let amount {
+                    Text(amount)
+                        .caption(size: DashboardStyle.meterCaptionSize)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+            .opacity(stale ? 0.55 : 1)
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.09))
+                    Capsule()
+                        .fill(color)
+                        .frame(width: geometry.size.width * min(max(fill, 0), 1))
+                        .opacity(stale ? 0.55 : 1)
+                }
+            }
+            .frame(height: 4)
+
+            Text(caption)
+                .caption(size: DashboardStyle.meterCaptionSize)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 
 /// The app glyph on the menu-bar toggle shows the current state: plain while the icon is
 /// shown, crossed out while it is hidden.

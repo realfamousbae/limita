@@ -8,6 +8,8 @@ export type Mode = "hidden" | "pill" | "dashboard";
 export interface Meter {
   title: string;
   value: string;
+  /** Dollars beside the value, e.g. "$163.05 OF $250.00". */
+  amount: string | null;
   fill: number;
   tone: Tone;
   caption: string;
@@ -21,6 +23,10 @@ export interface ServiceView {
   status: string;
   setupMessage: string | null;
   meters: Meter[];
+  /** Three or more windows: the meters go one per row instead of side by side. */
+  stacked: boolean;
+  /** Claude's credits as meters, two to a row under the limits. */
+  credits: Meter[];
   details: { label: string; value: string }[];
   updated: string | null;
   error: string | null;
