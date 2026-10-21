@@ -397,15 +397,40 @@ header {
   gap: 10px;
 }
 
-/* Three or more windows, one per row. */
+/* Three or more windows, one compact row each, with a divider between rows. */
 .meters.stacked {
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
 }
 
 /* In a column the meters' flex basis would set their height. */
 .meters.stacked .meter {
   flex: none;
+  gap: 6px;
+}
+
+.meters.stacked .meter + .meter {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* The title on the left, the value on the right of the same line. */
+.meter-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.meter.compact .big {
+  font-size: 18px;
+}
+
+/* Brighter and larger than the captions, so the rows read by name. */
+.caption.meter-caption.meter-title {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 /* Claude's credits, two to a row on the meters' grid. */

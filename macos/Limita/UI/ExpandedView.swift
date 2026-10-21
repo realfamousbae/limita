@@ -240,19 +240,11 @@ struct ExpandedView: View {
                         sevenDayMetric(service: service, snapshot: snapshot, stale: state.isStale, now: now)
                             .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
                     }
+                    creditMeters(for: service, stale: state.isStale, now: now)
                 } else {
-                    // Three or more windows: one per row, the per-model ones last.
-                    VStack(alignment: .leading, spacing: Self.rowSpacing) {
-                        fiveHourMetric(service: service, snapshot: snapshot, stale: state.isStale, now: now)
-                        sevenDayMetric(service: service, snapshot: snapshot, stale: state.isStale, now: now)
-                        ForEach(Array(snapshot.scoped.enumerated()), id: \.offset) { _, scoped in
-                            metric(scoped.title, service: service, window: scoped.window,
-                                   color: DashboardStyle.accent(for: service).opacity(0.72), stale: state.isStale, now: now)
-                        }
-                    }
+                    stackedRows(service: service, snapshot: snapshot, stale: state.isStale, now: now)
                 }
 
-                creditMeters(for: service, stale: state.isStale, now: now)
                 detailTiles(for: service)
 
                 if let error = store.liveErrors[service] {
@@ -282,20 +274,46 @@ struct ExpandedView: View {
         return state.isStale ? "STALE DATA" : "LIVE DATA"
     }
 
-    /// Between the meters when they are stacked one per row.
+    /// Between the credit meters' rows.
     static let rowSpacing: CGFloat = 12
+    /// Above and below the divider between stacked rows.
+    static let stackedGap: CGFloat = 9
 
-    @ViewBuilder
-    private func fiveHourMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> some View {
-        if snapshot.hasNoFiveHourLimit {
-            unlimitedMetric("5 HOURS")
-        } else {
-            metric("5 HOURS", service: service, window: snapshot.fiveHour,
-                   color: DashboardStyle.fiveHourBar(for: service), stale: stale, now: now)
+    /// Three or more windows: one compact row each, the per-model ones after the plan's,
+    /// then the credits, with a divider between rows.
+    private func stackedRows(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> some View {
+        let soft = DashboardStyle.accent(for: service).opacity(0.72)
+        let rows = [
+            fiveHourMetric(service: service, snapshot: snapshot, stale: stale, now: now),
+            sevenDayMetric(service: service, snapshot: snapshot, stale: stale, now: now),
+        ]
+            + snapshot.scoped.map {
+                metric($0.title, service: service, window: $0.window, color: soft, stale: stale, now: now)
+            }
+            + Self.creditMeters(for: service, details: store.details[service] ?? AccountDetails(), now: now).map {
+                creditMeter($0, service: service, stale: stale)
+            }
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(rows.indices, id: \.self) { index in
+                if index > 0 {
+                    divider.frame(height: 1).padding(.vertical, Self.stackedGap)
+                }
+                rows[index].compact()
+            }
         }
     }
 
-    private func sevenDayMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> some View {
+    private func fiveHourMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> MeterView {
+        if snapshot.hasNoFiveHourLimit {
+            // Stands in for the 5-hour meter when the plan has no 5-hour limit.
+            return MeterView(title: "5 HOURS", value: "∞", amount: nil, fill: 0, color: .clear,
+                             caption: "NO 5-HOUR LIMIT", stale: false)
+        }
+        return metric("5 HOURS", service: service, window: snapshot.fiveHour,
+                      color: DashboardStyle.fiveHourBar(for: service), stale: stale, now: now)
+    }
+
+    private func sevenDayMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> MeterView {
         metric("7 DAYS", service: service, window: snapshot.sevenDay,
                color: DashboardStyle.accent(for: service).opacity(0.72), stale: stale, now: now)
     }
@@ -305,7 +323,7 @@ struct ExpandedView: View {
     /// means "almost out". Stale numbers are dimmed so they don't read as current.
     private func metric(
         _ title: String, service: Service, window: LimitWindow?, color: Color, stale: Bool, now: Date
-    ) -> some View {
+    ) -> MeterView {
         MeterView(
             title: "\(title) \(service.percentMeaning.uppercased())",
             value: window?.shownText(for: service, at: now) ?? "—",
@@ -315,23 +333,6 @@ struct ExpandedView: View {
             caption: window?.resetText(at: now)?.uppercased() ?? "NO WINDOW",
             stale: stale
         )
-    }
-
-    /// Stands in for the 5-hour meter when the plan has no 5-hour limit.
-    private func unlimitedMetric(_ title: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .caption(size: DashboardStyle.meterCaptionSize)
-            Text("∞")
-                .font(.app(DashboardStyle.meterValueSize))
-            Capsule().fill(Color.white.opacity(0.09))
-                .frame(height: 4)
-            Text("NO 5-HOUR LIMIT")
-                .caption(size: DashboardStyle.meterCaptionSize)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Balances
@@ -345,8 +346,10 @@ struct ExpandedView: View {
                 ForEach(Array(stride(from: 0, to: meters.count, by: 2)), id: \.self) { start in
                     HStack(alignment: .top, spacing: Self.meterSpacing) {
                         creditMeter(meters[start], service: service, stale: stale)
+                            .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
                         if start + 1 < meters.count {
                             creditMeter(meters[start + 1], service: service, stale: stale)
+                                .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
                         } else {
                             Color.clear.frame(height: 0)
                                 .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
@@ -357,7 +360,7 @@ struct ExpandedView: View {
         }
     }
 
-    private func creditMeter(_ meter: CreditMeter, service: Service, stale: Bool) -> some View {
+    private func creditMeter(_ meter: CreditMeter, service: Service, stale: Bool) -> MeterView {
         MeterView(
             title: meter.title,
             value: meter.value,
@@ -367,7 +370,6 @@ struct ExpandedView: View {
             caption: meter.caption,
             stale: stale
         )
-        .frame(minWidth: Self.meterWidth, maxWidth: .infinity)
     }
 
     /// What a credit meter shows, worked out apart from the view so it can be tested.
@@ -383,14 +385,14 @@ struct ExpandedView: View {
         let caption: String
     }
 
-    /// Usage credits as spent (or "OFF" over an empty bar), cloud credits as left. A
-    /// meter is hidden when the service did not report its value.
+    /// Usage credits as spent, cloud credits as left. A meter is hidden when the service
+    /// did not report its value, and usage credits also while they are turned off.
     static func creditMeters(for service: Service, details: AccountDetails, now: Date) -> [CreditMeter] {
         guard service == .claude else { return [] }
         var meters: [CreditMeter] = []
         switch details.claudeUsageCredits {
-        case .off:
-            meters.append(CreditMeter(title: "USAGE CREDITS", value: "—", amount: nil, fill: 0, used: 0, caption: "OFF"))
+        case .off, nil:
+            break
         case .balance(let dollars):
             meters.append(CreditMeter(title: "USAGE CREDITS", value: usd(dollars), amount: nil, fill: 0, used: 0, caption: "BALANCE"))
         case .spent(let dollars, let limit?) where limit > 0:
@@ -401,8 +403,6 @@ struct ExpandedView: View {
             ))
         case .spent(let dollars, _):
             meters.append(CreditMeter(title: "USAGE CREDITS USED", value: usd(dollars), amount: nil, fill: 0, used: 0, caption: "NO SPEND LIMIT"))
-        case nil:
-            break
         }
         if let cloud = details.cloudCredits {
             let caption = cloudResetText(cloud.expiresAt, now: now)
@@ -508,6 +508,7 @@ struct ExpandedView: View {
 // MARK: - Pieces
 
 /// A meter: title, big value (with dollars beside it, for credits), bar and caption.
+/// Compact, it is one row: the value sits on the title's line, on the right.
 /// Stale numbers are dimmed so they don't read as current.
 struct MeterView: View {
     let title: String
@@ -518,25 +519,32 @@ struct MeterView: View {
     let color: Color
     let caption: String
     let stale: Bool
+    var isCompact = false
+
+    func compact() -> MeterView {
+        var meter = self
+        meter.isCompact = true
+        return meter
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .caption(size: DashboardStyle.meterCaptionSize)
-
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text(value)
-                    .font(.app(DashboardStyle.meterValueSize))
-                    .monospacedDigit()
-                if let amount {
-                    Text(amount)
-                        .caption(size: DashboardStyle.meterCaptionSize)
-                        .monospacedDigit()
+        VStack(alignment: .leading, spacing: isCompact ? 6 : 5) {
+            if isCompact {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    // Brighter and larger than the captions, so the rows read by name.
+                    Text(title)
+                        .font(.app(DashboardStyle.compactTitleSize))
+                        .tracking(DashboardStyle.captionTracking)
+                        .foregroundStyle(DashboardStyle.compactTitle)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 8)
+                    valueLine(size: DashboardStyle.compactValueSize)
                 }
+            } else {
+                Text(title)
+                    .caption(size: DashboardStyle.meterCaptionSize)
+                valueLine(size: DashboardStyle.meterValueSize)
             }
-            .opacity(stale ? 0.55 : 1)
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
@@ -555,6 +563,30 @@ struct MeterView: View {
                 .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The value, with dollars before it when compact (so the number ends the row) and
+    /// after it otherwise.
+    private func valueLine(size: CGFloat) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            if isCompact { amountText }
+            Text(value)
+                .font(.app(size))
+                .monospacedDigit()
+            if !isCompact { amountText }
+        }
+        .opacity(stale ? 0.55 : 1)
+    }
+
+    @ViewBuilder
+    private var amountText: some View {
+        if let amount {
+            Text(amount)
+                .caption(size: DashboardStyle.meterCaptionSize)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
     }
 }
 
@@ -865,6 +897,11 @@ enum DashboardStyle {
     static let meterCaptionSize: CGFloat = 10.5
     /// The meters' percentages.
     static let meterValueSize: CGFloat = 26
+    /// The percentages of meters stacked one per row, on the title's line.
+    static let compactValueSize: CGFloat = 18
+    /// The names of meters stacked one per row.
+    static let compactTitleSize: CGFloat = 12
+    static let compactTitle = Color.white.opacity(0.9)
     /// Values next to captions, e.g. messages.
     static let valueSize: CGFloat = 11
     /// Values in the tiles under the meters, e.g. balances.

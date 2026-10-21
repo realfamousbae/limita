@@ -23,9 +23,9 @@ export interface ServiceView {
   status: string;
   setupMessage: string | null;
   meters: Meter[];
-  /** Three or more windows: the meters go one per row instead of side by side. */
+  /** Three or more windows: one compact row per meter, the credits after the limits. */
   stacked: boolean;
-  /** Claude's credits as meters, two to a row under the limits. */
+  /** Claude's credits as meters, two to a row under the limits unless `stacked`. */
   credits: Meter[];
   details: { label: string; value: string }[];
   updated: string | null;
