@@ -39,9 +39,10 @@ pub struct ServiceView {
     /// Outcome of connecting, shown instead of the meters until dismissed.
     pub setup_message: Option<String>,
     pub meters: Vec<MeterView>,
-    /// Three or more windows: the meters go one per row instead of side by side.
+    /// Three or more windows: the meters go one compact row each instead of side by
+    /// side, and the credits follow them as rows.
     pub stacked: bool,
-    /// Claude's credits as meters, two to a row under the limits.
+    /// Claude's credits as meters, two to a row under the limits unless `stacked`.
     pub credits: Vec<MeterView>,
     pub details: Vec<DetailRow>,
     /// "UPDATED 2 MIN AGO"; absent without data.
@@ -234,8 +235,9 @@ fn pressure_tone(used: f64, tone: BarTone) -> BarTone {
     }
 }
 
-/// Usage credits as spent (or "OFF" over an empty bar), cloud credits as left; the bar's
-/// colour follows what is spent. A meter is hidden when the service did not report it.
+/// Usage credits as spent, cloud credits as left; the bar's colour follows what is spent.
+/// A meter is hidden when the service did not report it, and usage credits also while
+/// they are turned off.
 pub fn credit_meters(service: Service, details: &AccountDetails, now: Timestamp) -> Vec<MeterView> {
     if service != Service::Claude {
         return Vec::new();
@@ -251,7 +253,6 @@ pub fn credit_meters(service: Service, details: &AccountDetails, now: Timestamp)
     let percent = |fraction: f64| format!("{:.0}%", fraction * 100.0);
     let mut meters = Vec::new();
     match &details.claude_usage_credits {
-        Some(UsageCredits::Off) => meters.push(credit("USAGE CREDITS", "—".into(), None, 0.0, 0.0, "OFF")),
         Some(UsageCredits::Balance { dollars }) => {
             meters.push(credit("USAGE CREDITS", usd(*dollars), None, 0.0, 0.0, "BALANCE"))
         }
@@ -263,7 +264,7 @@ pub fn credit_meters(service: Service, details: &AccountDetails, now: Timestamp)
         Some(UsageCredits::Spent { dollars, .. }) => {
             meters.push(credit("USAGE CREDITS USED", usd(*dollars), None, 0.0, 0.0, "NO SPEND LIMIT"))
         }
-        None => {}
+        Some(UsageCredits::Off) | None => {}
     }
     if let Some(cloud) = &details.cloud_credits {
         let caption = cloud_reset_text(cloud.expires_at, now);
@@ -444,8 +445,8 @@ mod tests {
             ..Default::default()
         };
         let meters = credit_meters(Service::Claude, &details, now);
-        assert_eq!((meters[0].value.as_str(), meters[0].fill, meters[0].caption.as_str()), ("—", 0.0, "OFF"), "off is an empty bar");
-        let cloud = &meters[1];
+        assert_eq!(meters.len(), 1, "usage credits that are off are hidden");
+        let cloud = &meters[0];
         assert_eq!(cloud.title, "CLOUD CREDITS LEFT");
         assert_eq!(cloud.value, "65%");
         assert_eq!(cloud.amount.as_deref(), Some("$163.05 OF $250.00"));
