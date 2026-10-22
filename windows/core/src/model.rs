@@ -105,12 +105,29 @@ pub struct ScopedWindow {
     /// A weekly window; otherwise a 5-hour one.
     pub is_weekly: bool,
     pub window: LimitWindow,
+    /// How much of the plan's weekly limit the model has used, and may use at most.
+    /// Only weekly windows have one, and only when the service reports it.
+    pub weekly_share: Option<WeeklyShare>,
+}
+
+/// A model's part of the weekly limit, both in percent of the whole week.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeeklyShare {
+    pub used_percent: f64,
+    /// "Up to 50 % of your weekly limit"; `None` when not reported.
+    pub allowance_percent: Option<f64>,
 }
 
 impl ScopedWindow {
     /// "FABLE 7 DAYS", in the style of the other meters' titles.
     pub fn title(&self) -> String {
         format!("{} {}", self.name.to_uppercase(), if self.is_weekly { "7 DAYS" } else { "5 HOURS" })
+    }
+
+    /// What `weekly_share` used, 0...100; nothing once the window has reset.
+    pub fn weekly_share_percent(&self, now: Timestamp) -> Option<f64> {
+        let share = self.weekly_share.filter(|_| self.is_weekly)?;
+        Some(if self.window.is_expired(now) { 0.0 } else { share.used_percent.clamp(0.0, 100.0) })
     }
 }
 

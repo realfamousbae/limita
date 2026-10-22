@@ -241,6 +241,33 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(plain.sevenDay?.usedPercent, 2)
     }
 
+    func testClaudeUsageResponseReadsTheWeeklyShare() throws {
+        // `limit_index` counts every entry of `limits`, the malformed one included.
+        let response = #"""
+        {"five_hour":{"utilization":1},"seven_day":{"utilization":24},
+         "limits":[
+          {"kind":"session","group":"session","percent":1,"scope":null},
+          {"kind":"weekly_scoped","group":"weekly","percent":"odd","scope":{"model":{"display_name":"Broken"}}},
+          {"kind":"weekly_scoped","group":"weekly","percent":23,"scope":{"model":{"display_name":"Fable"}}}
+         ],
+         "weekly_scoped_shares":[
+          {"limit_index":2,"used_percent_of_weekly":12,"allowance_percent_of_weekly":50},
+          {"limit_index":"odd"}
+         ]}
+        """#
+        let snapshot = try ClaudeLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: Date()).snapshot
+        XCTAssertEqual(snapshot.scoped.first?.weeklyShare, .init(usedPercent: 12, allowancePercent: 50))
+        XCTAssertEqual(snapshot.scoped.first?.weeklySharePercent(), 12)
+        XCTAssertEqual(ExpandedView.weeklyShareText(used: 12, allowance: 50), "12% OF WEEKLY · MAX 50%")
+        XCTAssertEqual(ExpandedView.weeklyShareText(used: 12, allowance: nil), "12% OF WEEKLY")
+
+        let expired = ScopedWindow(
+            name: "Fable", isWeekly: true, window: .init(usedPercent: 23, resetsAt: Date(timeIntervalSinceNow: -60)),
+            weeklyShare: .init(usedPercent: 12, allowancePercent: 50)
+        )
+        XCTAssertEqual(expired.weeklySharePercent(), 0, "a reset window has used nothing yet")
+    }
+
     func testNewerStatusLineKeepsThePerModelWindows() {
         let live = LimitSnapshot(
             fiveHour: .init(usedPercent: 19, resetsAt: nil), sevenDay: .init(usedPercent: 3, resetsAt: nil),

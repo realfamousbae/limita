@@ -92,7 +92,7 @@ struct ExpandedView: View {
     }()
 
     /// Width the header needs with the `primeTime` badge between the titles and the
-    /// buttons, the same gap on either side, and with the update button when one shows.
+    /// buttons, room for a spacer on either side, and with the update button when one shows.
     /// The panel widens to it when the columns alone are narrower.
     static func headerWidth(primeTime: PrimeTimeNotice?, updateButton: Bool = false) -> CGFloat {
         var name = textWidth("LIMITA", font: AppFont.ns(appNameSize), tracking: appNameTracking)
@@ -115,8 +115,9 @@ struct ExpandedView: View {
         ceil(NSAttributedString(string: text, attributes: [.font: font, .kern: tracking]).size().width) + 2
     }
 
-    /// Titles on the left and buttons on the right. The prime-time badges sit between
-    /// them, with equal space on either side.
+    /// Titles on the left and buttons on the right. The prime-time badge follows the
+    /// titles when the columns sit side by side, and is centered between titles and
+    /// buttons over a single column.
     private var header: some View {
         HStack(spacing: Self.headerSpacing) {
             ZStack {
@@ -145,9 +146,13 @@ struct ExpandedView: View {
                     .caption()
             }
 
+            if let notice = store.primeTimeNotice, store.enabledServices.count > 1 {
+                PrimeTimeBadge(notice: notice)
+            }
+
             Spacer(minLength: 0)
 
-            if let notice = store.primeTimeNotice {
+            if let notice = store.primeTimeNotice, store.enabledServices.count <= 1 {
                 PrimeTimeBadge(notice: notice)
 
                 Spacer(minLength: 0)
@@ -283,7 +288,7 @@ struct ExpandedView: View {
             (nil, sevenDayMetric(service: service, snapshot: snapshot, stale: stale, now: now)),
         ]
             + snapshot.scoped.map {
-                ($0.name.uppercased(), metric($0.title, service: service, window: $0.window, color: soft, stale: stale, now: now))
+                ($0.name.uppercased(), scopedMetric($0, service: service, soft: soft, stale: stale, now: now))
             }
             + Self.creditMeters(for: service, details: store.details[service] ?? AccountDetails(), now: now).map {
                 ($0.title, creditMeter($0, service: service, stale: stale))
@@ -324,9 +329,36 @@ struct ExpandedView: View {
                       color: DashboardStyle.fiveHourBar(for: service), stale: stale, now: now)
     }
 
+    /// The weekly meter. While the bar shows what is used, the per-model windows' part of
+    /// it is drawn first in their own lighter tone, like Claude's settings do.
     private func sevenDayMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> MeterView {
-        metric("7 DAYS", service: service, window: snapshot.sevenDay,
-               color: DashboardStyle.accent(for: service).opacity(0.72), stale: stale, now: now)
+        var meter = metric("7 DAYS", service: service, window: snapshot.sevenDay,
+                           color: DashboardStyle.accent(for: service).opacity(0.72), stale: stale, now: now)
+        if !service.showsRemaining {
+            let share = snapshot.scoped.compactMap { $0.weeklySharePercent(at: now) }.reduce(0, +)
+            if share > 0 {
+                meter.highlight = (min(share / 100, meter.fill), DashboardStyle.weeklyShare(for: service))
+            }
+        }
+        return meter
+    }
+
+    /// A per-model meter. With a share of the weekly limit, its bar takes that share's
+    /// tone, and the share sits right of the bar: "12% OF WEEKLY · MAX 50%".
+    private func scopedMetric(_ scoped: ScopedWindow, service: Service, soft: Color, stale: Bool, now: Date) -> MeterView {
+        guard let used = scoped.weeklySharePercent(at: now) else {
+            return metric(scoped.title, service: service, window: scoped.window, color: soft, stale: stale, now: now)
+        }
+        var meter = metric(scoped.title, service: service, window: scoped.window,
+                           color: DashboardStyle.weeklyShare(for: service), stale: stale, now: now)
+        meter.amount = Self.weeklyShareText(used: used, allowance: scoped.weeklyShare?.allowancePercent)
+        return meter
+    }
+
+    static func weeklyShareText(used: Double, allowance: Double?) -> String {
+        let usedText = String(format: "%.0f%% OF WEEKLY", used)
+        guard let allowance else { return usedText }
+        return usedText + String(format: " · MAX %.0f%%", allowance)
     }
 
     /// One window's meter. The number and bar show what `service` is displayed as (left
@@ -510,10 +542,13 @@ struct ExpandedView: View {
 struct MeterView: View {
     let title: String
     let value: String
-    let amount: String?
+    var amount: String?
     /// 0...1 of the bar that is filled.
     let fill: Double
     let color: Color
+    /// The first part of the fill, 0...`fill`, in its own colour: Fable's share of the
+    /// weekly limit.
+    var highlight: (fill: Double, color: Color)?
     let caption: String
     let stale: Bool
     /// Shows a chevron after the title that folds the meter away.
@@ -588,6 +623,12 @@ struct MeterView: View {
                     .fill(color)
                     .frame(width: geometry.size.width * min(max(fill, 0), 1))
                     .opacity(stale ? 0.55 : 1)
+                if let highlight, highlight.fill > 0 {
+                    Capsule()
+                        .fill(highlight.color)
+                        .frame(width: geometry.size.width * min(max(highlight.fill, 0), 1))
+                        .opacity(stale ? 0.55 : 1)
+                }
             }
         }
         .frame(height: 4)
@@ -1025,6 +1066,14 @@ enum DashboardStyle {
     /// Claude's two bars share the softer weekly tone; Codex keeps a brighter 5-hour bar.
     static func fiveHourBar(for service: Service) -> Color {
         service == .claude ? accent(for: service).opacity(0.72) : accent(for: service)
+    }
+
+    /// A model's share of the weekly limit, in the weekly bar and on the model's own
+    /// meter: a lighter tone of the service's colour that stands out against the bar.
+    static func weeklyShare(for service: Service) -> Color {
+        service == .codex
+            ? Color(red: 0.62, green: 0.82, blue: 1)
+            : Color(red: 1, green: 0.78, blue: 0.58)
     }
 
     /// Orange from 70 %, red from 90 %.

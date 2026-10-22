@@ -12,6 +12,9 @@
   --claude-soft: rgba(255, 148, 77, 0.72);
   --codex: rgb(79, 171, 255);
   --codex-soft: rgba(79, 171, 255, 0.72);
+  /* A model's share of the weekly limit, lighter than the bar it sits on. */
+  --claude-share: rgb(255, 199, 148);
+  --codex-share: rgb(158, 209, 255);
   --healthy: rgb(82, 235, 148);
   --yellow: #ffd60a;
   --orange: #ff9f0a;
@@ -231,6 +234,12 @@ header {
   background: rgba(255, 115, 46, 0.1);
   border: 1px solid rgba(255, 115, 46, 0.35);
   white-space: nowrap;
+}
+
+/* Over side-by-side columns: right after the titles, with the titles' own gap; the
+   auto margin takes the free space that would otherwise go on its left. */
+.prime-time.beside-titles {
+  margin: 0 auto 0 -9px;
 }
 
 .prime-lines {
@@ -469,10 +478,18 @@ header {
 }
 
 .bar {
+  position: relative;
   height: 4px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.09);
   overflow: hidden;
+}
+
+/* Fable's share, over the start of the weekly fill. */
+.fill.highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .fill {
@@ -485,6 +502,8 @@ header {
 .claude .fill.accentSoft { background: var(--claude-soft); }
 .codex .fill.accent { background: var(--codex); }
 .codex .fill.accentSoft { background: var(--codex-soft); }
+.claude .fill.share { background: var(--claude-share); }
+.codex .fill.share { background: var(--codex-share); }
 .fill.warning { background: var(--orange); }
 .fill.critical { background: var(--red); }
 

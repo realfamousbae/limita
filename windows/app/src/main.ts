@@ -100,12 +100,15 @@ function dashboard(current: PanelView): HTMLElement {
   }
 
   const glyph = el("span", "app-glyph");
-  // Titles left, buttons right; the prime-time badge, when shown, between them with equal gaps.
+  // Titles left, buttons right; the prime-time badge, when shown, right after the titles
+  // over side-by-side columns, and between titles and buttons with equal gaps over one.
+  const badge = current.primeTime ? primeTimeBadge(current.primeTime) : el("div");
+  if (current.services.length > 1) badge.classList.add("beside-titles");
   const header = el(
     "header",
     "",
     el("div", "header-side", glyph, el("div", "titles", el("div", "name-row", el("span", "app-name", "LIMITA"), version && el("span", "version", `v${version}`)), el("div", "caption", "AI USAGE MONITOR"))),
-    current.primeTime ? primeTimeBadge(current.primeTime) : el("div"),
+    badge,
     el("div", "header-side end", install, hover, current.services.length > 0 && refresh),
   );
 
@@ -323,6 +326,8 @@ function column(service: ServiceView): HTMLElement {
 function meter(m: Meter, stale: boolean): HTMLElement {
   const fill = el("span", `fill ${m.tone}`);
   fill.style.width = `${Math.round(m.fill * 1000) / 10}%`;
+  const highlight = m.highlight ? el("span", "fill share highlight") : null;
+  if (highlight) highlight.style.width = `${Math.round((m.highlight ?? 0) * 1000) / 10}%`;
   const amount = m.amount ? el("span", "caption meter-caption digits nowrap amount", m.amount) : null;
   return el(
     "div",
@@ -332,7 +337,7 @@ function meter(m: Meter, stale: boolean): HTMLElement {
       "div",
       "meter-body",
       el("span", "big digits", m.value),
-      el("div", "meter-track", el("div", "bar-line", el("div", "bar", fill), amount), el("div", "caption meter-caption nowrap", m.caption)),
+      el("div", "meter-track", el("div", "bar-line", el("div", "bar", fill, highlight), amount), el("div", "caption meter-caption nowrap", m.caption)),
     ),
   );
 }

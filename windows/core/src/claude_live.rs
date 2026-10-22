@@ -16,7 +16,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::model::{AccountDetails, Allowance, LimitSnapshot, LimitWindow, LiveReading, ScopedWindow, UsageCredits};
+use crate::model::{AccountDetails, Allowance, LimitSnapshot, LimitWindow, LiveReading, ScopedWindow, UsageCredits, WeeklyShare};
 use crate::paths;
 use crate::time::{from_unix, parse_flexible, relative_text, Timestamp};
 
@@ -129,7 +129,7 @@ pub fn reading_from_response(data: &[u8], captured_at: Timestamp) -> Result<Live
     let usage: Value =
         serde_json::from_slice(data).map_err(|error| format!("Claude usage API returned invalid JSON: {error}"))?;
     let snapshot = LimitSnapshot::new(window(&usage["five_hour"]), window(&usage["seven_day"]), captured_at)
-        .with_scoped(scoped_windows(&usage["limits"]));
+        .with_scoped(scoped_windows(&usage["limits"], &usage["weekly_scoped_shares"]));
     if snapshot.is_empty() {
         return Err("Claude usage API returned no limit windows".into());
     }
@@ -151,18 +151,31 @@ fn window(value: &Value) -> Option<LimitWindow> {
 
 /// Windows scoped to one model, from `limits`: `{"kind": "weekly_scoped", "group":
 /// "weekly", "percent": 4, "resets_at": "…", "scope": {"model": {"display_name": "Fable"}}}`.
-/// The plan-wide entries have keys of their own; an odd entry is skipped.
-fn scoped_windows(limits: &Value) -> Vec<ScopedWindow> {
+/// The plan-wide entries have keys of their own; an odd entry is skipped. A weekly one
+/// takes its share of the weekly limit from `shares`, which point at `limits` by position:
+/// `{"limit_index": 2, "used_percent_of_weekly": 12, "allowance_percent_of_weekly": 50}`.
+fn scoped_windows(limits: &Value, shares: &Value) -> Vec<ScopedWindow> {
     let Some(limits) = limits.as_array() else { return Vec::new() };
+    let share = |index: usize| {
+        let entry = shares.as_array()?.iter().find(|s| s.get("limit_index").and_then(Value::as_u64) == Some(index as u64))?;
+        let finite = |key: &str| entry.get(key).and_then(Value::as_f64).filter(|v| v.is_finite());
+        Some(WeeklyShare {
+            used_percent: finite("used_percent_of_weekly")?,
+            allowance_percent: finite("allowance_percent_of_weekly"),
+        })
+    };
     limits
         .iter()
-        .filter_map(|limit| {
+        .enumerate()
+        .filter_map(|(index, limit)| {
             let name = limit.pointer("/scope/model/display_name")?.as_str()?.trim();
             let percent = limit.get("percent")?.as_f64().filter(|v| v.is_finite())?;
+            let is_weekly = limit.get("group").and_then(Value::as_str) != Some("session");
             (!name.is_empty()).then(|| ScopedWindow {
                 name: name.to_string(),
-                is_weekly: limit.get("group").and_then(Value::as_str) != Some("session"),
+                is_weekly,
                 window: LimitWindow::new(percent, limit.get("resets_at").and_then(Value::as_str).and_then(parse_flexible)),
+                weekly_share: if is_weekly { share(index) } else { None },
             })
         })
         .collect()
@@ -244,6 +257,26 @@ mod tests {
         let plain = reading_from_response(odd.as_bytes(), now()).unwrap().snapshot;
         assert!(plain.scoped.is_empty(), "an odd limits list costs only the per-model windows");
         assert_eq!(plain.seven_day.unwrap().used_percent, 2.0);
+    }
+
+    #[test]
+    fn reads_the_weekly_share() {
+        // `limit_index` counts every entry of `limits`, the malformed one included.
+        let response = r#"
+        {"five_hour":{"utilization":1},"seven_day":{"utilization":24},
+         "limits":[
+          {"kind":"session","group":"session","percent":1,"scope":null},
+          {"kind":"weekly_scoped","group":"weekly","percent":"odd","scope":{"model":{"display_name":"Broken"}}},
+          {"kind":"weekly_scoped","group":"weekly","percent":23,"scope":{"model":{"display_name":"Fable"}}}
+         ],
+         "weekly_scoped_shares":[
+          {"limit_index":2,"used_percent_of_weekly":12,"allowance_percent_of_weekly":50},
+          {"limit_index":"odd"}
+         ]}"#;
+        let snapshot = reading_from_response(response.as_bytes(), now()).unwrap().snapshot;
+        assert_eq!(snapshot.scoped[0].weekly_share, Some(WeeklyShare { used_percent: 12.0, allowance_percent: Some(50.0) }));
+        assert_eq!(snapshot.scoped[0].weekly_share_percent(now()), Some(12.0));
+        assert_eq!(crate::view::weekly_share_text(12.0, Some(50.0)), "12% OF WEEKLY · MAX 50%");
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 export type Service = "claude" | "codex";
 export type Level = "normal" | "warning" | "critical";
-export type Tone = "accent" | "accentSoft" | "warning" | "critical";
+export type Tone = "accent" | "accentSoft" | "share" | "warning" | "critical";
 export type Mode = "hidden" | "pill" | "dashboard";
 
 export interface Meter {
@@ -12,6 +12,8 @@ export interface Meter {
   amount: string | null;
   fill: number;
   tone: Tone;
+  /** The first part of the fill in the "share" tone: Fable's share of the weekly limit. */
+  highlight: number | null;
   caption: string;
 }
 
