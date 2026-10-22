@@ -100,12 +100,15 @@ function dashboard(current: PanelView): HTMLElement {
   }
 
   const glyph = el("span", "app-glyph");
-  // Titles left, buttons right; the prime-time badge, when shown, between them with equal gaps.
+  // Titles left, buttons right; the prime-time badge, when shown, right after the titles
+  // over side-by-side columns, and between titles and buttons with equal gaps over one.
+  const badge = current.primeTime ? primeTimeBadge(current.primeTime) : el("div");
+  if (current.services.length > 1) badge.classList.add("beside-titles");
   const header = el(
     "header",
     "",
     el("div", "header-side", glyph, el("div", "titles", el("div", "name-row", el("span", "app-name", "LIMITA"), version && el("span", "version", `v${version}`)), el("div", "caption", "AI USAGE MONITOR"))),
-    current.primeTime ? primeTimeBadge(current.primeTime) : el("div"),
+    badge,
     el("div", "header-side end", install, hover, current.services.length > 0 && refresh),
   );
 

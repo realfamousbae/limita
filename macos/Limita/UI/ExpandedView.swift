@@ -92,7 +92,7 @@ struct ExpandedView: View {
     }()
 
     /// Width the header needs with the `primeTime` badge between the titles and the
-    /// buttons, the same gap on either side, and with the update button when one shows.
+    /// buttons, room for a spacer on either side, and with the update button when one shows.
     /// The panel widens to it when the columns alone are narrower.
     static func headerWidth(primeTime: PrimeTimeNotice?, updateButton: Bool = false) -> CGFloat {
         var name = textWidth("LIMITA", font: AppFont.ns(appNameSize), tracking: appNameTracking)
@@ -115,8 +115,9 @@ struct ExpandedView: View {
         ceil(NSAttributedString(string: text, attributes: [.font: font, .kern: tracking]).size().width) + 2
     }
 
-    /// Titles on the left and buttons on the right. The prime-time badges sit between
-    /// them, with equal space on either side.
+    /// Titles on the left and buttons on the right. The prime-time badge follows the
+    /// titles when the columns sit side by side, and is centered between titles and
+    /// buttons over a single column.
     private var header: some View {
         HStack(spacing: Self.headerSpacing) {
             ZStack {
@@ -145,9 +146,13 @@ struct ExpandedView: View {
                     .caption()
             }
 
+            if let notice = store.primeTimeNotice, store.enabledServices.count > 1 {
+                PrimeTimeBadge(notice: notice)
+            }
+
             Spacer(minLength: 0)
 
-            if let notice = store.primeTimeNotice {
+            if let notice = store.primeTimeNotice, store.enabledServices.count <= 1 {
                 PrimeTimeBadge(notice: notice)
 
                 Spacer(minLength: 0)

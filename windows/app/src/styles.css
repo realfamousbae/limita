@@ -233,6 +233,12 @@ header {
   white-space: nowrap;
 }
 
+/* Over side-by-side columns: right after the titles, with the titles' own gap; the
+   auto margin takes the free space that would otherwise go on its left. */
+.prime-time.beside-titles {
+  margin: 0 auto 0 -9px;
+}
+
 .prime-lines {
   display: flex;
   flex-direction: column;
