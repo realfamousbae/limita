@@ -155,19 +155,22 @@ private struct ActivityColumn: View {
 private struct SummaryTiles: View {
     let summary: ActivitySummary
 
+    /// Wider than the meters' gap, so the tiles do not read as one line of text.
+    private static let tileSpacing: CGFloat = 22
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .top, spacing: ExpandedView.meterSpacing) {
-                tile("TOTAL TOKENS", TokenFormat.compact(summary.tokens))
+            HStack(alignment: .top, spacing: Self.tileSpacing) {
+                tile("TOTAL TOKENS", TokenFormat.count(summary.tokens))
                 tile("FAVORITE MODEL", summary.favoriteModel ?? "—")
                 tile("MESSAGES", TokenFormat.count(summary.messages))
                 tile("PEAK HOUR", summary.peakHourText)
             }
-            HStack(alignment: .top, spacing: ExpandedView.meterSpacing) {
-                tile("INPUT", TokenFormat.compact(summary.usage.input))
-                tile("OUTPUT", TokenFormat.compact(summary.usage.output))
-                tile("CACHE WRITE", TokenFormat.compact(summary.usage.cacheWrite))
-                tile("CACHE READ", TokenFormat.compact(summary.usage.cacheRead))
+            HStack(alignment: .top, spacing: Self.tileSpacing) {
+                tile("INPUT", TokenFormat.count(summary.usage.input))
+                tile("OUTPUT", TokenFormat.count(summary.usage.output))
+                tile("CACHE WRITE", TokenFormat.count(summary.usage.cacheWrite))
+                tile("CACHE READ", TokenFormat.count(summary.usage.cacheRead))
             }
         }
     }
