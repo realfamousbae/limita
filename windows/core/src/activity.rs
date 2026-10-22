@@ -665,14 +665,14 @@ fn summary(days: &[&DayStats]) -> Vec<Tile> {
     let peak = (busiest > 0).then(|| format!("{:02}:00", hours.iter().position(|&h| h == busiest).unwrap_or(0)));
     let tile = |label: &str, value: String| Tile { label: label.into(), value };
     vec![
-        tile("TOTAL TOKENS", compact(sum(|d| d.tokens))),
+        tile("TOTAL TOKENS", grouped(sum(|d| d.tokens))),
         tile("FAVORITE MODEL", favorite.unwrap_or_else(|| "—".into())),
         tile("MESSAGES", grouped(sum(|d| d.messages))),
         tile("PEAK HOUR", peak.unwrap_or_else(|| "—".into())),
-        tile("INPUT", compact(sum(|d| d.input))),
-        tile("OUTPUT", compact(sum(|d| d.output))),
-        tile("CACHE WRITE", compact(sum(|d| d.cache_write))),
-        tile("CACHE READ", compact(sum(|d| d.cache_read))),
+        tile("INPUT", grouped(sum(|d| d.input))),
+        tile("OUTPUT", grouped(sum(|d| d.output))),
+        tile("CACHE WRITE", grouped(sum(|d| d.cache_write))),
+        tile("CACHE READ", grouped(sum(|d| d.cache_read))),
     ]
 }
 

@@ -719,7 +719,7 @@ header {
 .activity-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 9px 10px;
+  gap: 9px 22px;
 }
 
 .activity-summary .tile-value {
