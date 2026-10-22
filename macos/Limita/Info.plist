@@ -35,6 +35,11 @@
             </array>
         </dict>
     </array>
+    <key>LSEnvironment</key>
+    <dict>
+        <key>LLVM_PROFILE_FILE</key>
+        <string>/dev/null</string>
+    </dict>
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
