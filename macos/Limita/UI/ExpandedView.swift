@@ -92,9 +92,9 @@ struct ExpandedView: View {
     }()
 
     /// Width the header needs with the `primeTime` badge between the titles and the
-    /// buttons, the same gap on either side. The panel widens to it when the columns
-    /// alone are narrower.
-    static func headerWidth(primeTime: PrimeTimeNotice) -> CGFloat {
+    /// buttons, the same gap on either side, and with the update button when one shows.
+    /// The panel widens to it when the columns alone are narrower.
+    static func headerWidth(primeTime: PrimeTimeNotice?, updateButton: Bool = false) -> CGFloat {
         var name = textWidth("LIMITA", font: AppFont.ns(appNameSize), tracking: appNameTracking)
         if !versionText.isEmpty {
             name += versionGap + textWidth(versionText, font: AppFont.ns(versionSize), tracking: DashboardStyle.captionTracking)
@@ -104,7 +104,9 @@ struct ExpandedView: View {
             textWidth(appCaption, font: AppFont.ns(DashboardStyle.captionSize), tracking: DashboardStyle.captionTracking)
         )
         let left = appGlyphSize + headerSpacing + titles
-        let right = 3 * headerButtonSize + 2 * headerSpacing
+        let buttons: CGFloat = updateButton ? 4 : 3
+        let right = buttons * headerButtonSize + (buttons - 1) * headerSpacing
+        guard let primeTime else { return 2 * headerPadding + left + headerSpacing + right }
         // Each side of the badge: a spacer of zero or more between two header spacings.
         return 2 * headerPadding + left + right + PrimeTimeBadge.width(primeTime) + 4 * headerSpacing
     }
@@ -149,6 +151,10 @@ struct ExpandedView: View {
                 PrimeTimeBadge(notice: notice)
 
                 Spacer(minLength: 0)
+            }
+
+            if let release = store.updater.available {
+                UpdateButton(updater: store.updater, release: release)
             }
 
             Button {
@@ -943,6 +949,47 @@ private struct ConnectPrompt: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+// MARK: - Update
+
+/// Shown in the header only while a newer Limita is out: an arrow down to a line,
+/// in the healthy green, tinted like the prime-time badge. Installing swaps the app
+/// and reopens it; a spinner stands in meanwhile.
+private struct UpdateButton: View {
+    let updater: AppUpdater
+    let release: AppUpdater.Release
+
+    var body: some View {
+        Button {
+            updater.install()
+        } label: {
+            ZStack {
+                Circle().fill(DashboardStyle.healthy.opacity(0.14))
+                Circle().strokeBorder(DashboardStyle.healthy.opacity(0.35), lineWidth: 1)
+                if updater.phase == .installing {
+                    ProgressView().controlSize(.mini).tint(DashboardStyle.healthy)
+                } else {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(DashboardStyle.healthy)
+                }
+            }
+            .frame(width: ExpandedView.headerButtonSize, height: ExpandedView.headerButtonSize)
+        }
+        .buttonStyle(.plain)
+        .disabled(updater.phase == .installing)
+        .help(help)
+        .accessibilityLabel("Install Limita \(release.version)")
+    }
+
+    private var help: String {
+        switch updater.phase {
+        case .installing: "Installing Limita \(release.version)…"
+        case .failed(let reason): "Update failed: \(reason). Click to try again."
+        case .idle: "Install Limita \(release.version)"
+        }
     }
 }
 

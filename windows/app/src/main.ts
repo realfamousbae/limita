@@ -9,6 +9,8 @@ import type { ActivityDay, ActivityGrid, ActivityPanel, Meter, Mode, PanelView, 
 let mode: Mode = "hidden";
 let view: PanelView | null = null;
 let hoverPill = true;
+/** A newer Limita, when GitHub has one (see `updater.rs`). */
+let update: { version: string | null; installing: boolean; error: string | null } = { version: null, installing: false, error: null };
 let version = "";
 let reported = "";
 let activity: ActivityPanel = { expanded: false, period: "all", grids: [] };
@@ -84,6 +86,19 @@ function dashboard(current: PanelView): HTMLElement {
   hover.title = hoverPill ? "Turn off the hover pill (Ctrl+Alt+H)" : "Turn on the hover pill (Ctrl+Alt+H)";
   hover.addEventListener("click", () => invoke("toggle_hover_pill"));
 
+  // Only while a newer version is out: an arrow down to a line, in the healthy green.
+  let install: HTMLElement | null = null;
+  if (update.version) {
+    install = el("button", "round update", update.installing ? el("span", "spinner") : icon("update"));
+    install.title = update.installing
+      ? `Installing Limita ${update.version}…`
+      : update.error
+        ? `Update failed: ${update.error}. Click to try again.`
+        : `Install Limita ${update.version}`;
+    (install as HTMLButtonElement).disabled = update.installing;
+    install.addEventListener("click", () => invoke("install_update"));
+  }
+
   const glyph = el("span", "app-glyph");
   // Titles left, buttons right; the prime-time badge, when shown, between them with equal gaps.
   const header = el(
@@ -91,7 +106,7 @@ function dashboard(current: PanelView): HTMLElement {
     "",
     el("div", "header-side", glyph, el("div", "titles", el("div", "name-row", el("span", "app-name", "LIMITA"), version && el("span", "version", `v${version}`)), el("div", "caption", "AI USAGE MONITOR"))),
     current.primeTime ? primeTimeBadge(current.primeTime) : el("div"),
-    el("div", "header-side end", hover, current.services.length > 0 && refresh),
+    el("div", "header-side end", install, hover, current.services.length > 0 && refresh),
   );
 
   const body =
@@ -353,8 +368,9 @@ function sizeMeters(longest: string) {
 
 async function start() {
   await document.fonts.load('10px "JetBrains Mono"');
-  const current = await invoke<{ mode: Mode; hoverPill: boolean; version: string; view: PanelView }>("current");
+  const current = await invoke<{ mode: Mode; hoverPill: boolean; version: string; view: PanelView; update: typeof update }>("current");
   version = current.version;
+  update = current.update;
   view = current.view;
   mode = current.mode;
   hoverPill = current.hoverPill;
@@ -368,6 +384,10 @@ async function start() {
   });
   await listen<{ enabled: boolean }>("hover-pill", (event) => {
     hoverPill = event.payload.enabled;
+    render();
+  });
+  await listen<typeof update>("update", (event) => {
+    update = event.payload;
     render();
   });
   await listen<{ mode: Mode }>("panel-mode", (event) => {

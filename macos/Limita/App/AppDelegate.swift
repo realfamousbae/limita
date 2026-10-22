@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         store.repairClaudeHookIfNeeded()
         store.startAutoRefresh()
+        store.updater.start()
 
         panelController = BezelPanelController(store: store)
         dashboardHotKey = GlobalHotKey(

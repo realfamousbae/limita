@@ -7,8 +7,11 @@ on:
   pull_request:
     paths: ["windows/**", "assets/**", "scripts/**", ".github/workflows/windows.yml"]
   workflow_dispatch:
-  # Used by windows-release.yml.
+  # Used by windows-release.yml, which passes the updater's signing key.
   workflow_call:
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
 
 defaults:
   run:
@@ -54,10 +57,24 @@ jobs:
       # Reported, not enforced: a lint added in a newer Rust must not block the installer.
       - run: cargo clippy --workspace --all-targets
       - run: cargo test -p limita
-      - run: npm run tauri build
+      # With the signing key (pushes and releases here, not forks) the build also signs the installer for the
+      # in-app updater, `*.exe.sig`; without it, e.g. on pull requests, it skips that.
+      - name: Build the installer
+        shell: bash
         working-directory: windows/app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          else
+            npm run tauri build
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: limita-windows-installer
-          path: windows/target/release/bundle/nsis/*.exe
+          path: |
+            windows/target/release/bundle/nsis/*.exe
+            windows/target/release/bundle/nsis/*.exe.sig
           if-no-files-found: error

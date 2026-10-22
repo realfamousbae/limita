@@ -35,8 +35,9 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 - **Your plan.** On macOS the Claude column is titled with your plan, e.g. "Claude Max X5", read from the account profile.
 - **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits). Claude usage credits and cloud session credits are rows like the limits, as in Claude's settings: the percentage and the bar show what is spent, and the dollars right of the bar what is left (e.g. "$163 OF $250 LEFT"). A balance a service does not report is hidden, and so are usage credits that are turned off.
 - **Readable at a glance.** Claude shows what is **used**, Codex what is **left**, and the dashboard labels which is which. Each service's dot follows its 5-hour limit: green, yellow from 70 % used (30 % left), red from 90 %; stale data keeps its colour, dimmed. Percentages stay plain white, and the dashboard counts down to each reset to the minute. If a live update fails, the reason is shown right in the dashboard.
-- **Activity.** **ACTIVITY** at the bottom right of the dashboard drops down a graph of tokens per day for each connected service, under its column; on macOS the button stays in place and the graph opens below it. **WEEK** shows the last 7 days, **MONTH** the last 5 weeks as a calendar, **ALL** everything saved up to half a year; weeks start on Monday. Above the graph: total tokens, favorite model, messages, peak hour, and the tokens split into input, output, cache writes and cache reads. Hover a day (or click it) to see its date and a chip with its tokens in thousands. Each request is counted once, even when resumed sessions copy it into several transcripts, so totals can be lower than Claude Code's `/stats`. Claude Code deletes transcripts after 30 days by default, so Limita keeps the daily totals it has seen in `activity.json`.
+- **Activity.** **ACTIVITY** at the bottom right of the dashboard drops down a graph of tokens per day for each connected service, under its column; on macOS the button stays in place and the graph opens below it. **WEEK** shows the last 7 days, **MONTH** the last 5 weeks as a calendar, **ALL** everything saved up to half a year; weeks start on Monday. Above the graph: total tokens, favorite model (e.g. "Opus 5.5", "Sol 6"), messages, peak hour, and the tokens split into input, output, cache writes and cache reads. Hover a day (or click it) to see its date and a chip with its tokens in thousands. Each request is counted once, even when resumed sessions copy it into several transcripts, so totals can be lower than Claude Code's `/stats`. Claude Code deletes transcripts after 30 days by default, so Limita keeps the daily totals it has seen in `activity.json`.
 - **Prime time.** During a service's peak hours, when usage limits run out faster, the dashboard header shows a burning-gauge badge: "CLAUDE PEAK HOURS" with one service connected, the name in bold when only one of two connected services is in peak hours, "PEAK HOURS FOR ALL PROVIDERS" when both are. Claude: weekdays 5–11 AM Pacific time; Codex: weekdays 12:00–18:00 UTC. Both are shown in your local time.
+- **Updates in one click.** When a new version is out, a green **⤓** button appears in the dashboard header next to the others. Click it and Limita downloads the update, checks its signature, installs it and reopens. See [Updates](#updates).
 - Multiple displays and full-screen Spaces. JetBrains Mono everywhere.
 
 # Screenshots
@@ -66,6 +67,19 @@ This is how Limita looks on your Mac.
 Limita lives in the menu bar only; it has no Dock icon.
 
 On the first Claude refresh, macOS asks whether Limita may read `Claude Code-credentials` from the Keychain. Choose **Always Allow**.
+
+## Updates
+
+Limita checks GitHub Releases at launch and every 6 hours. While a newer version is out, a green **⤓** button shows in the dashboard header; nothing else changes until you click it.
+
+Updates are installed only after their signature checks out:
+
+- **macOS.** Each release's DMG is signed with an Ed25519 key that only the maintainer holds, and the signature is published next to it as `Limita-<version>.dmg.sig`. Limita downloads both, checks the signature against the public key built into the app, and checks that the DMG holds Limita itself (bundle id and version) before touching anything. Only then is the old copy in Applications set aside, the new one copied in and opened. If copying fails, the old copy is put back. A tampered or unsigned download is refused and the installed copy stays as it is.
+- **Windows.** The installer is signed for [Tauri's updater](https://v2.tauri.app/plugin/updater/), and `latest.json` on the release carries its signature. The app checks it against the public key built into the app before running the installer, which then reopens Limita.
+
+The private keys are not in this repository. Updates come only from this repository's releases, over HTTPS.
+
+If Limita runs from a folder it cannot write to (or straight from the DMG), the button opens the release page instead. The first version with the button is 0.13.0, so update to it by hand once. On macOS, every new build asks again for access to `Claude Code-credentials` in the Keychain, as a manual reinstall does; choose **Always Allow**.
 
 ## iTerm2
 
@@ -169,7 +183,7 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Release build
 
 `macos/Limita.xcodeproj` is generated from `macos/project.yml`. Run `xcodegen generate` after adding or removing files.
 
-`macos/scripts/make-dmg.sh` builds a Release copy and packages it as `macos/build/Limita-<version>.dmg` with the drag-to-install window. Its background is rendered from `assets/design/dmg-background-source.webp` by `macos/scripts/dmg-background.py` (needs Pillow); rerun that after changing the layout. The prime-time badge animation, `prime-time.webp` for both apps, is built from `assets/design/prime-time-source.webm` by `scripts/prime-time-sprite.sh` (needs ffmpeg and cwebp). Artwork both apps use (that animation, the status glyph, the service logos) lives once in `assets/shared/`; `scripts/sync-assets.sh` copies it to the asset catalog and the Windows folders, and `--check` verifies the copies.
+`macos/scripts/make-dmg.sh` builds a Release copy and packages it as `macos/build/Limita-<version>.dmg` with the drag-to-install window, and signs it for the updater with `macos/scripts/sign-update.sh` (the key is read from `~/.limita-signing/macos-ed25519.key` or `LIMITA_SIGNING_KEY`). To try an update locally, serve a release JSON shaped like GitHub's and start Limita with `LIMITA_UPDATE_FEED=<its URL>`; `LIMITA_UPDATE_INSTALL=1` installs it without a click. Its background is rendered from `assets/design/dmg-background-source.webp` by `macos/scripts/dmg-background.py` (needs Pillow); rerun that after changing the layout. The prime-time badge animation, `prime-time.webp` for both apps, is built from `assets/design/prime-time-source.webm` by `scripts/prime-time-sprite.sh` (needs ffmpeg and cwebp). Artwork both apps use (that animation, the status glyph, the service logos) lives once in `assets/shared/`; `scripts/sync-assets.sh` copies it to the asset catalog and the Windows folders, and `--check` verifies the copies.
 
 Live-update failures are logged: `log show --predicate 'subsystem == "com.limita.app"' --last 1h`.
 
@@ -183,7 +197,7 @@ macos/
 │   └── Resources/  app icon, menu-bar icon, bundled font
 ├── Tests/LimitaTests/
 ├── integrations/   the iTerm2 status-bar plugin
-├── scripts/        DMG packaging
+├── scripts/        DMG packaging and update signing
 └── dmg/            DMG background
 windows/            the Windows app (Tauri + Rust)
 assets/             artwork shared by both apps (shared/) and its sources (design/)

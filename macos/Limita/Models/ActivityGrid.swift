@@ -195,15 +195,28 @@ struct ActivitySummary: Equatable {
         peakHour = busiest > 0 ? hours.firstIndex(of: busiest) : nil
     }
 
-    /// "claude-opus-5-5" → "Opus 5.5", "claude-3-5-haiku-20241022" → "Haiku 3.5";
+    /// "claude-opus-5-5" → "Opus 5.5", "claude-3-5-haiku-20241022" → "Haiku 3.5",
+    /// "gpt-6-sol" → "Sol 6", "gpt-5.1-codex-max" → "Codex Max 5.1", "gpt-5.5" → "GPT 5.5";
     /// other ids as they are.
     static func modelName(_ id: String) -> String {
+        if id.hasPrefix("gpt-") { return gptModelName(id) }
         guard id.hasPrefix("claude-") else { return id }
         let parts = id.dropFirst("claude-".count).split(separator: "-").map(String.init)
             .filter { !($0.count == 8 && $0.allSatisfy(\.isNumber)) }
         guard let family = parts.first(where: { $0.first?.isLetter == true }) else { return id }
         let version = parts.filter { $0.allSatisfy(\.isNumber) }.joined(separator: ".")
         return family.prefix(1).uppercased() + family.dropFirst() + (version.isEmpty ? "" : " \(version)")
+    }
+
+    /// One version, then words, in any order: "gpt-6-sol", "gpt-5.5-codex". Anything
+    /// else, e.g. "gpt-4o-2024-08-06", stays as it is.
+    private static func gptModelName(_ id: String) -> String {
+        let parts = id.dropFirst("gpt-".count).split(separator: "-").map(String.init)
+        let versions = parts.filter { $0.first?.isNumber == true && $0.allSatisfy { $0.isNumber || $0 == "." } }
+        let words = parts.filter { $0.allSatisfy(\.isLetter) }
+        guard versions.count == 1, versions.count + words.count == parts.count else { return id }
+        let name = words.isEmpty ? "GPT" : words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        return "\(name) \(versions[0])"
     }
 
     var peakHourText: String {

@@ -301,6 +301,18 @@ header {
   cursor: default;
 }
 
+/* The update button: the healthy green, tinted like the prime-time badge. */
+.round.update {
+  color: var(--healthy);
+  background: rgba(82, 235, 148, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(82, 235, 148, 0.35);
+}
+
+.round.update .spinner {
+  border-color: rgba(82, 235, 148, 0.3);
+  border-top-color: var(--healthy);
+}
+
 .spinner {
   width: 10px;
   height: 10px;

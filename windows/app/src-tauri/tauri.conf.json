@@ -52,5 +52,16 @@
     "externalBin": [
       "binaries/limita-cli"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzNDU3RjNEQTY3ODAyNTMKUldSVEFuaW1QWDlGMC8rdFRQM1l0aGNJNm1raitFNStZVVJvei9heDZrUzlKSFRtVEJVdFh6TE0K",
+      "endpoints": [
+        "https://github.com/realfamousbae/limita/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

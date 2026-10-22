@@ -21,6 +21,7 @@ serde.workspace = true
 serde_json.workspace = true
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 
 [target."cfg(windows)".dependencies]
