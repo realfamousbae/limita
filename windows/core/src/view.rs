@@ -61,6 +61,9 @@ pub struct MeterView {
     /// 0...1 of the bar that is filled: what the percentage shows (left or used).
     pub fill: f64,
     pub tone: BarTone,
+    /// The first part of the fill, 0...`fill`, in the `Share` tone: Fable's share of the
+    /// weekly limit.
+    pub highlight: Option<f64>,
     pub caption: String,
 }
 
@@ -70,6 +73,8 @@ pub struct MeterView {
 pub enum BarTone {
     Accent,
     AccentSoft,
+    /// A model's share of the weekly limit: a lighter tone that stands out on the bar.
+    Share,
     Warning,
     Critical,
 }
@@ -187,6 +192,7 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
             amount: None,
             fill: 0.0,
             tone: BarTone::AccentSoft,
+            highlight: None,
             caption: "NO 5-HOUR LIMIT".into(),
         }
     } else {
@@ -194,15 +200,37 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
         let tone = if service == Service::Claude { BarTone::AccentSoft } else { BarTone::Accent };
         meter("5 HOURS", service, data.five_hour, tone, now)
     };
-    view.meters = vec![five_hour, meter("7 DAYS", service, data.seven_day, BarTone::AccentSoft, now)];
-    // Per-model windows last, one per row.
-    view.meters.extend(data.scoped.iter().map(|s| meter(&s.title(), service, Some(s.window), BarTone::AccentSoft, now)));
+    // While the bar shows what is used, the per-model windows' part of the week is drawn
+    // first in their own lighter tone, like Claude's settings do.
+    let mut seven_day = meter("7 DAYS", service, data.seven_day, BarTone::AccentSoft, now);
+    let share: f64 = data.scoped.iter().filter_map(|s| s.weekly_share_percent(now)).sum();
+    if !service.shows_remaining() && share > 0.0 {
+        seven_day.highlight = Some((share / 100.0).min(seven_day.fill));
+    }
+    view.meters = vec![five_hour, seven_day];
+    // Per-model windows last, one per row. With a share of the week, the bar takes that
+    // share's tone and the share sits right of it.
+    view.meters.extend(data.scoped.iter().map(|s| match s.weekly_share_percent(now) {
+        Some(used) => MeterView {
+            amount: Some(weekly_share_text(used, s.weekly_share.and_then(|share| share.allowance_percent))),
+            ..meter(&s.title(), service, Some(s.window), BarTone::Share, now)
+        },
+        None => meter(&s.title(), service, Some(s.window), BarTone::AccentSoft, now),
+    }));
     let details = snapshot.details.get(&service).cloned().unwrap_or_default();
     view.credits = credit_meters(service, &details, now);
     view.details = detail_rows(service, &details);
     view.updated = Some(format!("UPDATED {}", updated_text(data.captured_at, now).to_uppercase()));
     view.error = live_error;
     view
+}
+
+/// "12% OF WEEKLY · MAX 50%".
+pub fn weekly_share_text(used: f64, allowance: Option<f64>) -> String {
+    match allowance {
+        Some(allowance) => format!("{used:.0}% OF WEEKLY · MAX {allowance:.0}%"),
+        None => format!("{used:.0}% OF WEEKLY"),
+    }
 }
 
 fn meter(title: &str, service: Service, window: Option<LimitWindow>, tone: BarTone, now: Timestamp) -> MeterView {
@@ -213,6 +241,7 @@ fn meter(title: &str, service: Service, window: Option<LimitWindow>, tone: BarTo
         amount: None,
         fill: window.map_or(0.0, |w| w.shown_percent(service, now) / 100.0),
         tone: pressure_tone(used, tone),
+        highlight: None,
         caption: window
             .and_then(|w| w.reset_text(now))
             .map_or("NO WINDOW".into(), |text| text.to_uppercase()),
@@ -243,6 +272,7 @@ pub fn credit_meters(service: Service, details: &AccountDetails, now: Timestamp)
         amount,
         fill,
         tone: pressure_tone(used, BarTone::AccentSoft),
+        highlight: None,
         caption: caption.into(),
     };
     let percent = |fraction: f64| format!("{:.0}%", fraction * 100.0);
@@ -482,7 +512,7 @@ mod tests {
         let view = panel(&snapshot, now);
         assert_eq!(view.services[0].meters.len(), 2);
 
-        let fable = crate::model::ScopedWindow { name: "Fable".into(), is_weekly: true, window: LimitWindow::new(4.0, Some(reset)) };
+        let fable = crate::model::ScopedWindow { name: "Fable".into(), is_weekly: true, window: LimitWindow::new(4.0, Some(reset)), weekly_share: None };
         snapshot.states.insert(Service::Claude, ServiceState::Fresh(two.with_scoped(vec![fable])));
         let view = panel(&snapshot, now);
         let claude = &view.services[0];

@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn newer_status_line_keeps_the_per_model_windows() {
         let at = |seconds: f64| crate::time::from_unix(seconds).unwrap();
-        let fable = crate::model::ScopedWindow { name: "Fable".into(), is_weekly: true, window: LimitWindow::new(4.0, None) };
+        let fable = crate::model::ScopedWindow { name: "Fable".into(), is_weekly: true, window: LimitWindow::new(4.0, None), weekly_share: None };
         let live = LimitSnapshot::new(Some(LimitWindow::new(19.0, None)), Some(LimitWindow::new(3.0, None)), at(100.0))
             .with_scoped(vec![fable.clone()]);
         let local = LimitSnapshot::new(Some(LimitWindow::new(21.0, None)), Some(LimitWindow::new(3.0, None)), at(200.0));

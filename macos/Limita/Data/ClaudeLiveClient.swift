@@ -102,7 +102,7 @@ struct ClaudeLiveClient: Sendable {
             fiveHour: usage.fiveHour?.limitWindow,
             sevenDay: usage.sevenDay?.limitWindow,
             capturedAt: capturedAt,
-            scoped: usage.limits?.compactMap(\.scopedWindow) ?? []
+            scoped: usage.scopedWindows
         )
         guard !snapshot.isEmpty else {
             throw FetchError(message: "Claude usage API returned no limit windows")
@@ -207,8 +207,12 @@ struct ClaudeLiveClient: Sendable {
         let sevenDay: Window?
         let spend: Spend?
         /// Every window again, including the per-model ones (`weekly_scoped`) that have
-        /// no key of their own.
-        let limits: [Limit]?
+        /// no key of their own. An entry that fails to decode stays as `nil`, so the
+        /// positions `shares` point at still hold.
+        let limits: [Limit?]?
+        /// How much of the weekly limit each per-model window takes, by its position in
+        /// `limits`.
+        let shares: [Share]?
         /// Cloud session credits. The key is an internal code name, so it may change;
         /// the row then disappears instead of breaking the parse.
         let cloudCredits: DollarWindow?
@@ -218,6 +222,7 @@ struct ClaudeLiveClient: Sendable {
             case sevenDay = "seven_day"
             case spend
             case limits
+            case shares = "weekly_scoped_shares"
             case cloudCredits = "iguana_necktie"
         }
 
@@ -227,8 +232,41 @@ struct ClaudeLiveClient: Sendable {
             sevenDay = try container.decodeIfPresent(Window.self, forKey: .sevenDay)
             // Extras must never cost us the limits themselves.
             spend = try? container.decodeIfPresent(Spend.self, forKey: .spend)
-            limits = try? container.decodeIfPresent([Lossy<Limit>].self, forKey: .limits)?.compactMap(\.value)
+            limits = try? container.decodeIfPresent([Lossy<Limit>].self, forKey: .limits)?.map(\.value)
+            shares = try? container.decodeIfPresent([Lossy<Share>].self, forKey: .shares)?.compactMap(\.value)
             cloudCredits = try? container.decodeIfPresent(DollarWindow.self, forKey: .cloudCredits)
+        }
+
+        /// The per-model windows, each with its share of the weekly limit when reported.
+        var scopedWindows: [ScopedWindow] {
+            guard let limits else { return [] }
+            return limits.indices.compactMap { index in
+                guard var window = limits[index]?.scopedWindow else { return nil }
+                if window.isWeekly, let share = shares?.first(where: { $0.limitIndex == index }) {
+                    window.weeklyShare = share.weeklyShare
+                }
+                return window
+            }
+        }
+    }
+
+    /// `{"limit_index": 2, "used_percent_of_weekly": 12, "allowance_percent_of_weekly": 50}`.
+    private struct Share: Decodable {
+        let limitIndex: Int
+        let usedPercent: Double
+        let allowancePercent: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case limitIndex = "limit_index"
+            case usedPercent = "used_percent_of_weekly"
+            case allowancePercent = "allowance_percent_of_weekly"
+        }
+
+        var weeklyShare: ScopedWindow.WeeklyShare? {
+            guard usedPercent.isFinite else { return nil }
+            return ScopedWindow.WeeklyShare(
+                usedPercent: usedPercent, allowancePercent: allowancePercent.flatMap { $0.isFinite ? $0 : nil }
+            )
         }
     }
 

@@ -326,6 +326,8 @@ function column(service: ServiceView): HTMLElement {
 function meter(m: Meter, stale: boolean): HTMLElement {
   const fill = el("span", `fill ${m.tone}`);
   fill.style.width = `${Math.round(m.fill * 1000) / 10}%`;
+  const highlight = m.highlight ? el("span", "fill share highlight") : null;
+  if (highlight) highlight.style.width = `${Math.round((m.highlight ?? 0) * 1000) / 10}%`;
   const amount = m.amount ? el("span", "caption meter-caption digits nowrap amount", m.amount) : null;
   return el(
     "div",
@@ -335,7 +337,7 @@ function meter(m: Meter, stale: boolean): HTMLElement {
       "div",
       "meter-body",
       el("span", "big digits", m.value),
-      el("div", "meter-track", el("div", "bar-line", el("div", "bar", fill), amount), el("div", "caption meter-caption nowrap", m.caption)),
+      el("div", "meter-track", el("div", "bar-line", el("div", "bar", fill, highlight), amount), el("div", "caption meter-caption nowrap", m.caption)),
     ),
   );
 }

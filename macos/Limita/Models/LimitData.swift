@@ -83,10 +83,26 @@ struct ScopedWindow: Codable, Sendable, Equatable {
     /// A weekly window; otherwise a 5-hour one.
     let isWeekly: Bool
     let window: LimitWindow
+    /// How much of the plan's weekly limit the model has used, and may use at most.
+    /// Only weekly windows have one, and only when the service reports it.
+    var weeklyShare: WeeklyShare? = nil
 
     /// "FABLE 7 DAYS", in the style of the other meters' titles.
     var title: String {
         "\(name.uppercased()) \(isWeekly ? "7 DAYS" : "5 HOURS")"
+    }
+
+    /// The model's part of the weekly limit, both in percent of the whole week.
+    struct WeeklyShare: Codable, Sendable, Equatable {
+        let usedPercent: Double
+        /// "Up to 50 % of your weekly limit"; `nil` when not reported.
+        let allowancePercent: Double?
+    }
+
+    /// What `weeklyShare` used, 0...100; nothing once the window has reset.
+    func weeklySharePercent(at now: Date = Date()) -> Double? {
+        guard isWeekly, let share = weeklyShare else { return nil }
+        return window.isExpired(at: now) ? 0 : min(max(share.usedPercent, 0), 100)
     }
 }
 
