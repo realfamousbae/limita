@@ -153,7 +153,10 @@ struct ExpandedView: View {
             Spacer(minLength: 0)
 
             if let notice = store.primeTimeNotice, store.enabledServices.count <= 1 {
+                // Over one column the spelled-out update button would cover it.
                 PrimeTimeBadge(notice: notice)
+                    .opacity(store.updater.isAnnouncing ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.25), value: store.updater.isAnnouncing)
 
                 Spacer(minLength: 0)
             }
@@ -998,6 +1001,10 @@ private struct ConnectPrompt: View {
 /// Shown in the header only while a newer Limita is out: an arrow down to a line,
 /// in the healthy green, tinted like the prime-time badge. Installing swaps the app
 /// and reopens it; a spinner stands in meanwhile.
+///
+/// The first time the dashboard shows a release, the button spells it out for a few
+/// seconds: a capsule growing to the left over the empty header, the round button at
+/// its right end. Either installs.
 private struct UpdateButton: View {
     let updater: AppUpdater
     let release: AppUpdater.Release
@@ -1009,19 +1016,68 @@ private struct UpdateButton: View {
             ZStack {
                 Circle().fill(DashboardStyle.healthy.opacity(0.14))
                 Circle().strokeBorder(DashboardStyle.healthy.opacity(0.35), lineWidth: 1)
-                if updater.phase == .installing {
-                    ProgressView().controlSize(.mini).tint(DashboardStyle.healthy)
-                } else {
-                    Image(systemName: "arrow.down.to.line")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(DashboardStyle.healthy)
-                }
+                glyph
             }
             .frame(width: ExpandedView.headerButtonSize, height: ExpandedView.headerButtonSize)
         }
         .buttonStyle(.plain)
         .disabled(updater.phase == .installing)
         .help(help)
+        .accessibilityLabel("Install Limita \(release.version)")
+        // Laid over the header so it neither moves the other buttons nor widens the panel.
+        .overlay(alignment: .trailing) {
+            if updater.isAnnouncing {
+                announcement
+                    .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .trailing)))
+            }
+        }
+        .animation(.spring(duration: 0.35), value: updater.isAnnouncing)
+        .onAppear { updater.announceIfNew(release) }
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        if updater.phase == .installing {
+            ProgressView().controlSize(.mini).tint(DashboardStyle.healthy)
+        } else {
+            Image(systemName: "arrow.down.to.line")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(DashboardStyle.healthy)
+        }
+    }
+
+    private var announcement: some View {
+        Button {
+            updater.install()
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("LIMITA \(release.version) IS OUT")
+                        .foregroundStyle(.white)
+                    Text("CLICK TO UPDATE")
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+                .font(.app(DashboardStyle.captionSize))
+                .tracking(DashboardStyle.captionTracking)
+                .lineLimit(1)
+                .fixedSize()
+                ZStack {
+                    Circle().fill(DashboardStyle.healthy.opacity(0.18))
+                    glyph
+                }
+                .frame(width: ExpandedView.headerButtonSize, height: ExpandedView.headerButtonSize)
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 4)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(Color(red: 0.05, green: 0.16, blue: 0.10)))
+            .overlay(Capsule().stroke(DashboardStyle.healthy.opacity(0.45), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        // The capsule's round end sits where the button is.
+        .padding(.trailing, -4)
         .accessibilityLabel("Install Limita \(release.version)")
     }
 

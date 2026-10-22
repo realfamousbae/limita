@@ -12,7 +12,7 @@ use std::time::Duration;
 use chrono::Utc;
 
 use crate::claude_cache::{self, ClaudeLimitsReader};
-use crate::claude_live::ClaudeLiveClient;
+use crate::claude_live::{self, ClaudeLiveClient};
 use crate::codex_live::CodexLiveClient;
 use crate::codex_reader::{self, CodexLimitsReader};
 use crate::model::{AccountDetails, LimitSnapshot, LiveReading, Service, ServiceState};
@@ -91,6 +91,10 @@ struct Inner {
     live_snapshots: BTreeMap<Service, LimitSnapshot>,
     last_refresh: Option<Timestamp>,
     last_live_attempt: BTreeMap<Service, Timestamp>,
+    /// After a 429 the service's network API is left alone until then, even by Refresh.
+    live_paused_until: BTreeMap<Service, Timestamp>,
+    /// 429s in a row per service; each one doubles the pause.
+    rate_limit_streak: BTreeMap<Service, u32>,
     pending_live: bool,
 }
 
@@ -187,6 +191,9 @@ impl Store {
             // slipping by a whole tick.
             let slack = LOCAL_INTERVAL / 2.0;
             let is_due = |inner: &Inner, service: Service| {
+                if inner.live_paused_until.get(&service).is_some_and(|until| now < *until) {
+                    return false;
+                }
                 force_live
                     || inner
                         .last_live_attempt
@@ -361,6 +368,16 @@ fn apply(inner: &mut Inner, service: Service, result: Option<Result<LiveReading,
             inner.live_snapshots.insert(service, reading.snapshot);
             inner.public.details.insert(service, reading.details);
             inner.public.live_errors.remove(&service);
+            inner.rate_limit_streak.remove(&service);
+            inner.live_paused_until.remove(&service);
+        }
+        Some(Err(message)) if claude_live::rate_limit_of(&message).is_some() => {
+            let streak = inner.rate_limit_streak.get(&service).copied().unwrap_or(0) + 1;
+            inner.rate_limit_streak.insert(service, streak);
+            let pause = rate_limit_pause(streak, claude_live::rate_limit_of(&message).flatten());
+            inner.live_paused_until.insert(service, Utc::now() + chrono::Duration::milliseconds((pause * 1000.0) as i64));
+            let minutes = (pause / 60.0).ceil() as u64;
+            inner.public.live_errors.insert(service, format!("{}, trying again in {minutes} min", claude_live::rate_limited(None)));
         }
         // Keep the last good snapshot and extras; only record why this fetch failed.
         Some(Err(message)) => {
@@ -368,6 +385,13 @@ fn apply(inner: &mut Inner, service: Service, result: Option<Result<LiveReading,
         }
         None => {}
     }
+}
+
+/// How long to leave a service's network API alone after its `streak`-th 429 in a row:
+/// 5 minutes, doubling up to half an hour, or longer if the server asks.
+pub fn rate_limit_pause(streak: u32, retry_after: Option<f64>) -> f64 {
+    let backoff = (5.0 * 60.0 * 2f64.powi(streak.max(1) as i32 - 1)).min(30.0 * 60.0);
+    backoff.max(retry_after.unwrap_or(0.0).min(2.0 * 60.0 * 60.0))
 }
 
 /// Shows whichever of the local and network snapshots is newer.
@@ -461,7 +485,7 @@ mod tests {
                     details: AccountDetails::default(),
                 })
             } else {
-                Err("Claude is rate-limiting usage requests".into())
+                Err("Claude usage API returned 500".into())
             }
         });
         let store = Store::new(sources(dir.path(), live), || [Service::Claude].into(), || {});
@@ -473,10 +497,32 @@ mod tests {
         store.refresh(true).unwrap().join().unwrap();
         let second = store.snapshot();
         assert_eq!(second.state(Service::Claude).snapshot().unwrap().five_hour.unwrap().used_percent, 12.0, "kept");
-        assert_eq!(second.live_errors[&Service::Claude], "Claude is rate-limiting usage requests");
+        assert_eq!(second.live_errors[&Service::Claude], "Claude usage API returned 500");
 
         store.refresh(false).unwrap().join().unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 2, "not due yet without force");
+    }
+
+    #[test]
+    fn a_429_pauses_the_network_api_even_for_refresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = calls.clone();
+        let live: LiveFetch = Arc::new(move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Err(claude_live::rate_limited(None))
+        });
+        let store = Store::new(sources(dir.path(), live), || [Service::Claude].into(), || {});
+        store.refresh(true).unwrap().join().unwrap();
+        assert_eq!(store.snapshot().live_errors[&Service::Claude], "Claude is rate-limiting usage requests, trying again in 5 min");
+        store.refresh(true).unwrap().join().unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "paused");
+
+        assert_eq!(rate_limit_pause(1, None), 300.0);
+        assert_eq!(rate_limit_pause(2, None), 600.0);
+        assert_eq!(rate_limit_pause(9, None), 1800.0);
+        assert_eq!(rate_limit_pause(1, Some(2700.0)), 2700.0);
+        assert_eq!(rate_limit_pause(1, Some(99999.0)), 7200.0);
     }
 
     #[test]

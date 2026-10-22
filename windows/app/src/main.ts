@@ -12,6 +12,10 @@ let hoverPill = true;
 /** A newer Limita, when GitHub has one (see `updater.rs`). */
 let update: { version: string | null; installing: boolean; error: string | null } = { version: null, installing: false, error: null };
 let version = "";
+/** The update button is spelled out for `ANNOUNCE_MS` the first time the dashboard shows
+ *  a version after launch. */
+const ANNOUNCE_MS = 8000;
+let announced: { version: string; at: number } | null = null;
 let reported = "";
 let activity: ActivityPanel = { expanded: false, period: "all", grids: [] };
 /** The day under the cursor, kept across re-renders. */
@@ -88,15 +92,37 @@ function dashboard(current: PanelView): HTMLElement {
 
   // Only while a newer version is out: an arrow down to a line, in the healthy green.
   let install: HTMLElement | null = null;
+  let announcing = false;
   if (update.version) {
-    install = el("button", "round update", update.installing ? el("span", "spinner") : icon("update"));
-    install.title = update.installing
+    const glyph = () => (update.installing ? el("span", "spinner") : icon("update"));
+    const button = el("button", "round update", glyph());
+    button.title = update.installing
       ? `Installing Limita ${update.version}…`
       : update.error
         ? `Update failed: ${update.error}. Click to try again.`
         : `Install Limita ${update.version}`;
-    (install as HTMLButtonElement).disabled = update.installing;
-    install.addEventListener("click", () => invoke("install_update"));
+    (button as HTMLButtonElement).disabled = update.installing;
+    button.addEventListener("click", () => invoke("install_update"));
+
+    // The first time the dashboard shows this version: a capsule growing to the left
+    // over the empty header, the round button at its right end. Either installs.
+    const now = Date.now();
+    if (!update.installing && announced?.version !== update.version) {
+      announced = { version: update.version, at: now };
+      setTimeout(() => render(), ANNOUNCE_MS + 50);
+    }
+    announcing = !update.installing && announced !== null && now - announced.at < ANNOUNCE_MS;
+    install = el("span", "update-slot", button);
+    if (announcing && announced) {
+      const capsule = el(
+        "button",
+        `update-announce${now - announced.at < 300 ? " enter" : ""}`,
+        el("span", "announce-lines", el("span", "", `LIMITA ${update.version} IS OUT`), el("span", "muted", "CLICK TO UPDATE")),
+        el("span", "announce-glyph", glyph()),
+      );
+      capsule.addEventListener("click", () => invoke("install_update"));
+      install.append(capsule);
+    }
   }
 
   const glyph = el("span", "app-glyph");
@@ -104,6 +130,8 @@ function dashboard(current: PanelView): HTMLElement {
   // over side-by-side columns, and between titles and buttons with equal gaps over one.
   const badge = current.primeTime ? primeTimeBadge(current.primeTime) : el("div");
   if (current.services.length > 1) badge.classList.add("beside-titles");
+  // Over one column the spelled-out update button would cover it.
+  else if (announcing) badge.classList.add("covered");
   const header = el(
     "header",
     "",

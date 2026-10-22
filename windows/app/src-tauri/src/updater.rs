@@ -12,7 +12,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+const CHECK_INTERVAL: Duration = Duration::from_secs(3 * 60 * 60);
 
 /// What the header's update button shows; `version` is `None` while there is no update.
 #[derive(Clone, Default, Serialize)]

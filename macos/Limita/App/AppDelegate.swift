@@ -38,12 +38,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         setupStatusItem()
 
-        if CommandLine.arguments.contains("--show") {
+        // Opened by hand (Launchpad, Finder, Spotlight, or after an update): show the
+        // dashboard, so a fresh start is never just an icon in the menu bar. Started by
+        // the system at login: stay out of the way.
+        if CommandLine.arguments.contains("--show") || !launchedAsLoginItem {
             // The status item is positioned on the next layout pass.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.showLimits()
             }
         }
+    }
+
+    /// Captured before launch finishes, while the launch event is still current.
+    private var launchedAsLoginItem = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        launchedAsLoginItem = event?.eventID == kAEOpenApplication
+            && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+    }
+
+    /// Opening Limita again while it runs (Launchpad, Finder, Dock) shows the dashboard.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showLimits()
+        return false
     }
 
     /// `limita://dashboard`, opened by the iTerm2 status-bar component.
