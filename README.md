@@ -29,18 +29,19 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 - **Keyboard shortcut.** **⌃⌥L** (**Ctrl+Alt+L** on Windows) opens the dashboard at the top of the screen from any app, a terminal included; press it again to close it.
 - **iTerm2 status bar.** An optional plugin shows your 5-hour and weekly limits in iTerm2's status bar while Claude Code or Codex runs in the tab, and a click on them opens the dashboard. See [iTerm2](#iterm2).
 - **Only what you use.** Connect or disconnect Claude Code and Codex from the menu; disconnected services are neither shown nor queried. On first launch Limita connects whatever it finds installed.
-- **Live numbers.** Claude is queried every 3 minutes, Codex every 5 minutes, and both on **Refresh**; local sources are re-read every minute.
-- **One row per limit.** Each limit is a row: its name on top, then the percentage, as tall as the bar and the reset countdown that follow it. On plans with a separate weekly limit for one model (Fable on Claude Max), that limit gets its own row.
+- **Live numbers.** Claude is queried every 3 minutes, Codex every 5 minutes, and both on **Refresh**; local sources are re-read every minute. If Claude answers "too many requests", Limita leaves it alone for 5 minutes, doubling up to half an hour (or longer if Claude asks), and says when it will try again.
+- **One row per limit.** Each limit is a row: its name on top, then the percentage, as tall as the bar and the reset countdown that follow it. On plans with a separate weekly limit for one model (Fable on Claude Max), that limit gets its own row. Its share of the weekly limit shows twice: as the first, lighter part of the **7 DAYS** bar, and right of its own bar, e.g. **12% OF WEEKLY · MAX 50%**, as in Claude's settings.
 - **Fold what you don't need.** On macOS the per-model limits (Fable) and the Claude credits have a **⌄** next to their name that folds them into a small capsule, e.g. **FABLE ⌃**, on the line of the **ACTIVITY** button; click the capsule to bring the row back. Folded rows stay folded across launches.
 - **Your plan.** On macOS the Claude column is titled with your plan, e.g. "Claude Max X5", read from the account profile.
 - **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits). Claude usage credits and cloud session credits are rows like the limits, as in Claude's settings: the percentage and the bar show what is spent, and the dollars right of the bar what is left (e.g. "$163 OF $250 LEFT"). A balance a service does not report is hidden, and so are usage credits that are turned off.
 - **Readable at a glance.** Claude shows what is **used**, Codex what is **left**, and the dashboard labels which is which. Each service's dot follows its 5-hour limit: green, yellow from 70 % used (30 % left), red from 90 %; stale data keeps its colour, dimmed. Percentages stay plain white, and the dashboard counts down to each reset to the minute. If a live update fails, the reason is shown right in the dashboard.
 - **Activity.** **ACTIVITY** at the bottom right of the dashboard drops down a graph of tokens per day for each connected service, under its column; on macOS the button stays in place and the graph opens below it. **WEEK** shows the last 7 days, **MONTH** the last 5 weeks as a calendar, **ALL** everything saved up to half a year; weeks start on Monday. Above the graph: total tokens, favorite model (e.g. "Opus 5.5", "Sol 6"), messages, peak hour, and the tokens split into input, output, cache writes and cache reads. Hover a day (or click it) to see its date and a chip with its tokens in thousands. Each request is counted once, even when resumed sessions copy it into several transcripts, so totals can be lower than Claude Code's `/stats`. Claude Code deletes transcripts after 30 days by default, so Limita keeps the daily totals it has seen in `activity.json`.
-- **Prime time.** During a service's peak hours, when usage limits run out faster, the dashboard header shows a burning-gauge badge: "CLAUDE PEAK HOURS" with one service connected, the name in bold when only one of two connected services is in peak hours, "PEAK HOURS FOR ALL PROVIDERS" when both are. Claude: weekdays 5–11 AM Pacific time; Codex: weekdays 12:00–18:00 UTC. Both are shown in your local time.
-- **Updates in one click.** When a new version is out, a green **⤓** button appears in the dashboard header next to the others. Click it and Limita downloads the update, checks its signature, installs it and reopens. See [Updates](#updates).
+- **Prime time.** During a service's peak hours, when usage limits run out faster, the dashboard header shows a burning-gauge badge: "CLAUDE PEAK HOURS" with one service connected, the name in bold when only one of two connected services is in peak hours, "PEAK HOURS FOR ALL PROVIDERS" when both are. With two columns the badge sits right after the title; with one it is centered. Claude: weekdays 5–11 AM Pacific time; Codex: weekdays 12:00–18:00 UTC. Both are shown in your local time.
+- **Opens where you can see it.** Starting Limita from Launchpad, Finder or the Start menu, or opening it again while it runs, shows the dashboard right away. Started at login, it waits in the menu bar or tray.
+- **Updates in one click.** When a new version is out, a green **⤓** button appears in the dashboard header next to the others; the first time you see it, it spells out the new version for a few seconds. Click it and Limita downloads the update, checks its signature, installs it and reopens. See [Updates](#updates).
 - Multiple displays and full-screen Spaces. JetBrains Mono everywhere.
 
-# Screenshots
+## Screenshots
 
 This is how Limita looks on your Mac.
 
@@ -50,17 +51,18 @@ This is how Limita looks on your Mac.
   <img src="docs/screenshots/pill-claude.png" alt="Pill with Claude under the menu bar" width="293"><img src="docs/screenshots/gap.png" alt="" width="22" height="1"><img src="docs/screenshots/pill-both.png" alt="Pill with both services under the menu bar" width="505">
 </p>
 
+<!-- Both dashboards are at the same scale: 820 px for two columns, 465 px for one. -->
 <p align="center">
-  <img src="docs/screenshots/dashboard-claude.png" alt="Dashboard with Claude only, in peak hours" width="820">
+  <img src="docs/screenshots/dashboard-both.png" alt="Dashboard with Claude and Codex in peak hours, with Fable's share of the weekly limit and the activity graph" width="820">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/dashboard-both.png" alt="Dashboard with Claude and Codex under the menu bar" width="820">
+  <img src="docs/screenshots/dashboard-claude.png" alt="Dashboard with Claude only, in peak hours" width="465">
 </p>
 
 ## Install
 
-1. Download `Limita-<version>.dmg` from [Releases](../../releases).
+1. Download `Limita-<version>.dmg` from [Releases](../../releases). Take the latest release; anything from 0.13.0 on updates itself from then on, while older versions can't and are not worth installing.
 2. Open it and drag **Limita** into **Applications**.
 3. The build is not notarized yet, so the first launch needs one extra step: right-click **Limita** in Applications → **Open** → **Open**. On recent macOS versions, use **System Settings → Privacy & Security → Open Anyway** instead.
 
@@ -70,7 +72,7 @@ On the first Claude refresh, macOS asks whether Limita may read `Claude Code-cre
 
 ## Updates
 
-Limita checks GitHub Releases at launch and every 6 hours. While a newer version is out, a green **⤓** button shows in the dashboard header; nothing else changes until you click it.
+Limita checks GitHub Releases at launch and every 3 hours. While a newer version is out, a green **⤓** button shows in the dashboard header. The first time the dashboard shows it after launch, the button spells out the new version for 8 seconds ("LIMITA 0.15.0 IS OUT · CLICK TO UPDATE") and then folds back; nothing else changes until you click it.
 
 Updates are installed only after their signature checks out:
 
@@ -79,7 +81,7 @@ Updates are installed only after their signature checks out:
 
 The private keys are not in this repository. Updates come only from this repository's releases, over HTTPS.
 
-If Limita runs from a folder it cannot write to (or straight from the DMG), the button opens the release page instead. The first version with the button is 0.13.0, so update to it by hand once. On macOS, every new build asks again for access to `Claude Code-credentials` in the Keychain, as a manual reinstall does; choose **Always Allow**.
+If Limita runs from a folder it cannot write to (or straight from the DMG), the button opens the release page instead. The first version with the button is 0.13.0: from an older version, install the latest release by hand once. On macOS, every new build asks again for access to `Claude Code-credentials` in the Keychain, as a manual reinstall does; choose **Always Allow**.
 
 ## iTerm2
 
@@ -213,7 +215,7 @@ pill stays out of the corners, where menus and window buttons are, and never app
 full-screen apps and games, borderless ones included. Both apps share one version and one
 release.
 
-1. Download `Limita_<version>_x64-setup.exe` from [Releases](../../releases).
+1. Download `Limita_<version>_x64-setup.exe` from the latest of the [Releases](../../releases); as on macOS, 0.13.0 and later update themselves.
 2. Run it; it installs for your user, no administrator rights needed. The installer is not
    signed yet: on the SmartScreen warning choose **More info → Run anyway**.
 
