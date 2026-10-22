@@ -1,35 +1,34 @@
 import SwiftUI
 
-/// The panel that drops down under the service columns: a period switch, and for each
+/// The panel that drops down under the activity toggle: a period switch, and for each
 /// service, under its column, a short summary and a graph of tokens per day.
 struct ActivitySection: View {
     let store: LimitsStore
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center) {
-                Text("ACTIVITY").caption()
-                Spacer(minLength: 8)
-                PeriodSwitch(activity: store.activity)
-            }
-            .padding(.horizontal, ExpandedView.columnPadding)
-            .padding(.top, 12)
-
-            HStack(spacing: 0) {
-                ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
-                    if index > 0 {
-                        Rectangle().fill(Color.white.opacity(0.08))
-                            .frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 12)
-                    }
-                    ActivityColumn(service: service, grid: store.activity.grids[service], loaded: store.activity.isLoaded)
-                        .padding(.horizontal, ExpandedView.columnPadding)
-                        .padding(.top, 12)
-                        .padding(.bottom, 4)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-            }
-            .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 0) {
+            PeriodSwitch(activity: store.activity)
+                .padding(.horizontal, ExpandedView.columnPadding)
+                .padding(.top, 6)
+            columns
         }
+    }
+
+    private var columns: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
+                if index > 0 {
+                    Rectangle().fill(Color.white.opacity(0.08))
+                        .frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 12)
+                }
+                ActivityColumn(service: service, grid: store.activity.grids[service], loaded: store.activity.isLoaded)
+                    .padding(.horizontal, ExpandedView.columnPadding)
+                    .padding(.top, 12)
+                    .padding(.bottom, 14)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -62,38 +61,57 @@ private struct PeriodSwitch: View {
 }
 
 /// A small capsule at the bottom right of the dashboard, in line with the columns'
-/// right edge, that opens and closes the panel.
+/// right edge, that opens and closes the panel below it. The folded meters' capsules
+/// share its line, each under its own column.
 struct ActivityToggle: View {
     let store: LimitsStore
 
     var body: some View {
         let expanded = store.activity.isExpanded
-        HStack {
-            Spacer(minLength: 0)
-            Button {
-                store.activity.isExpanded.toggle()
-                store.activity.refresh(store.enabledServices, ifOlderThan: 60)
-            } label: {
-                HStack(spacing: 6) {
-                    Text("ACTIVITY")
-                        .font(.app(DashboardStyle.captionSize))
-                        .tracking(DashboardStyle.captionTracking)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
-                        .rotationEffect(.degrees(expanded ? 180 : 0))
+        HStack(alignment: .bottom, spacing: 0) {
+            ForEach(store.enabledServices, id: \.self) { service in
+                let folded = ExpandedView.foldedMeters(service: service, store: store)
+                HStack(alignment: .bottom, spacing: 6) {
+                    if !folded.isEmpty {
+                        FoldedMeters(names: folded) { store.setCollapsed(false, $0, of: service) }
+                    }
+                    Spacer(minLength: 0)
+                    if service == store.enabledServices.last {
+                        button(expanded: expanded)
+                    }
                 }
-                .foregroundStyle(DashboardStyle.caption)
-                .padding(.horizontal, 10)
-                .frame(height: 22)
-                .background(Capsule().fill(Color.white.opacity(0.08)))
-                .contentShape(Capsule())
+                .padding(.horizontal, ExpandedView.columnPadding)
+                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(expanded ? "Hide activity" : "Show activity")
         }
-        .padding(.horizontal, ExpandedView.columnPadding)
+        // The columns' divider is 1 pt wide; keep the cells under their columns.
+        .padding(.horizontal, store.enabledServices.count > 1 ? 0.5 : 0)
         .padding(.top, 2)
-        .padding(.bottom, 12)
+        .padding(.bottom, expanded ? 6 : 12)
+    }
+
+    private func button(expanded: Bool) -> some View {
+        Button {
+            store.activity.isExpanded.toggle()
+            store.activity.refresh(store.enabledServices, ifOlderThan: 60)
+        } label: {
+            HStack(spacing: 6) {
+                Text("ACTIVITY")
+                    .font(.app(DashboardStyle.captionSize))
+                    .tracking(DashboardStyle.captionTracking)
+                // Up while closed, down while open: the panel drops down.
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .rotationEffect(.degrees(expanded ? 0 : 180))
+            }
+            .foregroundStyle(DashboardStyle.caption)
+            .padding(.horizontal, 10)
+            .frame(height: 22)
+            .background(Capsule().fill(Color.white.opacity(0.08)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(expanded ? "Hide activity" : "Show activity")
     }
 }
 

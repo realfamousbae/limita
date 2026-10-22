@@ -17,31 +17,82 @@ struct ClaudeLiveClient: Sendable {
     }
 
     static let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    static let profileEndpoint = URL(string: "https://api.anthropic.com/api/oauth/profile")!
     static let keychainService = "Claude Code-credentials"
+
+    /// Claude Code's login: the token, and the plan it saved next to it.
+    struct Login: Sendable, Equatable {
+        let accessToken: String
+        /// "Pro", "Max X20", … as of sign-in; `nil` when the login does not say.
+        let plan: String?
+    }
 
     var timeout: TimeInterval = 20
     /// Injectable so tests never touch the real Keychain.
-    var accessToken: @Sendable (Date) throws -> String = { try ClaudeLiveClient.accessToken(now: $0) }
+    var login: @Sendable (Date) throws -> Login = { try ClaudeLiveClient.login(now: $0) }
 
     func fetch(now: Date = Date()) async throws -> LiveReading {
-        let token = try accessToken(now)
+        let login = try login(now)
+        let token = login.accessToken
 
         var request = URLRequest(url: Self.endpoint, timeoutInterval: timeout)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
+        async let profilePlan = plan(token: token)
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         switch status {
         case 200:
-            return try Self.reading(fromResponse: data, capturedAt: now)
+            let reading = try Self.reading(fromResponse: data, capturedAt: now)
+            var details = reading.details
+            // The login keeps the plan from when the user signed in; the profile is current.
+            details.plan = await profilePlan ?? login.plan
+            return LiveReading(snapshot: reading.snapshot, details: details)
         case 401, 403:
             throw FetchError(message: "Claude rejected the login (\(status)) — open Claude Code to renew it")
         case 429:
             throw FetchError(message: "Claude is rate-limiting usage requests")
         default:
             throw FetchError(message: "Claude usage API returned \(status)")
+        }
+    }
+
+    /// The current plan from `GET /api/oauth/profile`, also undocumented. `nil` on any
+    /// failure: the plan is a nicety and must never cost the limits.
+    private func plan(token: String) async -> String? {
+        var request = URLRequest(url: Self.profileEndpoint, timeoutInterval: timeout)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200
+        else { return nil }
+        return Self.plan(fromProfile: data)
+    }
+
+    /// `{"organization": {"organization_type": "claude_max", "rate_limit_tier":
+    /// "default_claude_max_5x"}}` → "Max X5".
+    static func plan(fromProfile data: Data) -> String? {
+        guard let organization = try? JSONDecoder().decode(Profile.self, from: data).organization,
+              let type = organization.organizationType
+        else { return nil }
+        let subscription = type.hasPrefix("claude_") ? String(type.dropFirst("claude_".count)) : type
+        return planName(subscription: subscription, tier: organization.rateLimitTier)
+    }
+
+    private struct Profile: Decodable {
+        let organization: Organization?
+
+        struct Organization: Decodable {
+            let organizationType: String?
+            let rateLimitTier: String?
+
+            enum CodingKeys: String, CodingKey {
+                case organizationType = "organization_type"
+                case rateLimitTier = "rate_limit_tier"
+            }
         }
     }
 
@@ -65,14 +116,14 @@ struct ClaudeLiveClient: Sendable {
 
     // MARK: - Credentials
 
-    static func accessToken(now: Date) throws -> String {
+    static func login(now: Date) throws -> Login {
         guard let data = try keychainCredentials() ?? fileCredentials() else {
             throw FetchError(message: "Not signed in to Claude Code — sign in there first")
         }
-        return try accessToken(fromCredentials: data, now: now)
+        return try login(fromCredentials: data, now: now)
     }
 
-    static func accessToken(fromCredentials data: Data, now: Date) throws -> String {
+    static func login(fromCredentials data: Data, now: Date) throws -> Login {
         guard let credentials = try? JSONDecoder().decode(Credentials.self, from: data),
               let oauth = credentials.claudeAiOauth,
               !oauth.accessToken.isEmpty
@@ -85,7 +136,23 @@ struct ClaudeLiveClient: Sendable {
             let ago = expiresAt.relativeText(to: now)
             throw FetchError(message: "Claude Code login expired \(ago) — open Claude Code to renew it")
         }
-        return oauth.accessToken
+        return Login(
+            accessToken: oauth.accessToken,
+            plan: planName(subscription: oauth.subscriptionType, tier: oauth.rateLimitTier)
+        )
+    }
+
+    /// `"max"` with tier `"default_claude_max_20x"` → "Max X20"; `"pro"` → "Pro".
+    static func planName(subscription: String?, tier: String?) -> String? {
+        guard let subscription = subscription?.trimmingCharacters(in: .whitespaces), !subscription.isEmpty else {
+            return nil
+        }
+        var name = subscription.prefix(1).uppercased() + subscription.dropFirst().lowercased()
+        if let multiplier = tier?.lowercased().split(separator: "_").last, multiplier.hasSuffix("x"),
+           Int(multiplier.dropLast()) != nil {
+            name += " X\(multiplier.dropLast())"
+        }
+        return name
     }
 
     /// `nil` when there is no item; throws when there is one but it cannot be read.
@@ -126,6 +193,10 @@ struct ClaudeLiveClient: Sendable {
             let accessToken: String
             /// Milliseconds since 1970.
             let expiresAt: Double?
+            /// "pro", "max", …
+            let subscriptionType: String?
+            /// e.g. "default_claude_max_20x"; says which Max.
+            let rateLimitTier: String?
         }
     }
 

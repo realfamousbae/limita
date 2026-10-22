@@ -7,6 +7,7 @@ import Foundation
 struct ServiceSettings: @unchecked Sendable {
     static let enabledKey = "enabledServices"
     static let hoverKey = "hoverPillEnabled"
+    static let collapsedKey = "collapsedMeters"
 
     let defaults: UserDefaults
 
@@ -28,6 +29,12 @@ struct ServiceSettings: @unchecked Sendable {
     var hoverEnabled: Bool {
         get { defaults.object(forKey: Self.hoverKey) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Self.hoverKey) }
+    }
+
+    /// Meters folded into a capsule under the others, as `"claude.FABLE"`.
+    var collapsedMeters: Set<String> {
+        get { Set(defaults.stringArray(forKey: Self.collapsedKey) ?? []) }
+        nonmutating set { defaults.set(newValue.sorted(), forKey: Self.collapsedKey) }
     }
 
     func save(_ services: Set<Service>) {
