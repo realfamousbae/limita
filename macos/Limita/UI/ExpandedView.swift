@@ -39,12 +39,12 @@ struct ExpandedView: View {
                     // Columns and the divider take the height of the tallest column.
                     .fixedSize(horizontal: false, vertical: true)
 
-                    // The window grows to fit, so the panel drops down below the columns.
+                    ActivityToggle(store: store)
+                    // The window grows to fit, so the panel drops down below the toggle,
+                    // which stays where it is.
                     if store.activity.isExpanded {
-                        divider.frame(height: 1).padding(.horizontal, 18)
                         ActivitySection(store: store)
                     }
-                    ActivityToggle(store: store)
                 }
             }
         }
@@ -210,7 +210,7 @@ struct ExpandedView: View {
                 ServiceBadge(service: service)
 
                 HStack(spacing: 6) {
-                    Text(service.displayName)
+                    Text([service.displayName, store.details[service]?.plan].compactMap { $0 }.joined(separator: " "))
                         .font(.app(14))
                     LevelDot(state: state, now: now)
                 }
@@ -267,24 +267,45 @@ struct ExpandedView: View {
     /// Empty space between the meters' rows.
     static let rowSpacing: CGFloat = 16
 
-    /// One row per meter: the plan's windows, the per-model ones, then the credits.
+    /// One row per meter: the plan's windows, the per-model ones, then the credits. The
+    /// per-model ones and the credits can be folded into capsules in the activity
+    /// toggle's line.
     private func meterRows(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> some View {
         let soft = DashboardStyle.accent(for: service).opacity(0.72)
-        let rows = [
-            fiveHourMetric(service: service, snapshot: snapshot, stale: stale, now: now),
-            sevenDayMetric(service: service, snapshot: snapshot, stale: stale, now: now),
+        let rows: [(fold: String?, meter: MeterView)] = [
+            (nil, fiveHourMetric(service: service, snapshot: snapshot, stale: stale, now: now)),
+            (nil, sevenDayMetric(service: service, snapshot: snapshot, stale: stale, now: now)),
         ]
             + snapshot.scoped.map {
-                metric($0.title, service: service, window: $0.window, color: soft, stale: stale, now: now)
+                ($0.name.uppercased(), metric($0.title, service: service, window: $0.window, color: soft, stale: stale, now: now))
             }
             + Self.creditMeters(for: service, details: store.details[service] ?? AccountDetails(), now: now).map {
-                creditMeter($0, service: service, stale: stale)
+                ($0.title, creditMeter($0, service: service, stale: stale))
             }
+        let shown = rows.filter { row in row.fold.map { !store.isCollapsed($0, of: service) } ?? true }
         return VStack(alignment: .leading, spacing: Self.rowSpacing) {
-            ForEach(rows.indices, id: \.self) { index in
-                rows[index]
+            ForEach(shown.indices, id: \.self) { index in
+                let row = shown[index]
+                if let fold = row.fold {
+                    row.meter.collapsible { store.setCollapsed(true, fold, of: service) }
+                } else {
+                    row.meter
+                }
             }
         }
+    }
+
+    /// The folded meters' capsules, one per name: Fable's 5-hour and weekly windows fold
+    /// together. Only meters the service reported count.
+    static func foldedMeters(service: Service, store: LimitsStore) -> [String] {
+        guard let snapshot = store.state(for: service).snapshot else { return [] }
+        let names = snapshot.scoped.map { $0.name.uppercased() }
+            + creditMeters(for: service, details: store.details[service] ?? AccountDetails(), now: Date()).map(\.title)
+        var folded: [String] = []
+        for name in names where store.isCollapsed(name, of: service) && !folded.contains(name) {
+            folded.append(name)
+        }
+        return folded
     }
 
     private func fiveHourMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> MeterView {
@@ -489,6 +510,14 @@ struct MeterView: View {
     let color: Color
     let caption: String
     let stale: Bool
+    /// Shows a chevron after the title that folds the meter away.
+    var onCollapse: (() -> Void)?
+
+    func collapsible(_ action: @escaping () -> Void) -> MeterView {
+        var meter = self
+        meter.onCollapse = action
+        return meter
+    }
 
     /// Room for "100%", so the bars of all rows start at the same place.
     static let valueWidth: CGFloat = ExpandedView.textWidth(
@@ -497,9 +526,22 @@ struct MeterView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .caption(size: DashboardStyle.meterCaptionSize)
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                Text(title)
+                    .caption(size: DashboardStyle.meterCaptionSize)
+                    .lineLimit(1)
+                if let onCollapse {
+                    Button(action: onCollapse) {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(DashboardStyle.caption)
+                            .frame(width: 14, height: 12)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Hide \(title.lowercased())")
+                }
+            }
 
             HStack(alignment: .center, spacing: 10) {
                 Text(value)
@@ -543,6 +585,75 @@ struct MeterView: View {
             }
         }
         .frame(height: 4)
+    }
+}
+
+/// Folded meters, one capsule each like the activity toggle, left to right and onto the
+/// next line when they run out of room. A tap unfolds the meter.
+struct FoldedMeters: View {
+    let names: [String]
+    let unfold: (String) -> Void
+
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(names, id: \.self) { name in
+                Button { unfold(name) } label: {
+                    HStack(spacing: 6) {
+                        Text(name)
+                            .font(.app(DashboardStyle.captionSize))
+                            .tracking(DashboardStyle.captionTracking)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundStyle(DashboardStyle.caption)
+                    .padding(.horizontal, 10)
+                    .frame(height: 22)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Show \(name.lowercased())")
+            }
+        }
+    }
+}
+
+/// Lays its views out in rows, left to right, wrapping at the proposed width.
+struct FlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = frames(for: subviews, width: proposal.width ?? .infinity)
+        let width = frames.map(\.maxX).max() ?? 0
+        let height = frames.map(\.maxY).max() ?? 0
+        return CGSize(width: proposal.width.map { min($0, width) } ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, frames(for: subviews, width: bounds.width)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                          proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func frames(for subviews: Subviews, width: CGFloat) -> [CGRect] {
+        var frames: [CGRect] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return frames
     }
 }
 

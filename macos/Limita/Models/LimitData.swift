@@ -269,10 +269,12 @@ struct AccountDetails: Sendable, Equatable {
     var claudeUsageCredits: UsageCredits?
     /// Claude: cloud session credits.
     var cloudCredits: Allowance?
+    /// Claude: the subscription, e.g. "Max X20", shown after the service's name.
+    var plan: String?
 
     var isEmpty: Bool {
         limitResets == nil && codexCredits == nil && !codexCreditsUnlimited
-            && claudeUsageCredits == nil && cloudCredits == nil
+            && claudeUsageCredits == nil && cloudCredits == nil && plan == nil
     }
 }
 

@@ -50,6 +50,13 @@ final class LimitsStore {
         }
     }
     @ObservationIgnored var onHoverEnabledChange: ((Bool) -> Void)?
+    /// Meters folded into a capsule under the others. Saved, like the activity panel.
+    private(set) var collapsedMeters: Set<String> {
+        didSet {
+            guard collapsedMeters != oldValue else { return }
+            settings.collapsedMeters = collapsedMeters
+        }
+    }
     /// Tokens per day for the activity panel under the dashboard.
     let activity: ActivityStore
 
@@ -95,6 +102,16 @@ final class LimitsStore {
         }
         enabledServices = Service.allCases.filter(enabled.contains)
         hoverEnabled = settings.hoverEnabled
+        collapsedMeters = settings.collapsedMeters
+    }
+
+    func isCollapsed(_ meter: String, of service: Service) -> Bool {
+        collapsedMeters.contains("\(service.rawValue).\(meter)")
+    }
+
+    func setCollapsed(_ collapsed: Bool, _ meter: String, of service: Service) {
+        let key = "\(service.rawValue).\(meter)"
+        if collapsed { collapsedMeters.insert(key) } else { collapsedMeters.remove(key) }
     }
 
     func isEnabled(_ service: Service) -> Bool {

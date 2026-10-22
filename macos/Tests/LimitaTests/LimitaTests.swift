@@ -655,7 +655,7 @@ final class LimitaTests: XCTestCase {
             var codex = CodexLiveClient()
             codex.findExecutable = { nil }
             var claude = ClaudeLiveClient()
-            claude.accessToken = { _ in throw ClaudeLiveClient.FetchError(message: "no token in tests") }
+            claude.login = { _ in throw ClaudeLiveClient.FetchError(message: "no token in tests") }
             return LimitsStore(
                 codexReader: CodexLimitsReader(sessionsDirectory: root, archivedSessionsDirectory: root),
                 claudeReader: ClaudeLimitsReader(cacheFile: root.appendingPathComponent("claude.json")),
@@ -807,11 +807,24 @@ final class LimitaTests: XCTestCase {
     func testExpiredTokenSaysWhen() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let expired = #"{"claudeAiOauth":{"accessToken":"t","expiresAt":\#((now.timeIntervalSince1970 - 3 * 3600) * 1000)}}"#
-        XCTAssertThrowsError(try ClaudeLiveClient.accessToken(fromCredentials: Data(expired.utf8), now: now)) { error in
+        XCTAssertThrowsError(try ClaudeLiveClient.login(fromCredentials: Data(expired.utf8), now: now)) { error in
             XCTAssertTrue(error.localizedDescription.contains("3 hours ago"), error.localizedDescription)
         }
         let valid = #"{"claudeAiOauth":{"accessToken":"t","expiresAt":\#((now.timeIntervalSince1970 + 60) * 1000)}}"#
-        XCTAssertEqual(try ClaudeLiveClient.accessToken(fromCredentials: Data(valid.utf8), now: now), "t")
+        XCTAssertEqual(try ClaudeLiveClient.login(fromCredentials: Data(valid.utf8), now: now), .init(accessToken: "t", plan: nil))
+    }
+
+    func testPlanNameComesFromTheLogin() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let max = #"{"claudeAiOauth":{"accessToken":"t","subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}"#
+        XCTAssertEqual(try ClaudeLiveClient.login(fromCredentials: Data(max.utf8), now: now).plan, "Max X20")
+        XCTAssertEqual(ClaudeLiveClient.planName(subscription: "pro", tier: "default_claude_ai"), "Pro")
+        XCTAssertEqual(ClaudeLiveClient.planName(subscription: "max", tier: "default_claude_max_5x"), "Max X5")
+        XCTAssertNil(ClaudeLiveClient.planName(subscription: nil, tier: "default_claude_max_5x"))
+
+        let profile = #"{"account":{},"organization":{"organization_type":"claude_max","rate_limit_tier":"default_claude_max_5x"}}"#
+        XCTAssertEqual(ClaudeLiveClient.plan(fromProfile: Data(profile.utf8)), "Max X5")
+        XCTAssertNil(ClaudeLiveClient.plan(fromProfile: Data("{}".utf8)))
     }
 
     // MARK: - Terminal snapshot
