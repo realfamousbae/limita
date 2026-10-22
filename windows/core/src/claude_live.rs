@@ -54,7 +54,9 @@ impl ClaudeLiveClient {
             Err(ureq::Error::Status(status @ (401 | 403), _)) => {
                 Err(format!("Claude rejected the login ({status}) — open Claude Code to renew it"))
             }
-            Err(ureq::Error::Status(429, _)) => Err("Claude is rate-limiting usage requests".into()),
+            Err(ureq::Error::Status(429, response)) => {
+                Err(rate_limited(response.header("Retry-After").and_then(|header| retry_after(header, now))))
+            }
             Err(ureq::Error::Status(status, _)) => Err(format!("Claude usage API returned {status}")),
             Err(ureq::Error::Transport(error)) => Err(format!("Could not reach Claude: {error}")),
         }
@@ -147,6 +149,37 @@ fn window(value: &Value) -> Option<LimitWindow> {
     // `utilization` is already a percentage, 0...100.
     let used = value.get("utilization")?.as_f64().filter(|v| v.is_finite())?;
     Some(LimitWindow::new(used, value.get("resets_at").and_then(Value::as_str).and_then(parse_flexible)))
+}
+
+const RATE_LIMITED: &str = "Claude is rate-limiting usage requests";
+const RETRY_AFTER_TAG: &str = " [retry after ";
+
+/// The error for a 429, carrying the server's `Retry-After` in seconds when it named
+/// one. The store reads it back with `rate_limit_of` and shows only the first part.
+pub fn rate_limited(retry_after: Option<f64>) -> String {
+    match retry_after {
+        Some(seconds) => format!("{RATE_LIMITED}{RETRY_AFTER_TAG}{seconds}]"),
+        None => RATE_LIMITED.into(),
+    }
+}
+
+/// `Some(retry_after)` for an error made by `rate_limited`, `None` for any other.
+pub fn rate_limit_of(error: &str) -> Option<Option<f64>> {
+    let rest = error.strip_prefix(RATE_LIMITED)?;
+    if rest.is_empty() {
+        return Some(None);
+    }
+    Some(rest.strip_prefix(RETRY_AFTER_TAG)?.strip_suffix(']')?.parse().ok())
+}
+
+/// `Retry-After` in seconds, or as an HTTP date.
+pub fn retry_after(header: &str, now: Timestamp) -> Option<f64> {
+    let value = header.trim();
+    if let Ok(seconds) = value.parse::<f64>() {
+        return (seconds.is_finite() && seconds >= 0.0).then_some(seconds);
+    }
+    let date = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    Some(((date.timestamp_millis() - now.timestamp_millis()) as f64 / 1000.0).max(0.0))
 }
 
 /// Windows scoped to one model, from `limits`: `{"kind": "weekly_scoped", "group":
@@ -257,6 +290,17 @@ mod tests {
         let plain = reading_from_response(odd.as_bytes(), now()).unwrap().snapshot;
         assert!(plain.scoped.is_empty(), "an odd limits list costs only the per-model windows");
         assert_eq!(plain.seven_day.unwrap().used_percent, 2.0);
+    }
+
+    #[test]
+    fn rate_limit_errors_carry_retry_after() {
+        assert_eq!(rate_limit_of(&rate_limited(Some(120.0))), Some(Some(120.0)));
+        assert_eq!(rate_limit_of(&rate_limited(None)), Some(None));
+        assert_eq!(rate_limit_of("Claude usage API returned 500"), None);
+        let now = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        assert_eq!(retry_after("120", now), Some(120.0));
+        assert_eq!(retry_after("Tue, 14 Nov 2023 22:18:20 GMT", now), Some(300.0));
+        assert_eq!(retry_after("soon", now), None);
     }
 
     #[test]

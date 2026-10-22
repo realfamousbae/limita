@@ -40,11 +40,18 @@ final class AppUpdater {
     /// The half of the signing key the app checks updates with. The private half is
     /// never in the repository.
     nonisolated static let publicKey = "lH3iQ4KUqcNSzc79iUXNf4fMvdzdordW6zjgHhf2Wq8="
-    static let checkInterval: TimeInterval = 6 * 60 * 60
+    static let checkInterval: TimeInterval = 3 * 60 * 60
+    /// How long the update button stays spelled out the first time the dashboard shows it.
+    static let announceDuration: TimeInterval = 8
 
     /// A newer release than the running one, `nil` while there is none.
     private(set) var available: Release?
     private(set) var phase: Phase = .idle
+    /// The update button is spelled out ("Limita 0.15.0 is out") for a few seconds.
+    private(set) var isAnnouncing = false
+    /// The version the button was last spelled out for; once per version and launch.
+    @ObservationIgnored private var announcedVersion: String?
+    @ObservationIgnored private var announceEnd: Task<Void, Never>?
 
     @ObservationIgnored private let currentVersion: String
     @ObservationIgnored private let feedURL: URL
@@ -91,7 +98,22 @@ final class AppUpdater {
         }
     }
 
+    /// Spells out the update button the first time the dashboard shows `release` after
+    /// launch, then folds it back to the round button.
+    func announceIfNew(_ release: Release) {
+        guard announcedVersion != release.version, phase != .installing else { return }
+        announcedVersion = release.version
+        isAnnouncing = true
+        announceEnd?.cancel()
+        announceEnd = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.announceDuration))
+            guard !Task.isCancelled else { return }
+            self?.isAnnouncing = false
+        }
+    }
+
     func install() {
+        isAnnouncing = false
         guard let release = available, phase != .installing else { return }
         // A copy macOS runs from a randomised read-only path, or one in a folder the
         // user cannot write to, cannot be replaced; let them download it instead.

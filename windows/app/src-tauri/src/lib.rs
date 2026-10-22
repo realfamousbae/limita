@@ -18,6 +18,7 @@ use limita_core::store::Store;
 use limita_core::{prime_time, view, Service};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri_plugin_autostart::ManagerExt;
 
 use panel::{Mode, Panel};
 use tray::Tray;
@@ -166,6 +167,8 @@ fn run_view_loop(app: AppHandle, store: Store, tray: Arc<Tray>, changes: mpsc::R
         .expect("spawn the view thread");
 }
 
+const AUTOSTART_FLAG: &str = "--autostart";
+
 pub fn run() {
     tauri::Builder::default()
         // Must come first: a second launch just opens the running app's dashboard.
@@ -175,7 +178,8 @@ pub fn run() {
                 std::thread::spawn(move || panel.show_dashboard());
             }
         }))
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        // Started at login, Limita gets `AUTOSTART_FLAG` and stays in the tray.
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![AUTOSTART_FLAG])))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             current,
@@ -231,6 +235,21 @@ pub fn run() {
             panel.start_hover_tracking();
             store.start_auto_refresh();
             updater.start();
+
+            // Login entries written before `AUTOSTART_FLAG` existed lack it; rewriting
+            // the entry adds it.
+            let autolaunch = app.autolaunch();
+            if autolaunch.is_enabled().unwrap_or(false) {
+                let _ = autolaunch.enable();
+            }
+            // Opened by hand (Start menu, a shortcut, or after an update): show the
+            // dashboard, so a fresh start is never just an icon in the tray.
+            if !std::env::args().any(|arg| arg == AUTOSTART_FLAG) {
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(500));
+                    panel.show_dashboard();
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

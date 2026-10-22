@@ -317,6 +317,73 @@ header {
   box-shadow: inset 0 0 0 1px rgba(82, 235, 148, 0.35);
 }
 
+/* Holds the update button and, for a few seconds, the capsule that spells it out. */
+.update-slot {
+  position: relative;
+  display: inline-flex;
+}
+
+.update-announce {
+  position: absolute;
+  right: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 14px;
+  border-radius: 999px;
+  background: rgb(13, 41, 26);
+  box-shadow: inset 0 0 0 1px rgba(82, 235, 148, 0.45);
+  white-space: nowrap;
+  color: #fff;
+}
+
+.update-announce.enter {
+  animation: announce-in 0.35s ease-out;
+  transform-origin: right center;
+}
+
+@keyframes announce-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.6);
+  }
+}
+
+.announce-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+}
+
+.announce-lines .muted {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.announce-glyph {
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--healthy);
+  background: rgba(82, 235, 148, 0.18);
+}
+
+.announce-glyph .spinner {
+  border-color: rgba(82, 235, 148, 0.3);
+  border-top-color: var(--healthy);
+}
+
+.prime-time.covered {
+  visibility: hidden;
+}
+
 .round.update .spinner {
   border-color: rgba(82, 235, 148, 0.3);
   border-top-color: var(--healthy);

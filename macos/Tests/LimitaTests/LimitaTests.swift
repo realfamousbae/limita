@@ -241,6 +241,19 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(plain.sevenDay?.usedPercent, 2)
     }
 
+    func testRateLimitPauseDoublesAndHonoursRetryAfter() {
+        XCTAssertEqual(LimitsStore.rateLimitPause(streak: 1, retryAfter: nil), 5 * 60)
+        XCTAssertEqual(LimitsStore.rateLimitPause(streak: 2, retryAfter: nil), 10 * 60)
+        XCTAssertEqual(LimitsStore.rateLimitPause(streak: 9, retryAfter: nil), 30 * 60, "capped at half an hour")
+        XCTAssertEqual(LimitsStore.rateLimitPause(streak: 1, retryAfter: 45 * 60), 45 * 60, "the server may ask for longer")
+        XCTAssertEqual(LimitsStore.rateLimitPause(streak: 1, retryAfter: 9 * 3600), 2 * 3600, "but not for ever")
+
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertEqual(ClaudeLiveClient.retryAfter("120", now: now), 120)
+        XCTAssertEqual(ClaudeLiveClient.retryAfter("Tue, 14 Nov 2023 22:18:20 GMT", now: now), 300)
+        XCTAssertNil(ClaudeLiveClient.retryAfter("soon", now: now))
+    }
+
     func testClaudeUsageResponseReadsTheWeeklyShare() throws {
         // `limit_index` counts every entry of `limits`, the malformed one included.
         let response = #"""

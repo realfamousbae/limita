@@ -68,6 +68,10 @@ final class LimitsStore {
     @ObservationIgnored private var primeTimeTimer: Timer?
     @ObservationIgnored private var lastRefresh: Date?
     @ObservationIgnored private var lastLiveAttempt: [Service: Date] = [:]
+    /// After a 429 the service's network API is left alone until then, even by Refresh.
+    @ObservationIgnored private var livePausedUntil: [Service: Date] = [:]
+    /// 429s in a row per service; each one doubles the pause.
+    @ObservationIgnored private var rateLimitStreak: [Service: Int] = [:]
     @ObservationIgnored private var pendingLive = false
     /// Last snapshot written for the iTerm2 script, so an unchanged one is not rewritten.
     @ObservationIgnored private var writtenSnapshot: TerminalSnapshot?
@@ -177,7 +181,8 @@ final class LimitsStore {
         // to keep an interval from slipping by a whole tick.
         let slack = Self.localInterval / 2
         func isDue(_ service: Service) -> Bool {
-            forceLive || lastLiveAttempt[service].map {
+            if let paused = livePausedUntil[service], now < paused { return false }
+            return forceLive || lastLiveAttempt[service].map {
                 now.timeIntervalSince($0) >= Self.liveInterval(for: service) - slack
             } ?? true
         }
@@ -236,6 +241,13 @@ final class LimitsStore {
         }
     }
 
+    /// How long to leave a service's network API alone after its `streak`-th 429 in a
+    /// row: 5 minutes, doubling up to half an hour, or longer if the server asks.
+    nonisolated static func rateLimitPause(streak: Int, retryAfter: TimeInterval?) -> TimeInterval {
+        let backoff = min(5 * 60 * pow(2, Double(max(streak, 1) - 1)), 30 * 60)
+        return max(backoff, min(retryAfter ?? 0, 2 * 60 * 60))
+    }
+
     private nonisolated static func fetch(
         _ body: @escaping @Sendable () async throws -> LiveReading
     ) async -> Result<LiveReading, Error> {
@@ -250,6 +262,16 @@ final class LimitsStore {
             liveSnapshots[service] = reading.snapshot
             details[service] = reading.details
             liveErrors[service] = nil
+            rateLimitStreak[service] = nil
+            livePausedUntil[service] = nil
+        case .failure(let error as ClaudeLiveClient.RateLimited):
+            let streak = (rateLimitStreak[service] ?? 0) + 1
+            rateLimitStreak[service] = streak
+            let pause = Self.rateLimitPause(streak: streak, retryAfter: error.retryAfter)
+            livePausedUntil[service] = Date().addingTimeInterval(pause)
+            let message = "\(error.localizedDescription), trying again in \(Int((pause / 60).rounded(.up))) min"
+            liveErrors[service] = message
+            log.error("\(service.rawValue, privacy: .public) live fetch failed: \(message, privacy: .public)")
         case .failure(let error):
             // Keep the last good snapshot and extras; only record why this fetch failed.
             let message = error.localizedDescription

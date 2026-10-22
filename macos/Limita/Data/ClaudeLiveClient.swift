@@ -16,6 +16,12 @@ struct ClaudeLiveClient: Sendable {
         var errorDescription: String? { message }
     }
 
+    /// A 429. `retryAfter` is the wait the server asked for, when it named one.
+    struct RateLimited: LocalizedError {
+        let retryAfter: TimeInterval?
+        var errorDescription: String? { "Claude is rate-limiting usage requests" }
+    }
+
     static let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     static let profileEndpoint = URL(string: "https://api.anthropic.com/api/oauth/profile")!
     static let keychainService = "Claude Code-credentials"
@@ -53,10 +59,22 @@ struct ClaudeLiveClient: Sendable {
         case 401, 403:
             throw FetchError(message: "Claude rejected the login (\(status)) — open Claude Code to renew it")
         case 429:
-            throw FetchError(message: "Claude is rate-limiting usage requests")
+            let header = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After")
+            throw RateLimited(retryAfter: header.flatMap { Self.retryAfter($0, now: now) })
         default:
             throw FetchError(message: "Claude usage API returned \(status)")
         }
+    }
+
+    /// `Retry-After` in seconds, or as an HTTP date.
+    static func retryAfter(_ header: String, now: Date) -> TimeInterval? {
+        let value = header.trimmingCharacters(in: .whitespaces)
+        if let seconds = TimeInterval(value), seconds.isFinite, seconds >= 0 { return seconds }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return formatter.date(from: value).map { max($0.timeIntervalSince(now), 0) }
     }
 
     /// The current plan from `GET /api/oauth/profile`, also undocumented. `nil` on any
