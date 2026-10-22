@@ -59,6 +59,8 @@ final class LimitsStore {
     }
     /// Tokens per day for the activity panel under the dashboard.
     let activity: ActivityStore
+    /// A newer Limita, when GitHub has one; the dashboard shows an install button for it.
+    let updater: AppUpdater
 
     /// Newest snapshot fetched over the network per service.
     @ObservationIgnored private var liveSnapshots: [Service: LimitSnapshot] = [:]
@@ -85,6 +87,7 @@ final class LimitsStore {
         configurator: ClaudeStatusLineConfigurator = ClaudeStatusLineConfigurator(),
         settings: ServiceSettings = ServiceSettings(),
         activity: ActivityStore? = nil,
+        updater: AppUpdater? = nil,
         detectInstalled: () -> Set<Service> = { ServiceSettings.detectInstalled() }
     ) {
         self.codexReader = codexReader
@@ -94,6 +97,7 @@ final class LimitsStore {
         self.configurator = configurator
         self.settings = settings
         self.activity = activity ?? ActivityStore()
+        self.updater = updater ?? AppUpdater()
         let enabled = settings.load {
             var detected = detectInstalled()
             // An existing status-line hook means the user already chose Claude.

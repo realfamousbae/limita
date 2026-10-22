@@ -44,12 +44,13 @@ final class BezelPanelController {
         }
     }
 
-    /// The dashboard widens while the prime-time badge needs more room than the columns.
-    static func expandedSize(services: Int, primeTime: PrimeTimeNotice? = nil) -> CGSize {
+    /// The dashboard widens while the prime-time badge or the update button needs more
+    /// room than the columns.
+    static func expandedSize(services: Int, primeTime: PrimeTimeNotice? = nil, updateButton: Bool = false) -> CGSize {
         guard services > 0 else { return CGSize(width: 300, height: 210) }
         var width = columnWidth * CGFloat(services)
-        if let primeTime {
-            width = max(width, ExpandedView.headerWidth(primeTime: primeTime).rounded(.up))
+        if primeTime != nil || updateButton {
+            width = max(width, ExpandedView.headerWidth(primeTime: primeTime, updateButton: updateButton).rounded(.up))
         }
         return CGSize(width: width, height: estimatedExpandedHeight)
     }
@@ -147,7 +148,9 @@ final class BezelPanelController {
     private func size(for state: PanelState) -> CGSize {
         let count = store.enabledServices.count
         if state == .pill { return Self.pillSize(services: count) }
-        var size = Self.expandedSize(services: count, primeTime: store.primeTimeNotice)
+        var size = Self.expandedSize(
+            services: count, primeTime: store.primeTimeNotice, updateButton: store.updater.available != nil
+        )
         if let measuredHeight { size.height = measuredHeight }
         return size
     }
@@ -162,12 +165,13 @@ final class BezelPanelController {
         relayout()
     }
 
-    /// Resizes the open panel when a service is connected or disconnected, or when
-    /// peak hours start or end.
+    /// Resizes the open panel when a service is connected or disconnected, when
+    /// peak hours start or end, or when an update button appears.
     private func observeServices() {
         withObservationTracking {
             _ = store.enabledServices
             _ = store.primeTimeServices
+            _ = store.updater.available
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.relayout()

@@ -1,5 +1,6 @@
 import XCTest
 import ImageIO
+import CryptoKit
 @testable import Limita
 
 final class LimitaTests: XCTestCase {
@@ -955,11 +956,63 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(summary.peakHourText, "15:00")
     }
 
+    func testUpdateVersionsCompareNumberByNumber() {
+        XCTAssertTrue(AppUpdater.isVersion("0.10.0", newerThan: "0.9.3"))
+        XCTAssertTrue(AppUpdater.isVersion("0.13", newerThan: "0.12.1"))
+        XCTAssertTrue(AppUpdater.isVersion("1.0.0", newerThan: "0.99.99"))
+        XCTAssertFalse(AppUpdater.isVersion("0.12.1", newerThan: "0.12.1"))
+        XCTAssertFalse(AppUpdater.isVersion("0.12.0", newerThan: "0.12.1"))
+        XCTAssertFalse(AppUpdater.isVersion("0.12", newerThan: "0.12.0"))
+    }
+
+    func testUpdateFeedNeedsTheDMGAndItsSignature() throws {
+        func feed(_ assets: [String], tag: String = "v0.13.0", prerelease: Bool = false) -> Data {
+            let list = assets.map { #"{"name":"\#($0)","browser_download_url":"https://example.com/\#($0)"}"# }
+            return Data(#"{"tag_name":"\#(tag)","html_url":"https://example.com/r","prerelease":\#(prerelease),"assets":[\#(list.joined(separator: ","))]}"#.utf8)
+        }
+        let release = try XCTUnwrap(AppUpdater.release(fromFeed: feed(["Limita-0.13.0.dmg", "Limita-0.13.0.dmg.sig", "Limita_0.13.0_x64-setup.exe"])))
+        XCTAssertEqual(release.version, "0.13.0")
+        XCTAssertEqual(release.dmg.lastPathComponent, "Limita-0.13.0.dmg")
+        XCTAssertEqual(release.signature.lastPathComponent, "Limita-0.13.0.dmg.sig")
+        // Releases from before auto-update have no signature.
+        XCTAssertNil(try AppUpdater.release(fromFeed: feed(["Limita-0.13.0.dmg"])))
+        XCTAssertNil(try AppUpdater.release(fromFeed: feed(["Limita-0.12.1.dmg", "Limita-0.12.1.dmg.sig"])))
+        XCTAssertNil(try AppUpdater.release(fromFeed: feed(["Limita-0.13.0.dmg", "Limita-0.13.0.dmg.sig"], prerelease: true)))
+    }
+
+    func testUpdateSignatureIsChecked() throws {
+        let key = Curve25519.Signing.PrivateKey()
+        let publicKey = key.publicKey.rawRepresentation.base64EncodedString()
+        let data = Data("Limita.dmg".utf8)
+        let signature = try key.signature(for: data)
+        XCTAssertTrue(AppUpdater.verify(data, signature: signature, publicKey: publicKey))
+        XCTAssertFalse(AppUpdater.verify(Data("tampered".utf8), signature: signature, publicKey: publicKey))
+        XCTAssertFalse(AppUpdater.verify(data, signature: signature))
+    }
+
+    func testUpdateIsNotInstalledOverAReadOnlyCopy() {
+        XCTAssertFalse(AppUpdater.canReplace(URL(fileURLWithPath: "/private/var/folders/x/AppTranslocation/ABC/d/Limita.app")))
+        XCTAssertFalse(AppUpdater.canReplace(URL(fileURLWithPath: "/Volumes/Limita 0.13.0/Limita.app")))
+    }
+
+    @MainActor
+    func testUpdateButtonWidensTheHeaderOnlyWhenNeeded() {
+        let one = BezelPanelController.expandedSize(services: 1)
+        let withUpdate = BezelPanelController.expandedSize(services: 1, updateButton: true)
+        XCTAssertGreaterThanOrEqual(withUpdate.width, one.width)
+        XCTAssertGreaterThanOrEqual(withUpdate.width, ExpandedView.headerWidth(primeTime: nil, updateButton: true).rounded(.up))
+    }
+
     func testModelNames() {
         XCTAssertEqual(ActivitySummary.modelName("claude-opus-5-5"), "Opus 5.5")
         XCTAssertEqual(ActivitySummary.modelName("claude-3-5-haiku-20241022"), "Haiku 3.5")
         XCTAssertEqual(ActivitySummary.modelName("claude-sonnet-4-20250514"), "Sonnet 4")
-        XCTAssertEqual(ActivitySummary.modelName("gpt-5.5-codex"), "gpt-5.5-codex")
+        XCTAssertEqual(ActivitySummary.modelName("gpt-6-sol"), "Sol 6")
+        XCTAssertEqual(ActivitySummary.modelName("gpt-5.5-codex"), "Codex 5.5")
+        XCTAssertEqual(ActivitySummary.modelName("gpt-5.1-codex-max"), "Codex Max 5.1")
+        XCTAssertEqual(ActivitySummary.modelName("gpt-5.5"), "GPT 5.5")
+        XCTAssertEqual(ActivitySummary.modelName("gpt-4o-2024-08-06"), "gpt-4o-2024-08-06")
+        XCTAssertEqual(ActivitySummary.modelName("o3"), "o3")
     }
 
     func testTokenFormats() {

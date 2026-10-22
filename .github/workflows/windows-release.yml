@@ -23,6 +23,8 @@ jobs:
   build:
     needs: versions
     uses: ./.github/workflows/windows.yml
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
   attach:
     needs: build
@@ -43,4 +45,16 @@ jobs:
             echo "Release $GITHUB_REF_NAME not created yet, waiting…"
             sleep 60
           done
-          gh release upload "$GITHUB_REF_NAME" installer/*.exe --repo "$GITHUB_REPOSITORY" --clobber
+          # latest.json is what the in-app updater reads; it points at the installer and
+          # carries its signature, which the app checks before running it.
+          exe=$(ls installer/*.exe | head -n 1)
+          name=$(basename "$exe")
+          [ -f "$exe.sig" ] || { echo "No $name.sig: is the TAURI_SIGNING_PRIVATE_KEY secret set?" >&2; exit 1; }
+          jq -n \
+            --arg version "${GITHUB_REF_NAME#v}" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg signature "$(cat "$exe.sig")" \
+            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/${name// /.}" \
+            '{version: $version, pub_date: $date, platforms: {"windows-x86_64": {signature: $signature, url: $url}}}' \
+            > installer/latest.json
+          gh release upload "$GITHUB_REF_NAME" "$exe" installer/latest.json --repo "$GITHUB_REPOSITORY" --clobber

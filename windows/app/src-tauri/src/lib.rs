@@ -5,6 +5,7 @@ mod placement;
 mod platform;
 mod tray;
 mod tray_icon;
+mod updater;
 
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -20,6 +21,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 use panel::{Mode, Panel};
 use tray::Tray;
+use updater::{UpdateView, Updater};
 
 // Commands run on the async pool (`async`), off the main thread: the panel's lock can be held by
 // the hover thread while it waits for the main thread (window calls), and a command
@@ -34,16 +36,24 @@ struct Current {
     /// Shown next to the app name, so a screenshot tells which version it is.
     version: String,
     view: view::PanelView,
+    update: UpdateView,
 }
 
 #[tauri::command(async)]
-fn current(app: AppHandle, panel: State<'_, Arc<Panel>>, store: State<'_, Store>) -> Current {
+fn current(app: AppHandle, panel: State<'_, Arc<Panel>>, store: State<'_, Store>, updater: State<'_, Updater>) -> Current {
     Current {
         mode: panel.mode(),
         hover_pill: panel.hover_pill(),
         version: app.package_info().version.to_string(),
         view: view::panel(&store.snapshot(), Utc::now()),
+        update: updater.view(),
     }
+}
+
+#[tauri::command]
+async fn install_update(updater: State<'_, Updater>) -> Result<(), ()> {
+    updater.install().await;
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -166,6 +176,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             current,
             refresh,
@@ -177,7 +188,8 @@ pub fn run() {
             panel_resized,
             activity,
             set_activity_expanded,
-            set_activity_period
+            set_activity_period,
+            install_update
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -192,6 +204,8 @@ pub fn run() {
             app.manage(Arc::new(ActivityReader::default()));
 
             let handle = app.handle().clone();
+            let updater = Updater::new(handle.clone());
+            app.manage(updater.clone());
             let panel = Panel::new(handle.clone(), store.clone());
             app.manage(panel.clone());
             let dashboard_panel = panel.clone();
@@ -216,6 +230,7 @@ pub fn run() {
             run_view_loop(handle, store.clone(), tray, changes);
             panel.start_hover_tracking();
             store.start_auto_refresh();
+            updater.start();
             Ok(())
         })
         .run(tauri::generate_context!())

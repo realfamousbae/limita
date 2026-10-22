@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds Limita in Release and packages it as build/Limita-<version>.dmg with the
-# drag-to-install window. The layout must match scripts/dmg-background.py.
+# drag-to-install window, plus Limita-<version>.dmg.sig for the in-app updater. The layout must match scripts/dmg-background.py.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -80,4 +80,10 @@ hdiutil detach "$DEVICE" -quiet
 trap - EXIT
 hdiutil convert "$BUILD/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "$DMG" -quiet
 rm -rf "$STAGE" "$BUILD/rw.dmg"
+# The updater only offers a release whose DMG is signed.
+if [ -f "${LIMITA_SIGNING_KEY:-$HOME/.limita-signing/macos-ed25519.key}" ]; then
+    scripts/sign-update.sh "$DMG" >/dev/null
+else
+    echo "warning: no signing key, $DMG.sig not written; the updater will not offer this DMG" >&2
+fi
 echo "$DMG"

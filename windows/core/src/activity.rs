@@ -676,9 +676,13 @@ fn summary(days: &[&DayStats]) -> Vec<Tile> {
     ]
 }
 
-/// "claude-opus-5-5" → "Opus 5.5", "claude-3-5-haiku-20241022" → "Haiku 3.5"; other ids
-/// as they are.
+/// "claude-opus-5-5" → "Opus 5.5", "claude-3-5-haiku-20241022" → "Haiku 3.5",
+/// "gpt-6-sol" → "Sol 6", "gpt-5.1-codex-max" → "Codex Max 5.1", "gpt-5.5" → "GPT 5.5";
+/// other ids as they are.
 pub fn model_name(id: &str) -> String {
+    if let Some(rest) = id.strip_prefix("gpt-") {
+        return gpt_model_name(rest).unwrap_or_else(|| id.to_string());
+    }
     let Some(rest) = id.strip_prefix("claude-") else { return id.to_string() };
     let parts: Vec<&str> = rest
         .split('-')
@@ -693,6 +697,26 @@ pub fn model_name(id: &str) -> String {
         name += &format!(" {}", version.join("."));
     }
     name
+}
+
+/// One version, then words, in any order: "6-sol", "5.5-codex". Anything else, e.g.
+/// "4o-2024-08-06", is `None`.
+fn gpt_model_name(rest: &str) -> Option<String> {
+    let parts: Vec<&str> = rest.split('-').collect();
+    let is_version =
+        |p: &&str| p.starts_with(|c: char| c.is_ascii_digit()) && p.chars().all(|c| c.is_ascii_digit() || c == '.');
+    let versions: Vec<&str> = parts.iter().copied().filter(is_version).collect();
+    let words: Vec<&str> =
+        parts.iter().copied().filter(|p| !p.is_empty() && p.chars().all(|c| c.is_alphabetic())).collect();
+    if versions.len() != 1 || versions.len() + words.len() != parts.len() {
+        return None;
+    }
+    let name = if words.is_empty() {
+        "GPT".to_string()
+    } else {
+        words.iter().map(|w| w[..1].to_uppercase() + &w[1..]).collect::<Vec<_>>().join(" ")
+    };
+    Some(format!("{name} {}", versions[0]))
 }
 
 /// "950", "12.3K", "4.5M", "1.2B".
@@ -841,7 +865,12 @@ mod tests {
         assert_eq!(model_name("claude-opus-5-5"), "Opus 5.5");
         assert_eq!(model_name("claude-3-5-haiku-20241022"), "Haiku 3.5");
         assert_eq!(model_name("claude-sonnet-4-20250514"), "Sonnet 4");
-        assert_eq!(model_name("gpt-5.5-codex"), "gpt-5.5-codex");
+        assert_eq!(model_name("gpt-6-sol"), "Sol 6");
+        assert_eq!(model_name("gpt-5.5-codex"), "Codex 5.5");
+        assert_eq!(model_name("gpt-5.1-codex-max"), "Codex Max 5.1");
+        assert_eq!(model_name("gpt-5.5"), "GPT 5.5");
+        assert_eq!(model_name("gpt-4o-2024-08-06"), "gpt-4o-2024-08-06");
+        assert_eq!(model_name("o3"), "o3");
     }
 
     #[test]
