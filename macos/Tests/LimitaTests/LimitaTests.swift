@@ -707,6 +707,8 @@ final class LimitaTests: XCTestCase {
                     executableURL: URL(fileURLWithPath: "/Applications/Limita.app/Contents/MacOS/Limita")
                 ),
                 settings: ServiceSettings(defaults: UserDefaults(suiteName: suite)!),
+                resets: ResetWatcher(notifier: RecordingNotifier(), defaults: UserDefaults(suiteName: suite)!,
+                                     feedURL: { _ in URL(fileURLWithPath: "/dev/null") }),
                 detectInstalled: { [] }
             )
         }
@@ -1168,6 +1170,8 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(ResetFeed.codexForecast(from: Data(other.utf8))?.url?.absoluteString, "https://codex-reset.com")
         XCTAssertNil(ResetFeed.codexForecast(from: Data(#"{"mode":"model"}"#.utf8)), "no reset named")
         XCTAssertNil(ResetFeed.codexForecast(from: Data("not json".utf8)))
+        XCTAssertThrowsError(try ResetFeed.parse(Data("<html>Error</html>".utf8), for: .claude), "an error page is a failure, not an empty feed")
+        XCTAssertEqual(try ResetFeed.parse(Data(#"{"providers":{}}"#.utf8), for: .claude), [])
     }
 
     func testClaudeResetsKeepOnlyResetsNewestFirst() throws {
@@ -1256,6 +1260,8 @@ final class LimitaTests: XCTestCase {
         }
 
         let watcher = ResetWatcher(notifier: notifier, defaults: defaults, feedURL: { _ in URL(fileURLWithPath: "/dev/null") })
+        watcher.ingest([], for: .claude, now: now)
+        XCTAssertNil(watcher.memory.claudeSeen, "an empty feed records nothing, so its first reset is news")
         watcher.ingest([codex(5)], for: .codex, now: now)
         watcher.ingest([claude("a")], for: .claude, now: now)
         XCTAssertEqual(notifier.events, [], "the first look only records")

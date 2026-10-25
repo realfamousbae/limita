@@ -55,6 +55,16 @@ enum ResetFeed {
             throw RateLimited(retryAfter: header.flatMap { ClaudeLiveClient.retryAfter($0, now: now) })
         }
         guard (200..<300).contains(status) else { throw FeedError(message: "\(url.host ?? "The tracker") answered \(status)") }
+        return try parse(data, for: service)
+    }
+
+    /// Lenient about fields, but a body that is not a JSON object (e.g. an error page
+    /// served with 200) is a failure: taken as "no events", it would hide the line and,
+    /// on a first run, record nothing, so the next good answer would announce old resets.
+    static func parse(_ data: Data, for service: Service) throws -> [ResetEvent] {
+        guard (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else {
+            throw FeedError(message: "The reset tracker sent something other than JSON")
+        }
         switch service {
         case .codex: return codexForecast(from: data).map { [$0] } ?? []
         case .claude: return claudeResets(from: data)

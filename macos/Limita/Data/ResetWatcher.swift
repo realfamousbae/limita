@@ -108,7 +108,7 @@ final class ResetWatcher {
                 } catch let error as ResetFeed.RateLimited {
                     let streak = (rateLimitStreak[service] ?? 0) + 1
                     rateLimitStreak[service] = streak
-                    pausedUntil[service] = Date().addingTimeInterval(
+                    pausedUntil[service] = now.addingTimeInterval(
                         LimitsStore.rateLimitPause(streak: streak, retryAfter: error.retryAfter)
                     )
                     log.info("\(service.rawValue, privacy: .public) reset feed rate-limited")
@@ -137,6 +137,8 @@ final class ResetWatcher {
         case .claude:
             let confirmed = events.filter { !$0.isProvisional }
             guard let seen = memory.claudeSeen else {
+                // Nothing to record yet; the first reset to appear is news.
+                guard !confirmed.isEmpty else { return }
                 memory.claudeSeen = Set(confirmed.map(\.id))
                 return
             }
