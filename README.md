@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://limita-landing-page.up.railway.app">Website</a> · <a href="https://limita-landing-page.up.railway.app/ru/">На русском</a>
+  <a href="https://limita.up.railway.app">Website</a> · <a href="https://limita.up.railway.app/ru/">На русском</a>
 </p>
 
 <p align="center">
