@@ -1,0 +1,31 @@
+{
+	admin off
+}
+
+:{$PORT:8080} {
+	root * /srv
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Fonts, logos and pictures are replaced, never edited, so they can be cached long.
+	# Pages, styles and scripts are revalidated on every visit.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=604800"
+	@pages not path /assets/*
+	header @pages Cache-Control "no-cache"
+
+	file_server
+
+	handle_errors {
+		@missing expression {err.status_code} == 404
+		handle @missing {
+			rewrite * /404.html
+			file_server
+		}
+	}
+}

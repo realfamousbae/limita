@@ -1,0 +1,1219 @@
+/* Limita landing page. One family (JetBrains Mono, one weight), pure black, and two
+   accents that always mean a service: orange is Claude, blue is Codex. */
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/assets/jetbrains-mono.woff2") format("woff2");
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  --void: #000;
+  --ink: #fff;
+  --ink-90: rgba(255, 255, 255, 0.9);
+  --ink-62: rgba(255, 255, 255, 0.62);
+  --ink-48: rgba(255, 255, 255, 0.48);
+  --rule: rgba(255, 255, 255, 0.08);
+  --edge: rgba(255, 255, 255, 0.14);
+  --claude: #ff944d;
+  --codex: #4fabff;
+  --healthy: #52eb94;
+  --peak: #ff732e;
+  --gutter: 16px;
+  --measure: 64ch;
+  font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-90);
+  background: var(--void);
+}
+
+@media (min-width: 720px) {
+  :root { --gutter: 40px; }
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--void); }
+
+body {
+  margin: 0;
+  background: var(--void);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.skip {
+  position: absolute;
+  left: var(--gutter);
+  top: -100px;
+  z-index: 20;
+  padding: 6px 12px;
+  background: var(--ink);
+  color: var(--void);
+  text-decoration: none;
+}
+
+.skip:focus { top: 4px; }
+
+.wrap {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+/* ---------------------------------------------------------------------------------
+   The faux macOS menu bar: the top of the page is the top of your screen. The site's
+   navigation sits where an app's menus would be; the status items on the right are
+   Limita's gauge, the language (as an input-source box) and your clock. */
+
+.menubar {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--rule);
+}
+
+.menubar a,
+.menubar button {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.menubar a:hover,
+.menubar button:hover { background: rgba(255, 255, 255, 0.12); }
+
+.mb-app { font-weight: 700; }
+
+.mb-menus { display: flex; gap: 2px; }
+
+.mb-status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mb-glyph {
+  font: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.mb-glyph img {
+  width: 16px;
+  height: 16px;
+  filter: invert(1);
+}
+
+.mb-glyph[aria-expanded="true"] { background: rgba(255, 255, 255, 0.18); }
+
+/* The language, drawn like the input-source indicator: the current one is filled. */
+.mb-lang {
+  display: inline-flex;
+  margin: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.menubar .mb-lang a {
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 0;
+  font-size: 11px;
+}
+
+.menubar .mb-lang [aria-current] {
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--void);
+}
+
+.mb-clock {
+  padding: 0 6px 0 4px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 719px) {
+  .mb-menus a:not(.mb-app) { display: none; }
+}
+
+/* ---------------------------------------------------------------------------------
+   The stage under the menu bar, where the pill and the dashboard appear. Its height
+   is kept for the dashboard, so nothing below moves when it opens or closes. */
+
+.stage {
+  position: relative;
+  min-height: 420px;
+  padding-top: 10px;
+}
+
+.stage-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 42%;
+  margin: 0;
+  padding: 0 var(--gutter);
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-48);
+  transition: opacity 0.3s;
+}
+
+.stage[data-state="dashboard"] .stage-hint,
+.stage[data-state="pill"] .stage-hint { opacity: 0; }
+
+.pill-slot {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%);
+}
+
+.dash-slot {
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--gutter);
+}
+
+/* Without JavaScript the stage shows a screenshot instead of the live replica. */
+.stage-fallback {
+  display: block;
+  width: min(100%, 956px);
+  height: auto;
+  margin: 0 auto;
+}
+
+@media (max-width: 719px) {
+  .stage { min-height: 0; }
+  .stage[data-state="hidden"],
+  .stage[data-state="pill"] { min-height: 120px; }
+  .stage[data-state="hidden"] .dash-slot,
+  .stage[data-state="pill"] .dash-slot { display: none; }
+  .stage-hint { top: 50px; }
+}
+
+/* ---------------------------------------------------------------------------------
+   Hero copy */
+
+.hero {
+  padding-top: 56px;
+  padding-bottom: 88px;
+}
+
+h1, h2, h3 {
+  margin: 0;
+  font-weight: 400;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+h1 {
+  max-width: 30ch;
+  font-size: 44px;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+p { margin: 0; }
+
+.lede {
+  max-width: 56ch;
+  margin-top: 20px;
+  font-size: 15px;
+  color: var(--ink-62);
+}
+
+@media (max-width: 719px) {
+  h1 { font-size: 28px; }
+  h2 { font-size: 20px; }
+  .hero { padding-top: 32px; padding-bottom: 64px; }
+}
+
+.downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.download {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 22px;
+  font-size: 15px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* The update button's green, as in the app: the Mac download is the main action. */
+.download.mac {
+  background: var(--healthy);
+  color: var(--void);
+}
+
+.download.mac:hover { background: #7cf2ae; }
+
+.download.win {
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+.download.win:hover { background: rgba(255, 255, 255, 0.06); }
+
+.download svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.download-note {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--ink-48);
+}
+
+.download-note a { color: var(--ink-62); }
+
+/* ---------------------------------------------------------------------------------
+   Sections */
+
+.section {
+  padding-top: 72px;
+  padding-bottom: 72px;
+  border-top: 1px solid var(--rule);
+}
+
+.section-intro {
+  max-width: var(--measure);
+  margin-top: 14px;
+  color: var(--ink-62);
+}
+
+/* Features: two to a row, each with its own picture of the thing it describes. */
+.features {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 56px;
+  margin: 40px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 900px) {
+  .features { grid-template-columns: 1fr 1fr; }
+}
+
+.feature {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 32px 0 40px;
+  border-top: 1px solid var(--rule);
+}
+
+.feature p {
+  max-width: 52ch;
+  margin-top: 6px;
+  color: var(--ink-62);
+}
+
+.visual {
+  display: flex;
+  align-items: center;
+  min-height: 132px;
+}
+
+kbd {
+  font: inherit;
+}
+
+/* The one feature that takes the whole row: picture left, words right. */
+@media (min-width: 900px) {
+  .feature.wide {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    align-items: center;
+  }
+}
+
+/* Resets: the dashboard's lines and the macOS notification they come with. */
+.resets-demo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px 32px;
+}
+
+/* The dashboard's captions are 9.5 px; shown on their own, they are drawn larger. */
+.resets-demo .reset-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  zoom: 1.35;
+}
+
+.notification {
+  display: flex;
+  gap: 10px;
+  width: 300px;
+  max-width: 100%;
+  padding: 11px 13px;
+  border-radius: 16px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.notification img {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+
+.notification b {
+  display: block;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.notification span { color: var(--ink-62); }
+
+/* Hover pill and the notch */
+.notch-demo {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  height: 120px;
+}
+
+.notch-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* The camera housing, and the 80 pt on each side that Limita leaves alone. */
+.notch-zone {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 44%;
+  height: 100%;
+  transform: translateX(-50%);
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 7px);
+  border-left: 1px dashed var(--edge);
+  border-right: 1px dashed var(--edge);
+}
+
+.notch-cam {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 22%;
+  height: 26px;
+  transform: translateX(-50%);
+  background: var(--void);
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 0 0 1px var(--rule);
+}
+
+.notch-demo .pill {
+  position: absolute;
+  top: 34px;
+  left: 4%;
+  transform: scale(0.86);
+  transform-origin: left top;
+}
+
+/* Keyboard shortcut */
+.keys {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.key {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  height: 64px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px var(--edge), inset 0 -3px 0 rgba(255, 255, 255, 0.06);
+}
+
+.key small {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ink-48);
+}
+
+/* iTerm2 status bar */
+.terminal {
+  width: 100%;
+  max-width: 520px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--edge);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.term-body {
+  padding: 14px 16px 18px;
+  color: var(--ink-62);
+}
+
+.term-body .cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  vertical-align: -0.2em;
+  background: var(--ink-62);
+}
+
+.term-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--ink-90);
+  background: rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--rule);
+}
+
+.term-status span { white-space: nowrap; }
+
+.term-status .sep { color: var(--ink-48); }
+
+@media (max-width: 559px) {
+  .term-status .sep { display: none; }
+}
+
+.term-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--healthy);
+}
+
+/* Peak hours */
+.peak-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.schedule {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--ink-62);
+}
+
+.schedule li {
+  display: grid;
+  grid-template-columns: 7ch 1fr;
+  gap: 0 10px;
+}
+
+.schedule li + li { margin-top: 6px; }
+
+.schedule .local { grid-column: 2; }
+
+.schedule b { font-weight: 400; }
+
+.schedule .claude b { color: var(--claude); }
+.schedule .codex b { color: var(--codex); }
+
+.schedule .now {
+  color: var(--peak);
+}
+
+/* Activity heatmaps, one per service in its own colour */
+.heatmaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 28px;
+}
+
+.heatmap {
+  display: grid;
+  grid-template-rows: repeat(7, 9px);
+  grid-auto-flow: column;
+  grid-auto-columns: 9px;
+  gap: 3px;
+}
+
+.heatmap.claude { --shade: 255, 148, 77; }
+.heatmap.codex { --shade: 79, 171, 255; }
+
+.heatmap i {
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.heatmap i.l1 { background: rgba(var(--shade), 0.28); }
+.heatmap i.l2 { background: rgba(var(--shade), 0.5); }
+.heatmap i.l3 { background: rgba(var(--shade), 0.74); }
+.heatmap i.l4 { background: rgb(var(--shade)); }
+
+/* ---------------------------------------------------------------------------------
+   Privacy: what Limita reads, per service, in that service's colour. */
+
+.sources {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px 56px;
+  margin-top: 40px;
+}
+
+@media (min-width: 900px) {
+  .sources { grid-template-columns: 1fr 1fr; }
+}
+
+.source {
+  padding-left: 18px;
+  border-left: 2px solid;
+}
+
+.source.claude { border-color: var(--claude); }
+.source.codex { border-color: var(--codex); }
+
+.source h3 { display: flex; align-items: center; gap: 10px; }
+
+.source h3 img { width: 16px; height: 16px; }
+
+.source p {
+  margin-top: 10px;
+  max-width: 52ch;
+  color: var(--ink-62);
+}
+
+code {
+  font: inherit;
+  color: var(--ink-90);
+}
+
+.promises {
+  max-width: var(--measure);
+  margin: 40px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.promises li {
+  position: relative;
+  padding: 10px 0 10px 26px;
+  border-top: 1px solid var(--rule);
+}
+
+.promises li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 19px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--healthy);
+}
+
+/* ---------------------------------------------------------------------------------
+   Install: a real sequence, so it is numbered. */
+
+.install-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 40px 56px;
+  margin-top: 40px;
+}
+
+@media (min-width: 900px) {
+  .install-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.steps {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps li {
+  position: relative;
+  min-height: 44px;
+  padding: 10px 0 18px 52px;
+  color: var(--ink-62);
+  counter-increment: step;
+}
+
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+.steps strong {
+  font-weight: 400;
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------------------------
+   Footer */
+
+.footer {
+  padding-top: 32px;
+  padding-bottom: 48px;
+  border-top: 1px solid var(--rule);
+  font-size: 13px;
+  color: var(--ink-48);
+}
+
+.footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.footer a { color: var(--ink-62); }
+
+/* =================================================================================
+   The dashboard replica: rules ported from windows/app/src/styles.css (which mirrors
+   DashboardStyle in ExpandedView.swift), scoped under .limita so they stay out of the
+   page's own elements. */
+
+.limita {
+  --meter: 200px;
+  --claude-soft: rgba(255, 148, 77, 0.72);
+  --codex-soft: rgba(79, 171, 255, 0.72);
+  --claude-share: rgb(255, 199, 148);
+  --codex-share: rgb(158, 209, 255);
+  --yellow: #ffd60a;
+  --orange: #ff9f0a;
+  --red: #ff453a;
+  --caption: rgba(255, 255, 255, 0.62);
+  --faint: rgba(255, 255, 255, 0.48);
+  --line: rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  line-height: normal;
+  color: #fff;
+  text-align: left;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@media (min-width: 1200px) {
+  .dash-slot .limita { zoom: 1.2; }
+}
+
+.limita button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.limita .icon { display: inline-flex; width: 1em; height: 1em; }
+.limita .icon svg { width: 100%; height: 100%; }
+.limita .muted { color: rgba(255, 255, 255, 0.6); }
+.limita .spacer { flex: 1; }
+.limita .digits { font-variant-numeric: tabular-nums; }
+
+.limita .caption {
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  color: var(--caption);
+}
+
+.limita .caption.faint { color: var(--faint); }
+.limita .nowrap { white-space: nowrap; }
+
+.limita .dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--healthy);
+}
+
+/* Pill */
+
+.limita.pill,
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 11px;
+  color: #fff;
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 17px;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+}
+
+.pill-item { display: inline-flex; align-items: center; gap: 5px; }
+.pill-item img { width: 11px; height: 11px; }
+.pill-item .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--healthy);
+}
+.pill-divider { width: 1px; height: 14px; background: rgba(255, 255, 255, 0.14); }
+
+/* Dashboard */
+
+.limita .dashboard {
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.9);
+}
+
+.limita .dash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 18px;
+}
+
+.limita .header-side { display: flex; align-items: center; gap: 9px; }
+.limita .header-side.end { justify-content: flex-end; }
+
+.limita .app-glyph {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.limita .app-glyph::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("/assets/status.png") center / 16px 16px no-repeat;
+  filter: invert(1);
+}
+
+.limita .name-row { display: flex; align-items: baseline; gap: 5px; }
+.limita .app-name { font-size: 13px; letter-spacing: 1.2px; }
+.limita .version { font-size: 8px; letter-spacing: 0.3px; color: var(--faint); }
+.limita .titles { flex: none; display: flex; flex-direction: column; gap: 1px; }
+
+.limita .prime-time {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(255, 115, 46, 0.1);
+  border: 1px solid rgba(255, 115, 46, 0.35);
+  white-space: nowrap;
+}
+
+.limita .dash-header .prime-time { margin: 0 auto 0 -9px; }
+
+.limita .prime-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.limita .prime-lines strong { font-weight: 700; color: #fff; }
+
+/* The burning speedometer: 196 frames of 78 px in a 14 × 14 grid at 24 fps. */
+.limita .burning-gauge {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  background: url("/assets/prime-time.webp") 0 0 / 364px 364px no-repeat;
+  animation:
+    gauge-column 0.583333s steps(14) infinite,
+    gauge-row 8.166667s steps(14) infinite;
+}
+
+@keyframes gauge-column { to { background-position-x: -364px; } }
+@keyframes gauge-row { to { background-position-y: -364px; } }
+
+.limita .round {
+  position: relative;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+
+.limita .round.crossed::after {
+  content: "";
+  position: absolute;
+  width: 1.6px;
+  height: 18px;
+  background: #fff;
+  border-radius: 1px;
+  box-shadow: 0 0 0 1.5px #141414;
+  transform: rotate(-45deg);
+}
+
+.limita .round.update {
+  color: var(--healthy);
+  background: rgba(82, 235, 148, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(82, 235, 148, 0.35);
+}
+
+.limita .update-announce {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 14px;
+  border-radius: 999px;
+  background: rgb(13, 41, 26);
+  box-shadow: inset 0 0 0 1px rgba(82, 235, 148, 0.45);
+  white-space: nowrap;
+  color: #fff;
+}
+
+.limita .announce-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+}
+
+.limita .announce-lines .muted { color: rgba(255, 255, 255, 0.75); }
+
+.limita .announce-glyph {
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--healthy);
+  background: rgba(82, 235, 148, 0.18);
+}
+
+.limita .spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.limita .divider { background: var(--line); }
+.limita .divider.horizontal { height: 1px; margin: 0 18px; }
+.limita .divider.vertical { width: 1px; margin: 14px 0; }
+
+.limita .columns { display: flex; align-items: stretch; }
+
+.limita .column {
+  flex: 1 0 auto;
+  width: calc(2 * var(--meter) + 10px);
+  padding: 13px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.limita .column-head { display: flex; align-items: center; gap: 8px; height: 36px; }
+
+.limita .head-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.limita .service-name { font-size: 14px; display: flex; align-items: center; gap: 6px; }
+
+.limita .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.limita .badge img { width: 50%; height: 50%; object-fit: contain; }
+.limita .badge.claude { background: rgba(255, 148, 77, 0.14); }
+.limita .badge.codex { background: rgba(79, 171, 255, 0.14); }
+
+.limita .meters { display: flex; flex-direction: column; gap: 16px; }
+.limita .meter { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.limita .meter-body { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.limita .meter-body .big { flex: none; min-width: 4ch; white-space: nowrap; }
+.limita .meter-track { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.limita .bar-line { display: flex; align-items: center; gap: 8px; }
+.limita .bar-line .bar { flex: 1; }
+.limita .big { font-size: 26px; }
+.limita .caption.meter-caption { font-size: 10.5px; }
+
+.limita .meter-title { display: flex; align-items: center; gap: 4px; }
+.limita .meter-title .icon { width: 9px; height: 9px; color: var(--caption); }
+
+.limita .bar {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.limita .fill { display: block; height: 100%; border-radius: 2px; }
+.limita .fill.highlight { position: absolute; top: 0; left: 0; }
+.limita .claude .fill.accent { background: var(--claude); }
+.limita .claude .fill.accentSoft { background: var(--claude-soft); }
+.limita .codex .fill.accent { background: var(--codex); }
+.limita .codex .fill.accentSoft { background: var(--codex-soft); }
+.limita .claude .fill.share { background: var(--claude-share); }
+.limita .codex .fill.share { background: var(--codex-share); }
+
+.limita .details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(var(--meter), 1fr));
+  gap: 9px 10px;
+}
+
+.limita .tile { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+.limita .tile-value {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  overflow-wrap: anywhere;
+}
+
+.limita .reset-line { display: flex; flex-direction: column; gap: 3px; }
+.limita .reset-title { display: flex; align-items: baseline; gap: 5px; }
+.limita .reset-title .icon { width: 8px; height: 8px; flex: none; }
+.limita .claude .reset-title .icon { color: var(--claude); }
+.limita .codex .reset-title .icon { color: var(--codex); }
+.limita a.caption { text-decoration: none; }
+.limita a.caption:hover { color: var(--caption); }
+
+/* Activity: the week under the columns, opened by the capsule. */
+
+.limita .activity-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 18px 12px;
+}
+
+.limita .activity-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  color: var(--caption);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.limita .activity-toggle .icon svg { width: 10px; height: 10px; transition: transform 0.15s; }
+.limita .activity-toggle[aria-expanded="true"] .icon svg { transform: rotate(180deg); }
+
+.limita .activity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px 0;
+}
+
+.limita .column.activity { padding-top: 12px; padding-bottom: 4px; gap: 12px; }
+.limita .column.activity.claude { --shade: 255, 148, 77; }
+.limita .column.activity.codex { --shade: 79, 171, 255; }
+
+.limita .activity-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px 22px;
+}
+
+.limita .activity-summary .caption {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.limita .activity-summary .tile-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.limita .week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.limita .week .label {
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  text-align: center;
+  color: var(--caption);
+}
+
+.limita .cell {
+  display: block;
+  height: 30px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.limita .cell.l1 { background: rgba(var(--shade), 0.28); }
+.limita .cell.l2 { background: rgba(var(--shade), 0.5); }
+.limita .cell.l3 { background: rgba(var(--shade), 0.74); }
+.limita .cell.l4 { background: rgb(var(--shade)); }
+
+.limita .activity-footer {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 12px;
+  padding-bottom: 6px;
+}
+
+/* One column on narrow screens: the services stack, and the badge takes its own line. */
+@media (max-width: 899px) {
+  .dash-slot .limita { width: 100%; max-width: 520px; }
+  .limita { --meter: 0px; }
+  .limita .columns { flex-direction: column; }
+  .limita .column { width: auto; }
+  .limita .divider.vertical { width: auto; height: 1px; margin: 0 18px; }
+  .limita .dash-header { flex-wrap: wrap; }
+  .limita .dash-header .prime-time { order: 3; margin: 0; width: 100%; }
+  .limita .activity-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---------------------------------------------------------------------------------
+   Motion: the pill drops in under the menu bar and opens into the dashboard. Only
+   when motion is welcome; otherwise the dashboard is simply there. */
+
+.pill-slot { transition: opacity 0.18s; }
+.stage:not([data-state="pill"]) .pill-slot { opacity: 0; pointer-events: none; }
+
+.pill-slot .pill { transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.25); }
+.stage:not([data-state="pill"]) .pill-slot .pill { transform: translateY(-46px); }
+
+.dash-slot .limita {
+  transform-origin: 50% 0;
+  transition: transform 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.08), opacity 0.2s;
+}
+
+.stage:not([data-state="dashboard"]) .dash-slot .limita {
+  opacity: 0;
+  transform: scale(0.32, 0.06);
+  pointer-events: none;
+  visibility: hidden;
+  transition: transform 0.24s ease-in, opacity 0.2s, visibility 0s 0.24s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
+
+  .limita .burning-gauge { animation: none; }
+  .limita .spinner { animation-duration: 2.4s; }
+}

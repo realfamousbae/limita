@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Limita: лимиты Claude Code и Codex в строке меню</title>
+  <meta name="description" content="Limita — маленькое приложение для строки меню macOS и трея Windows: показывает 5-часовые и недельные лимиты Claude Code и Codex. Бесплатно, с открытым кодом.">
+  <link rel="canonical" href="https://limita-landing-page-production.up.railway.app/ru/">
+  <link rel="alternate" hreflang="en" href="https://limita-landing-page-production.up.railway.app/">
+  <link rel="alternate" hreflang="ru" href="https://limita-landing-page-production.up.railway.app/ru/">
+  <link rel="alternate" hreflang="x-default" href="https://limita-landing-page-production.up.railway.app/">
+  <meta name="theme-color" content="#000000">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Limita: лимиты Claude Code и Codex в строке меню">
+  <meta property="og:description" content="5-часовые и недельные лимиты — у верхнего края экрана Mac или в трее Windows.">
+  <meta property="og:url" content="https://limita-landing-page-production.up.railway.app/ru/">
+  <meta property="og:image" content="https://limita-landing-page-production.up.railway.app/assets/og.png">
+  <meta property="og:locale" content="ru_RU">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="/assets/favicon-64.png">
+  <link rel="apple-touch-icon" href="/assets/icon-256.png">
+  <link rel="preload" href="/assets/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/main.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">К содержимому</a>
+
+  <nav class="menubar" aria-label="Сайт">
+    <div class="mb-menus">
+      <a class="mb-app" href="/ru/">Limita</a>
+      <a href="#features">Возможности</a>
+      <a href="#privacy">Приватность</a>
+      <a href="#install">Установка</a>
+      <a href="https://github.com/realfamousbae/limita">GitHub</a>
+    </div>
+    <div class="mb-status">
+      <button class="mb-glyph" type="button" aria-controls="stage" aria-expanded="false" aria-label="Показать дашборд Limita" data-show="Показать дашборд Limita" data-hide="Скрыть дашборд Limita" hidden>
+        <img src="/assets/status.png" alt="" width="16" height="16">
+      </button>
+      <span class="mb-lang">
+        <a href="/" hreflang="en" lang="en" data-lang="en" aria-label="English">EN</a>
+        <a href="/ru/" hreflang="ru" lang="ru" aria-current="page" data-lang="ru">RU</a>
+      </span>
+      <time class="mb-clock" aria-hidden="true"></time>
+    </div>
+  </nav>
+
+  <div class="stage" id="stage" data-state="dashboard">
+    <p class="stage-hint" data-touch="Нажмите на значок-спидометр в строке меню, чтобы открыть дашборд.">Подведите курсор к верхнему краю или нажмите на значок-спидометр в строке меню.</p>
+    <div class="pill-slot"></div>
+    <div class="dash-slot" aria-label="Живая демонстрация дашборда Limita">
+      <noscript><img class="stage-fallback" src="/assets/dashboard.webp" width="956" height="694" alt="Дашборд Limita с лимитами Claude и Codex"></noscript>
+    </div>
+  </div>
+
+  <main id="main">
+    <section class="hero wrap">
+      <h1>Лимиты Claude Code и Codex — одним взглядом на верх экрана Mac.</h1>
+      <p class="lede">Limita — маленькое приложение для строки меню. Оно показывает, сколько осталось от 5-часового и недельного лимита, без терминала. Есть и версия для Windows, в трее.</p>
+      <div class="downloads">
+        <a class="download mac" data-download="mac" href="https://github.com/realfamousbae/limita/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M11 3h2v10.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17zM5 19h14v2H5z"/></svg>
+          Скачать для macOS
+        </a>
+        <a class="download win" data-download="win" href="https://github.com/realfamousbae/limita/releases/latest">Скачать для Windows</a>
+      </div>
+      <p class="download-note">Версия <span data-version>0.17.0</span> для macOS 14 и новее и Windows 10 или 11. Бесплатно, <a href="https://github.com/realfamousbae/limita">открытый код</a>.</p>
+    </section>
+
+    <section class="section wrap" id="features" aria-labelledby="features-title">
+      <h2 id="features-title">Не мешает, пока не понадобится</h2>
+      <p class="section-intro">Ни окна, которое надо держать открытым, ни значка в Dock. Limita проверяет Claude каждые 3 минуты, Codex — каждые 5 и показывает цифры там, куда вы и так смотрите.</p>
+
+      <ul class="features">
+        <li class="feature">
+          <div class="visual" aria-hidden="true">
+            <div class="notch-demo">
+              <div class="notch-bar"></div>
+              <div class="notch-zone"></div>
+              <div class="notch-cam"></div>
+              <span class="pill"><span class="pill-item"><img src="/assets/claude.png" alt=""><span class="dot"></span>5h 15% used</span></span>
+            </div>
+          </div>
+          <div>
+            <h3>Пилюля у верхнего края</h3>
+            <p>Задержите курсор у верхнего края любого экрана — выедет пилюля с 5-часовым лимитом каждого сервиса. Нажмите на неё, чтобы открыть дашборд. Чёлка и по 80 точек с каждой её стороны остаются другим приложениям.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual" aria-hidden="true">
+            <div class="keys">
+              <kbd class="key">⌃<small>control</small></kbd>
+              <kbd class="key">⌥<small>option</small></kbd>
+              <kbd class="key">L</kbd>
+            </div>
+          </div>
+          <div>
+            <h3>Одно сочетание из любого приложения</h3>
+            <p>Нажмите <kbd>⌃⌥L</kbd> — дашборд откроется у верхнего края экрана, даже поверх полноэкранного терминала. Нажмите ещё раз, чтобы закрыть. В Windows это <kbd>Ctrl+Alt+L</kbd>.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual" aria-hidden="true">
+            <div class="terminal">
+              <div class="term-body">~/projects/app $ claude <span class="cursor"></span></div>
+              <div class="term-status">
+                <span><span class="term-dot"></span>Claude 5h 52% · 7d 49% used</span>
+                <span class="sep">│</span>
+                <span><span class="term-dot"></span>Codex 5h 80% · 7d 64% left</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h3>В строке состояния iTerm2</h3>
+            <p>Дополнительный плагин показывает лимиты в строке состояния вкладок, где запущен Claude Code или Codex, а в остальных её прячет. Нажмите на лимиты — откроется дашборд.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual peak-demo">
+            <div class="limita" aria-hidden="true">
+              <div class="prime-time">
+                <span class="burning-gauge"></span>
+                <div class="prime-lines"><div>PEAK HOURS</div><div>USAGE LIMITS RUN OUT FASTER</div></div>
+              </div>
+            </div>
+            <ul class="schedule" data-local="{from}–{to} по вашему времени" data-now="час пик сейчас">
+              <li class="claude" data-peak="claude"><b>Claude</b><span>по будням, 5–11 по тихоокеанскому времени</span><span class="local"></span></li>
+              <li class="codex" data-peak="codex"><b>Codex</b><span>по будням, 12:00–18:00 UTC</span><span class="local"></span></li>
+            </ul>
+          </div>
+          <div>
+            <h3>Знает часы пик</h3>
+            <p>В часы пик лимиты сервиса тратятся быстрее. Тогда в дашборде горит спидометр, а если в пике только один из двух сервисов, он назван.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual" aria-hidden="true">
+            <div class="heatmaps">
+              <div class="heatmap claude" data-seed="7"></div>
+              <div class="heatmap codex" data-seed="3"></div>
+            </div>
+          </div>
+          <div>
+            <h3>Куда ушли токены</h3>
+            <p>Activity показывает токены по дням для каждого сервиса: за неделю, календарём за месяц или до полугода. Над графиком — всего токенов, любимая модель, сообщения и самый загруженный час.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual limita" aria-hidden="true">
+            <span class="update-announce">
+              <span class="announce-lines"><span>LIMITA <span data-version>0.17.0</span> IS OUT</span><span class="muted">CLICK TO UPDATE</span></span>
+              <span class="announce-glyph"><span class="icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 3h2v10.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17zM5 19h14v2H5z"/></svg></span></span>
+            </span>
+          </div>
+          <div>
+            <h3>Обновление в один клик</h3>
+            <p>Когда выходит новая версия, в дашборде появляется зелёная кнопка. Нажмите её — Limita скачает обновление, проверит подпись, установит его и перезапустится.</p>
+          </div>
+        </li>
+        <li class="feature wide">
+          <div class="visual resets-demo" aria-hidden="true">
+            <div class="limita reset-lines">
+              <div class="claude reset-line"><div class="caption reset-title"><span class="icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg></span><span>BANKED RESET · USE BY OCT 31</span></div><div class="caption faint">DATA: CLAUDE-RESETS.COM</div></div>
+              <div class="codex reset-line"><div class="caption reset-title"><span class="icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg></span><span>RESET FOR EVERYONE · 5 HOURS AGO</span></div><div class="caption faint">DATA: CODEX-RESET.COM</div></div>
+            </div>
+            <div class="notification"><img src="/assets/favicon-64.png" alt=""><div><b>Codex limits were reset for everyone</b><span>Data: codex-reset.com</span></div></div>
+          </div>
+          <div>
+            <h3>Знает, когда лимиты сбросили</h3>
+            <p>Когда Anthropic или OpenAI сбрасывают лимиты всем, приложение для Mac пишет об этом в колонке сервиса и присылает уведомление. Ещё оно замечает, когда ваш недельный лимит начался заново раньше срока и когда Codex даёт сброс, который можно применить. Данные о сбросах для всех — с <a href="https://claude-resets.com">claude-resets.com</a> и <a href="https://codex-reset.com">codex-reset.com</a>.</p>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <section class="section wrap" id="privacy" aria-labelledby="privacy-title">
+      <h2 id="privacy-title">Читает цифры, и больше ничего</h2>
+      <p class="section-intro">Limita спрашивает лимиты у каждого сервиса так же, как его собственные инструменты. Ваши логины остаются на месте.</p>
+
+      <div class="sources">
+        <div class="source claude">
+          <h3><img src="/assets/claude.png" alt="">Claude Code</h3>
+          <p>Limita берёт логин Claude Code из Связки ключей (macOS спросит один раз) и отправляет его только на <code>api.anthropic.com</code> — тот же запрос, что делает <code>/usage</code> в Claude Code. Логин она не хранит и не продлевает. Если запрос не удался, цифры берутся из строки состояния Claude Code.</p>
+        </div>
+        <div class="source codex">
+          <h3><img src="/assets/codex.png" alt="">Codex</h3>
+          <p>Limita спрашивает сам Codex CLI через <code>codex app-server</code>, поэтому логин не покидает CLI. Если это не удалось, она читает последние лимиты из файлов сессий в <code>~/.codex</code>.</p>
+        </div>
+      </div>
+
+      <ul class="promises">
+        <li>Без аккаунтов, cookies и аналитики.</li>
+        <li>Промпты, транскрипты, пути проектов и ID сессий не читаются.</li>
+        <li>Кроме них Limita спрашивает GitHub об обновлениях, а приложение для Mac — <code>claude-resets.com</code> и <code>codex-reset.com</code> о сбросах подключённых сервисов. Ничего о вас и вашем использовании в этих запросах нет.</li>
+      </ul>
+    </section>
+
+    <section class="section wrap" id="install" aria-labelledby="install-title">
+      <h2 id="install-title">Установка</h2>
+      <div class="install-grid">
+        <div>
+          <h3>macOS 14 и новее</h3>
+          <ol class="steps">
+            <li>Скачайте <a data-download="mac" href="https://github.com/realfamousbae/limita/releases/latest">DMG</a>, откройте его и перетащите <strong>Limita</strong> в <strong>Программы</strong>.</li>
+            <li>Сборка пока не нотаризована. Для первого запуска нажмите на <strong>Limita</strong> в Программах правой кнопкой и выберите <strong>Открыть</strong>, или используйте <strong>Системные настройки → Конфиденциальность и безопасность → Всё равно открыть</strong>.</li>
+            <li>При первом обновлении Claude macOS спросит, можно ли Limita читать <code>Claude Code-credentials</code>. Выберите <strong>Разрешать всегда</strong>.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Windows 10 или 11</h3>
+          <ol class="steps">
+            <li>Скачайте <a data-download="win" href="https://github.com/realfamousbae/limita/releases/latest">установщик</a>.</li>
+            <li>Запустите его. Он ставит приложение для вашего пользователя, без прав администратора. Установщик пока не подписан: в предупреждении SmartScreen выберите <strong>Подробнее → Выполнить в любом случае</strong>.</li>
+            <li>Limita ждёт в трее. Задержите курсор посередине верхнего края экрана, чтобы выехала пилюля.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <div class="footer-row">
+      <a href="https://github.com/realfamousbae/limita">Код на GitHub</a>
+      <a href="https://github.com/realfamousbae/limita/blob/main/LICENSE">Лицензия MIT</a>
+      <a href="/assets/OFL.txt">JetBrains Mono, SIL Open Font License</a>
+      <span>Limita не связана с Anthropic и OpenAI.</span>
+    </div>
+  </footer>
+</body>
+</html>
