@@ -43,7 +43,7 @@ macOS app; see the [main README](../README.md).
 | Limita's files | `%APPDATA%\Limita\` — `settings.json`, `claude-status.json`, `wrapped-statusline.json`, `resets.json` (the limit resets already seen) |
 | Status-line hook | `"<install dir>/limita-cli.exe" --capture-claude-status`; your own status line is kept in `wrapped-statusline.json` and run through Git Bash (or `cmd` without it) |
 | Updates | [Tauri's updater](https://v2.tauri.app/plugin/updater/) reads `latest.json` from the latest release, checks the installer's signature and runs it in passive mode, then Limita reopens |
-| Reset notifications | Windows notifications; clicking one starts Limita again, which opens the dashboard |
+| Reset notifications | Windows notifications, through Tauri's notification plugin |
 | Codex CLI | an npm install (`%APPDATA%\npm\codex.cmd`) is started through its native `codex.exe`; the process tree is killed if it hangs |
 
 ## Checking a machine

@@ -728,6 +728,27 @@ mod tests {
     }
 
     #[test]
+    fn everything_seen_survives_a_relaunch() {
+        let dir = tempfile::tempdir().unwrap();
+        let (watcher, _) = watcher(dir.path());
+        let now = Utc::now();
+        let until = now + chrono::Duration::days(20);
+        let banked = ResetEvent::new("claude-b".into(), Service::Claude, ResetKind::Banked { usable_until: Some(until) }, now, ResetSource::ClaudeResets);
+        watcher.ingest(vec![banked], Service::Claude, &[Service::Claude], now);
+        let snapshot = |days: i64, used: f64| LimitSnapshot::new(None, Some(LimitWindow::new(used, Some(now + chrono::Duration::days(days)))), now);
+        let details = |count| AccountDetails { limit_resets: Some(count), ..AccountDetails::default() };
+        watcher.observe(Service::Codex, Some(&snapshot(3, 60.0)), Some(&details(1)), now);
+        watcher.observe(Service::Codex, Some(&snapshot(7, 0.0)), Some(&details(2)), now);
+        let saved = watcher.lock().memory.clone();
+        assert_eq!(saved.local.len(), 2, "an early reset and a new credit");
+
+        let (again, announced) = self::watcher(dir.path());
+        assert_eq!(again.lock().memory, saved, "resets.json reads back as written");
+        again.observe(Service::Codex, Some(&snapshot(7, 0.0)), Some(&details(2)), now);
+        assert!(announced.lock().unwrap().is_empty(), "the same numbers after a relaunch are not news");
+    }
+
+    #[test]
     fn claude_announces_new_confirmed_events_only() {
         let dir = tempfile::tempdir().unwrap();
         let (watcher, announced) = watcher(dir.path());
