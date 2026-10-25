@@ -707,6 +707,8 @@ final class LimitaTests: XCTestCase {
                     executableURL: URL(fileURLWithPath: "/Applications/Limita.app/Contents/MacOS/Limita")
                 ),
                 settings: ServiceSettings(defaults: UserDefaults(suiteName: suite)!),
+                resets: ResetWatcher(notifier: RecordingNotifier(), defaults: UserDefaults(suiteName: suite)!,
+                                     feedURL: { _ in URL(fileURLWithPath: "/dev/null") }),
                 detectInstalled: { [] }
             )
         }
@@ -1146,6 +1148,192 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(days["2026-10-16"]?.models, ["gpt-5.5-codex": 120])
     }
 
+    // MARK: - Limit resets
+
+    func testCodexForecastReadsTheLastResetAndItsPost() throws {
+        let json = """
+        {"mode":"model","last_reset_at":"2026-10-25T06:10:01.000Z","probabilities":{"rounded_24h":44},
+         "latest_alert":{"id":"1","kind":"reset","state":"confirmed","source_at":"2026-10-25T06:10:01.000Z",
+           "url":"https://x.com/thsottiaux/status/1","confirmation_url":null}}
+        """
+        let event = try XCTUnwrap(ResetFeed.codexForecast(from: Data(json.utf8)))
+        XCTAssertEqual(event.service, .codex)
+        XCTAssertEqual(event.kind, .global)
+        XCTAssertEqual(event.date, ISO8601DateFormatter.parseFlexible("2026-10-25T06:10:01Z"))
+        XCTAssertEqual(event.url?.absoluteString, "https://x.com/thsottiaux/status/1")
+        XCTAssertEqual(event.source.credit, "DATA: CODEX-RESET.COM")
+
+        // An alert about something else links the site instead.
+        let other = """
+        {"last_reset_at":"2026-10-25T06:10:01Z","latest_alert":{"kind":"hint","source_at":"2026-10-26T01:00:00Z","url":"https://x.com/a/2"}}
+        """
+        XCTAssertEqual(ResetFeed.codexForecast(from: Data(other.utf8))?.url?.absoluteString, "https://codex-reset.com")
+        XCTAssertNil(ResetFeed.codexForecast(from: Data(#"{"mode":"model"}"#.utf8)), "no reset named")
+        XCTAssertNil(ResetFeed.codexForecast(from: Data("not json".utf8)))
+        XCTAssertThrowsError(try ResetFeed.parse(Data("<html>Error</html>".utf8), for: .claude), "an error page is a failure, not an empty feed")
+        XCTAssertEqual(try ResetFeed.parse(Data(#"{"providers":{}}"#.utf8), for: .claude), [])
+    }
+
+    func testClaudeResetsKeepOnlyResetsNewestFirst() throws {
+        let json = """
+        {"providers":{"claude":{"events":[
+          {"id":"1","date":"2026-09-01T18:35:27Z","kind":"reset","scope":"all","note":"Shipped Fable 5.1.","url":"https://x.com/ClaudeDevs/status/1","verification":"curated"},
+          {"id":"2","date":"2026-09-05T00:00:00Z","kind":"policy","scope":"paid plans","verification":"curated"},
+          {"id":"3","date":"2026-09-22T16:44:06Z","kind":"reset","resetType":"banked","usableUntil":"2026-10-22T23:59:59Z","scope":"Pro, Max + Team","verification":"curated"},
+          {"id":"4","date":"2026-10-01T00:00:00Z","kind":"reset"},
+          {"id":"5","kind":"reset"},
+          {"id":"6","date":"2026-10-02T00:00:00Z","kind":"reset","verification":"provisional"}
+        ]},"codex":{"events":[]}},"meta":{"provisionalEventIds":["4"]}}
+        """
+        let events = ResetFeed.claudeResets(from: Data(json.utf8))
+        XCTAssertEqual(events.map(\.id), ["claude-6", "claude-4", "claude-3", "claude-1"], "policies and dateless events are dropped")
+        XCTAssertEqual(events.map(\.isProvisional), [true, true, false, false])
+        XCTAssertEqual(events[2].kind, .banked(usableUntil: ISO8601DateFormatter.parseFlexible("2026-10-22T23:59:59Z")))
+        XCTAssertEqual(events[2].scope, "Pro, Max + Team")
+        XCTAssertEqual(events[2].url?.absoluteString, "https://claude-resets.com", "no post: the tracker")
+        XCTAssertEqual(events[3].note, "Shipped Fable 5.1.")
+        XCTAssertEqual(ResetFeed.claudeResets(from: Data(#"{"providers":{}}"#.utf8)), [])
+    }
+
+    func testResetLinesStayForAWeekOrWhileBankedIsUsable() throws {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        let global = ResetEvent(id: "a", service: .codex, kind: .global, date: date, source: .codexReset)
+        XCTAssertTrue(global.isShown(at: date.addingTimeInterval(6.9 * day)))
+        XCTAssertFalse(global.isShown(at: date.addingTimeInterval(7 * day)))
+        XCTAssertEqual(global.title(at: date.addingTimeInterval(5 * 3600)), "RESET FOR EVERYONE · 5 HOURS AGO")
+
+        let until = try XCTUnwrap(ISO8601DateFormatter.parseFlexible("2026-10-22T23:59:59Z"))
+        let banked = ResetEvent(id: "b", service: .claude, kind: .banked(usableUntil: until),
+                                date: until.addingTimeInterval(-30 * day), scope: "Pro, Max + Team", source: .claudeResets)
+        XCTAssertTrue(banked.isShown(at: until.addingTimeInterval(-1)), "usable for longer than a week")
+        XCTAssertFalse(banked.isShown(at: until.addingTimeInterval(1)))
+        XCTAssertEqual(banked.title(at: until.addingTimeInterval(-day)), "BANKED RESET · USE BY OCT 22")
+
+        let max = ResetEvent(id: "c", service: .claude, kind: .global, date: date, scope: "Max", source: .claudeResets)
+        XCTAssertEqual(max.title(at: date.addingTimeInterval(2 * day)), "RESET FOR MAX · 2 DAYS AGO")
+    }
+
+    func testEarlyWeeklyResetNeedsAnEarlyLaterWindowAndLowerUsage() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let hour: TimeInterval = 3600
+        let day = 24 * hour
+        func mark(_ resetsIn: TimeInterval, _ used: Double) -> ResetWatcher.WeeklyMark {
+            .init(resetsAt: now.addingTimeInterval(resetsIn), usedPercent: used, capturedAt: now)
+        }
+        // Reset two days early: the new week runs from now.
+        XCTAssertTrue(ResetWatcher.isEarlyWeeklyReset(previous: mark(2 * day, 60), current: mark(7 * day, 0), now: now))
+        // Usage barely moved: not a reset.
+        XCTAssertFalse(ResetWatcher.isEarlyWeeklyReset(previous: mark(2 * day, 60), current: mark(7 * day, 57), now: now))
+        // The reset time moved by minutes only.
+        XCTAssertFalse(ResetWatcher.isEarlyWeeklyReset(previous: mark(2 * day, 60), current: mark(2 * day + 600, 0), now: now))
+        // Scheduled: the old reset was due within half an hour, or already passed.
+        XCTAssertFalse(ResetWatcher.isEarlyWeeklyReset(previous: mark(10 * 60, 80), current: mark(7 * day, 0), now: now))
+        XCTAssertFalse(ResetWatcher.isEarlyWeeklyReset(previous: mark(-hour, 80), current: mark(7 * day - hour, 0), now: now))
+    }
+
+    func testEarlyWeeklyResetIgnoresAWrongClock() {
+        let real = Date(timeIntervalSince1970: 1_800_000_000)
+        let day: TimeInterval = 24 * 3600
+        let oldReset = real.addingTimeInterval(-60)
+        let previous = ResetWatcher.WeeklyMark(resetsAt: oldReset, usedPercent: 90, capturedAt: real.addingTimeInterval(-600))
+        let current = ResetWatcher.WeeklyMark(resetsAt: oldReset.addingTimeInterval(7 * day), usedPercent: 0, capturedAt: real)
+        // A scheduled reset seen by a clock two days behind still looks a week apart.
+        XCTAssertFalse(ResetWatcher.isEarlyWeeklyReset(previous: previous, current: current, now: real.addingTimeInterval(-2 * day)))
+        // A clock that jumped past the old reset reads it as scheduled too.
+        let early = ResetWatcher.WeeklyMark(resetsAt: real.addingTimeInterval(5 * day), usedPercent: 0, capturedAt: real)
+        let before = ResetWatcher.WeeklyMark(resetsAt: real.addingTimeInterval(day), usedPercent: 70, capturedAt: real)
+        XCTAssertFalse(ResetWatcher.isEarlyWeeklyReset(previous: before, current: early, now: real.addingTimeInterval(2 * day)))
+    }
+
+    @MainActor
+    func testWatcherRecordsFirstAndAnnouncesOnlyNewResets() throws {
+        let defaults = UserDefaults(suiteName: "limita-tests-\(UUID().uuidString)")!
+        let notifier = RecordingNotifier()
+        let now = Date()
+        func codex(_ hoursAgo: Double) -> ResetEvent {
+            let date = now.addingTimeInterval(-hoursAgo * 3600)
+            return ResetEvent(id: "codex-\(Int(date.timeIntervalSince1970))", service: .codex, kind: .global, date: date, source: .codexReset)
+        }
+        func claude(_ id: String, provisional: Bool = false) -> ResetEvent {
+            ResetEvent(id: id, service: .claude, kind: .global, date: now.addingTimeInterval(-3600), source: .claudeResets, isProvisional: provisional)
+        }
+
+        let watcher = ResetWatcher(notifier: notifier, defaults: defaults, feedURL: { _ in URL(fileURLWithPath: "/dev/null") })
+        watcher.ingest([], for: .claude, now: now)
+        XCTAssertNil(watcher.memory.claudeSeen, "an empty feed records nothing, so its first reset is news")
+        watcher.ingest([codex(5)], for: .codex, now: now)
+        watcher.ingest([claude("a")], for: .claude, now: now)
+        XCTAssertEqual(notifier.events, [], "the first look only records")
+        XCTAssertEqual(watcher.event(for: .codex, now: now)?.id, codex(5).id, "but the line shows")
+
+        watcher.ingest([codex(5)], for: .codex, now: now)
+        watcher.ingest([codex(30)], for: .codex, now: now)
+        XCTAssertEqual(notifier.events, [], "the same reset, or a correction back in time")
+
+        watcher.ingest([claude("b", provisional: true), claude("a")], for: .claude, now: now)
+        XCTAssertEqual(notifier.events, [], "provisional events are not announced")
+
+        // A relaunch remembers what was seen.
+        let relaunched = ResetWatcher(notifier: notifier, defaults: defaults, feedURL: { _ in URL(fileURLWithPath: "/dev/null") })
+        relaunched.ingest([codex(1)], for: .codex, now: now)
+        relaunched.ingest([claude("b"), claude("a")], for: .claude, now: now)
+        relaunched.ingest([claude("b"), claude("a")], for: .claude, now: now)
+        XCTAssertEqual(notifier.events.map(\.id), [codex(1).id, "b"])
+
+        relaunched.notificationsEnabled = false
+        relaunched.ingest([codex(0)], for: .codex, now: now)
+        XCTAssertEqual(notifier.events.count, 2, "turned off in the menu")
+        XCTAssertEqual(relaunched.event(for: .codex, now: now)?.id, codex(0).id, "the line shows either way")
+
+        relaunched.notificationsEnabled = true
+        relaunched.trackedServices = { [.claude] }
+        relaunched.ingest([claude("c")], for: .claude, now: now)
+        relaunched.ingest([codex(-0.5)], for: .codex, now: now)
+        XCTAssertEqual(notifier.events.map(\.id), [codex(1).id, "b", "c"], "untracked services are not announced")
+    }
+
+    @MainActor
+    func testWatcherNoticesEarlyWeeklyResetsAndNewCodexCredits() {
+        let defaults = UserDefaults(suiteName: "limita-tests-\(UUID().uuidString)")!
+        let notifier = RecordingNotifier()
+        let watcher = ResetWatcher(notifier: notifier, defaults: defaults, feedURL: { _ in URL(fileURLWithPath: "/dev/null") })
+        let now = Date()
+        let day: TimeInterval = 24 * 3600
+        func snapshot(resetsIn: TimeInterval, used: Double, at time: Date) -> LimitSnapshot {
+            LimitSnapshot(fiveHour: nil, sevenDay: LimitWindow(usedPercent: used, resetsAt: time.addingTimeInterval(resetsIn)), capturedAt: time)
+        }
+        func details(_ resets: Int) -> AccountDetails {
+            var details = AccountDetails()
+            details.limitResets = resets
+            return details
+        }
+
+        watcher.observe(.codex, snapshot: snapshot(resetsIn: 3 * day, used: 50, at: now), details: details(1), now: now)
+        XCTAssertEqual(notifier.events, [], "first numbers are only recorded")
+
+        // An older snapshot (a stale local file) is ignored.
+        watcher.observe(.codex, snapshot: snapshot(resetsIn: 6 * day, used: 0, at: now.addingTimeInterval(-day)), details: nil, now: now)
+        XCTAssertEqual(notifier.events, [])
+
+        let later = now.addingTimeInterval(600)
+        watcher.observe(.codex, snapshot: snapshot(resetsIn: 7 * day, used: 0, at: later), details: details(2), now: later)
+        XCTAssertEqual(notifier.events.map(\.kind), [.earlyWeekly, .newBankedCredit(count: 2)])
+        XCTAssertEqual(watcher.memory.local.map(\.kind), [.earlyWeekly, .newBankedCredit(count: 2)], "kept for the line across launches")
+        XCTAssertNotNil(watcher.event(for: .codex, now: later))
+        XCTAssertNil(watcher.event(for: .codex, now: later.addingTimeInterval(7 * day)), "gone after a week")
+
+        watcher.observe(.codex, snapshot: snapshot(resetsIn: 7 * day, used: 1, at: later), details: details(1), now: later)
+        XCTAssertEqual(notifier.events.count, 2, "redeeming a reset is not news")
+
+        // The same reset from the tracker is not announced a second time.
+        watcher.ingest([ResetEvent(id: "w", service: .codex, kind: .global, date: now.addingTimeInterval(-3 * day), source: .codexReset)],
+                       for: .codex, now: later)
+        watcher.ingest([ResetEvent(id: "x", service: .codex, kind: .global, date: later.addingTimeInterval(-300), source: .codexReset)],
+                       for: .codex, now: later)
+        XCTAssertEqual(notifier.events.count, 2)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -1159,4 +1347,10 @@ final class LimitaTests: XCTestCase {
         try Data(contents.utf8).write(to: file)
         return file
     }
+}
+
+@MainActor
+private final class RecordingNotifier: ResetNotifying {
+    var events: [ResetEvent] = []
+    func notify(_ event: ResetEvent) { events.append(event) }
 }
