@@ -370,6 +370,60 @@ kbd {
   font: inherit;
 }
 
+/* The one feature that takes the whole row: picture left, words right. */
+@media (min-width: 900px) {
+  .feature.wide {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    align-items: center;
+  }
+}
+
+/* Resets: the dashboard's lines and the macOS notification they come with. */
+.resets-demo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px 32px;
+}
+
+/* The dashboard's captions are 9.5 px; shown on their own, they are drawn larger. */
+.resets-demo .reset-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  zoom: 1.35;
+}
+
+.notification {
+  display: flex;
+  gap: 10px;
+  width: 300px;
+  max-width: 100%;
+  padding: 11px 13px;
+  border-radius: 16px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.notification img {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+
+.notification b {
+  display: block;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.notification span { color: var(--ink-62); }
+
 /* Hover pill and the notch */
 .notch-demo {
   position: relative;
@@ -1023,6 +1077,14 @@ code {
   color: rgba(255, 255, 255, 0.9);
   overflow-wrap: anywhere;
 }
+
+.limita .reset-line { display: flex; flex-direction: column; gap: 3px; }
+.limita .reset-title { display: flex; align-items: baseline; gap: 5px; }
+.limita .reset-title .icon { width: 8px; height: 8px; flex: none; }
+.limita .claude .reset-title .icon { color: var(--claude); }
+.limita .codex .reset-title .icon { color: var(--codex); }
+.limita a.caption { text-decoration: none; }
+.limita a.caption:hover { color: var(--caption); }
 
 /* Activity: the week under the columns, opened by the capsule. */
 

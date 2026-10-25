@@ -35,6 +35,7 @@
     refresh: svg('<path d="M12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35A7.96 7.96 0 0 0 12 4z"/>'),
     cursor: svg('<path d="M5 3l14 8-6 1.8L9.8 19z"/>'),
     chevron: svg('<path d="M5.4 8.6L12 15.2l6.6-6.6 1.4 1.4-8 8-8-8z"/>'),
+    reset: svg('<path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/>'),
   };
 
   function el(tag, className = "", ...children) {
@@ -149,6 +150,7 @@
         { title: "7 DAYS LEFT", value: "99%", fill: 0.99, tone: "accentSoft", resetIn: 5 * DAY + 5 * HOUR + 46 * MINUTE, period: 7 * DAY },
       ],
       details: [["LIMIT RESETS", "2"], ["CREDITS", "0 credits · $0.00"]],
+      reset: { ago: 5 * HOUR, credit: "DATA: CODEX-RESET.COM", site: "https://codex-reset.com" },
       pill: "5h 94% left",
       week: [1, 0, 2, 1, 3, 1, 0],
       summary: [["TOTAL TOKENS", "12.7M"], ["FAVORITE MODEL", "Sol 6"], ["MESSAGES", "312"], ["PEAK HOUR", "11:00"]],
@@ -250,7 +252,23 @@
     if (service.details.length) {
       node.append(el("div", "details", ...service.details.map(([label, value]) => el("div", "tile", el("div", "caption", label), el("div", "tile-value digits", value)))));
     }
+    if (service.reset) node.append(resetLine(service.reset));
     return node;
+  }
+
+  /** "RESET FOR EVERYONE · 5 HOURS AGO", with the tracker's credit under it. */
+  function resetLine(reset) {
+    const title = el("div", "caption reset-title", icon("reset"), el("span", "", resetTitle(reset)));
+    title.querySelector("span:last-child").dataset.resetAgo = "";
+    const credit = el("a", "caption faint", reset.credit);
+    credit.href = reset.site;
+    credit.rel = "noopener";
+    return el("div", "reset-line", title, credit);
+  }
+
+  function resetTitle(reset) {
+    const hours = Math.floor((reset.ago + Date.now() - loadedAt) / HOUR);
+    return `RESET FOR EVERYONE · ${hours} ${hours === 1 ? "HOUR" : "HOURS"} AGO`;
   }
 
   function activityColumn(service) {
@@ -362,6 +380,7 @@
   function tick() {
     for (const node of dashSlot.querySelectorAll("[data-countdown]")) node.textContent = countdown(remaining(node._meter));
     for (const node of dashSlot.querySelectorAll("[data-updated]")) node.textContent = updatedText();
+    for (const node of dashSlot.querySelectorAll("[data-reset-ago]")) node.textContent = resetTitle(services[1].reset);
     const badge = dashSlot.querySelector(".prime-time");
     const peaking = services.some((s) => inPeak(s.id));
     if (Boolean(badge) !== peaking) render();
