@@ -1,3 +1,6 @@
 
 # Python
 __pycache__/
+
+# Coverage data some instrumented builds still drop in the working folder.
+*.profraw
