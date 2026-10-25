@@ -42,6 +42,8 @@ pub struct ServiceView {
     /// Claude's credits as meters, in rows after the limits.
     pub credits: Vec<MeterView>,
     pub details: Vec<DetailRow>,
+    /// The newest limit reset, under the details; absent when there is none to show.
+    pub reset: Option<ResetLine>,
     /// "UPDATED 2 MIN AGO"; absent without data.
     pub updated: Option<String>,
     /// Why the last live update failed, shown under the meters.
@@ -77,6 +79,18 @@ pub enum BarTone {
     Share,
     Warning,
     Critical,
+}
+
+/// "RESET FOR EVERYONE · 5 HOURS AGO", with the tracker's credit under it. Clicking the
+/// line opens the announcement, the credit the tracker (see `Store::reset_link`).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetLine {
+    pub title: String,
+    /// "DATA: CODEX-RESET.COM"; absent for resets Limita noticed itself.
+    pub credit: Option<String>,
+    /// Whether the line leads to an announcement.
+    pub has_link: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -174,6 +188,7 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
         meters: Vec::new(),
         credits: Vec::new(),
         details: Vec::new(),
+        reset: None,
         updated: None,
         error: None,
         message: None,
@@ -220,6 +235,11 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
     let details = snapshot.details.get(&service).cloned().unwrap_or_default();
     view.credits = credit_meters(service, &details, now);
     view.details = detail_rows(service, &details);
+    view.reset = crate::resets::latest(&snapshot.resets, service, now).map(|event| ResetLine {
+        title: event.title(now),
+        credit: event.source.credit().map(String::from),
+        has_link: event.url.is_some(),
+    });
     view.updated = Some(format!("UPDATED {}", updated_text(data.captured_at, now).to_uppercase()));
     view.error = live_error;
     view
@@ -500,6 +520,33 @@ mod tests {
         assert_eq!(meters[1].caption, "RESETS IN 1 HOUR 30 MIN", "a near reset counts down");
         assert!(credit_meters(Service::Claude, &AccountDetails::default(), now).is_empty(), "missing values hide meters");
         assert!(credit_meters(Service::Codex, &details, now).is_empty());
+    }
+
+    #[test]
+    fn each_column_shows_its_newest_reset_with_the_credit() {
+        use crate::resets::{ResetEvent, ResetKind, ResetSource};
+        let now = at(1_800_000_000.0);
+        let mut snapshot = Snapshot { enabled: vec![Service::Claude, Service::Codex], ..Default::default() };
+        for service in Service::ALL {
+            snapshot.states.insert(service, ServiceState::Fresh(LimitSnapshot::new(Some(LimitWindow::new(1.0, None)), None, now)));
+        }
+        let hours_ago = |hours: i64| now - chrono::Duration::hours(hours);
+        let mut global = ResetEvent::new("g".into(), Service::Codex, ResetKind::Global, hours_ago(5), ResetSource::CodexReset);
+        global.url = Some("https://x.com/1".into());
+        let older = ResetEvent::new("o".into(), Service::Codex, ResetKind::Global, hours_ago(30), ResetSource::CodexReset);
+        let gone = ResetEvent::new("c".into(), Service::Claude, ResetKind::Global, hours_ago(24 * 8), ResetSource::ClaudeResets);
+        snapshot.resets = vec![older, global, gone];
+        let view = panel(&snapshot, now);
+        assert_eq!(view.services[0].reset, None, "a reset older than a week is not shown");
+        assert_eq!(
+            view.services[1].reset,
+            Some(ResetLine { title: "RESET FOR EVERYONE · 5 HOURS AGO".into(), credit: Some("DATA: CODEX-RESET.COM".into()), has_link: true })
+        );
+
+        snapshot.resets = vec![ResetEvent::new("e".into(), Service::Claude, ResetKind::EarlyWeekly, hours_ago(2), ResetSource::Local)];
+        let claude = panel(&snapshot, now).services[0].reset.clone().unwrap();
+        assert_eq!(claude.title, "YOUR WEEKLY LIMIT WAS RESET EARLY · 2 HOURS AGO");
+        assert_eq!(claude.credit, None, "nothing to credit for what Limita noticed itself");
     }
 
     #[test]

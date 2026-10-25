@@ -14,6 +14,7 @@ pub mod locator;
 pub mod model;
 pub mod paths;
 pub mod prime_time;
+pub mod resets;
 pub mod settings;
 pub mod statusline;
 pub mod store;

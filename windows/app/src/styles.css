@@ -594,6 +594,35 @@ header {
   overflow-wrap: anywhere;
 }
 
+/* The newest limit reset: the title, then the tracker's credit, both in caption type. */
+.reset-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.reset-title {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  text-align: left;
+}
+
+.reset-title .icon {
+  font-size: 9px;
+  flex: none;
+  align-self: center;
+}
+
+.claude .reset-title .icon { color: var(--claude); }
+.codex .reset-title .icon { color: var(--codex); }
+
+button.reset-title:hover .caption,
+.reset-credit:hover {
+  color: #fff;
+}
+
 .error {
   display: flex;
   align-items: baseline;

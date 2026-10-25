@@ -35,6 +35,8 @@ struct Stored {
     activity_expanded: Option<bool>,
     /// "week", "month" or "all". Absent means all.
     activity_period: Option<String>,
+    /// Whether new limit resets are announced. Absent means on.
+    reset_notifications: Option<bool>,
 }
 
 impl ServiceSettings {
@@ -83,6 +85,17 @@ impl ServiceSettings {
     pub fn set_activity_period(&self, period: crate::activity::Period) {
         let mut stored = self.read();
         stored.activity_period = serde_json::to_value(period).ok().and_then(|v| v.as_str().map(String::from));
+        self.write(&stored);
+    }
+
+    /// Whether new limit resets come as a notification. On unless the user turned it off.
+    pub fn reset_notifications(&self) -> bool {
+        self.read().reset_notifications.unwrap_or(true)
+    }
+
+    pub fn set_reset_notifications(&self, enabled: bool) {
+        let mut stored = self.read();
+        stored.reset_notifications = Some(enabled);
         self.write(&stored);
     }
 

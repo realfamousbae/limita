@@ -28,9 +28,20 @@ export interface ServiceView {
   /** Claude's credits as meters, in rows after the limits. */
   credits: Meter[];
   details: { label: string; value: string }[];
+  /** The newest limit reset, under the details. */
+  reset: ResetLine | null;
   updated: string | null;
   error: string | null;
   message: string | null;
+}
+
+/** "RESET FOR EVERYONE · 5 HOURS AGO", with the tracker's credit under it. */
+export interface ResetLine {
+  title: string;
+  /** "DATA: CODEX-RESET.COM"; null for resets Limita noticed itself. */
+  credit: string | null;
+  /** Whether clicking the title opens the announcement. */
+  hasLink: boolean;
 }
 
 export interface PanelView {

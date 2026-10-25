@@ -19,6 +19,7 @@ use limita_core::{prime_time, view, Service};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_notification::NotificationExt;
 
 use panel::{Mode, Panel};
 use tray::Tray;
@@ -66,6 +67,14 @@ fn refresh(store: State<'_, Store>) {
 fn connect(service: String, store: State<'_, Store>) {
     if let Some(service) = Service::from_id(&service) {
         store.connect(service);
+    }
+}
+
+/// A click on a column's reset line: the announcement, or with `site` the tracker.
+#[tauri::command(async)]
+fn open_reset(service: String, site: bool, store: State<'_, Store>) {
+    if let Some(url) = Service::from_id(&service).and_then(|service| store.reset_link(service, site)) {
+        platform::open_url(&url);
     }
 }
 
@@ -181,6 +190,7 @@ pub fn run() {
         // Started at login, Limita gets `AUTOSTART_FLAG` and stays in the tray.
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![AUTOSTART_FLAG])))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             current,
             refresh,
@@ -193,6 +203,7 @@ pub fn run() {
             activity,
             set_activity_expanded,
             set_activity_period,
+            open_reset,
             install_update
         ])
         .setup(|app| {
@@ -204,6 +215,17 @@ pub fn run() {
                 let _ = changed.send(());
             });
             store.repair_claude_hook_if_needed();
+            // New limit resets come as a Windows notification. Clicking one starts Limita
+            // again, which the single-instance plugin turns into opening the dashboard.
+            let notifier = app.handle().clone();
+            store.set_reset_notifier(Arc::new(move |event| {
+                let _ = notifier
+                    .notification()
+                    .builder()
+                    .title(event.notification_title())
+                    .body(event.notification_body())
+                    .show();
+            }));
             app.manage(store.clone());
             app.manage(Arc::new(ActivityReader::default()));
 

@@ -148,3 +148,27 @@ pub fn register_hotkeys(hotkeys: Vec<HotKey>) -> Vec<bool> {
 pub fn register_hotkeys(hotkeys: Vec<HotKey>) -> Vec<bool> {
     vec![false; hotkeys.len()]
 }
+
+/// Opens an `https://` link in the default browser. Only links Rust chose are opened
+/// (see `open_reset`), never one the webview names.
+#[cfg(windows)]
+pub fn open_url(url: &str) {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    if !url.starts_with("https://") {
+        return;
+    }
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (verb, target) = (wide("open"), wide(url));
+    unsafe {
+        ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
+    }
+}
+
+/// macOS, for development.
+#[cfg(not(windows))]
+pub fn open_url(url: &str) {
+    if url.starts_with("https://") {
+        let _ = std::process::Command::new("open").arg(url).spawn();
+    }
+}
