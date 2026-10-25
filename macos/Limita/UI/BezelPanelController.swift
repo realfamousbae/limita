@@ -91,7 +91,10 @@ final class BezelPanelController {
         panel.level = .statusBar
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
+        // The window server draws the shadow from the content's alpha, so it follows the
+        // rounded dashboard and the pill capsule, and window screenshots (⌘⇧4, Space)
+        // get the same shadow as other apps.
+        panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.isMovable = false
         // Shown on demand, so it moves to whichever Space is active when ordered front,
@@ -183,7 +186,25 @@ final class BezelPanelController {
     private func relayout() {
         guard model.state != .hidden, let layout else { return }
         panel.setFrame(layout.frame(size: size(for: model.state), anchorX: anchorX), display: true)
+        refreshShadow()
     }
+
+    /// The shadow is computed from what the panel shows when asked, not kept up to date,
+    /// so it is recomputed after every resize and once SwiftUI's pill/dashboard spring
+    /// (`PanelRootView`) has settled; otherwise it keeps the previous shape.
+    private func refreshShadow() {
+        panel.invalidateShadow()
+        let state = model.state
+        DispatchQueue.main.asyncAfter(deadline: .now() + shadowSettleDelay) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.model.state == state, state != .hidden else { return }
+                self.panel.invalidateShadow()
+            }
+        }
+    }
+
+    /// Long enough for the spring in `PanelRootView` to come to rest.
+    private let shadowSettleDelay: TimeInterval = 0.4
 
     /// Opens the dashboard under `anchor` (a menu-bar item frame), or under the cursor.
     func showExpanded(below anchor: CGRect? = nil, on screen: NSScreen? = nil) {
@@ -368,6 +389,7 @@ final class BezelPanelController {
                 context.duration = 0.18
                 panel.animator().alphaValue = 1
             }
+            refreshShadow()
             store.refreshIfOlder(than: 15)
         }
     }
