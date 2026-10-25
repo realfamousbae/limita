@@ -61,6 +61,8 @@ final class LimitsStore {
     let activity: ActivityStore
     /// A newer Limita, when GitHub has one; the dashboard shows an install button for it.
     let updater: AppUpdater
+    /// Limit resets from the public trackers and from the user's own numbers.
+    let resets: ResetWatcher
 
     /// Newest snapshot fetched over the network per service.
     @ObservationIgnored private var liveSnapshots: [Service: LimitSnapshot] = [:]
@@ -92,6 +94,7 @@ final class LimitsStore {
         settings: ServiceSettings = ServiceSettings(),
         activity: ActivityStore? = nil,
         updater: AppUpdater? = nil,
+        resets: ResetWatcher? = nil,
         detectInstalled: () -> Set<Service> = { ServiceSettings.detectInstalled() }
     ) {
         self.codexReader = codexReader
@@ -102,6 +105,7 @@ final class LimitsStore {
         self.settings = settings
         self.activity = activity ?? ActivityStore()
         self.updater = updater ?? AppUpdater()
+        self.resets = resets ?? ResetWatcher(defaults: settings.defaults)
         let enabled = settings.load {
             var detected = detectInstalled()
             // An existing status-line hook means the user already chose Claude.
@@ -111,6 +115,7 @@ final class LimitsStore {
         enabledServices = Service.allCases.filter(enabled.contains)
         hoverEnabled = settings.hoverEnabled
         collapsedMeters = settings.collapsedMeters
+        self.resets.trackedServices = { [weak self] in self?.enabledServices ?? [] }
     }
 
     func isCollapsed(_ meter: String, of service: Service) -> Bool {
@@ -223,12 +228,14 @@ final class LimitsStore {
                 if let codexState {
                     states[.codex] = Self.merge(codexState, live: liveSnapshots[.codex], staleAfter: CodexLimitsReader.staleAfter)
                 }
+                resets.observe(.codex, snapshot: states[.codex]?.snapshot, details: details[.codex])
             }
             if isEnabled(.claude) {
                 apply(claudeResult, to: .claude)
                 if let claudeState {
                     states[.claude] = Self.merge(claudeState, live: liveSnapshots[.claude], staleAfter: ClaudeLimitsReader.staleAfter)
                 }
+                resets.observe(.claude, snapshot: states[.claude]?.snapshot, details: details[.claude])
             }
             lastRefresh = Date()
             isRefreshing = false
@@ -305,6 +312,7 @@ final class LimitsStore {
         }
         setEnabled(service, true)
         refresh(live: true)
+        resets.refresh()
     }
 
     /// Stops tracking `service` and drops its data. For Claude this also removes the

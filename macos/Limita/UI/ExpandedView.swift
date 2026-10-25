@@ -251,6 +251,10 @@ struct ExpandedView: View {
 
                 detailTiles(for: service)
 
+                if let event = store.resets.event(for: service, now: now) {
+                    ResetLine(event: event, now: now)
+                }
+
                 if let error = store.liveErrors[service] {
                     ErrorLine(text: error)
                 }
@@ -932,6 +936,46 @@ private struct ErrorLine: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(Color.yellow.opacity(0.9))
+    }
+}
+
+/// The newest limit reset for a column, e.g. "RESET FOR EVERYONE · 5 HOURS AGO", with
+/// the tracker's credit under it. Clicking the line opens the announcement; the credit
+/// opens the tracker.
+struct ResetLine: View {
+    let event: ResetEvent
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            title
+            if let credit = event.source.credit, let site = event.source.site {
+                Link(destination: site) {
+                    Text(credit).caption(faint: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Data from \(site.host ?? credit)")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var title: some View {
+        let text = HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: "arrow.counterclockwise")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(DashboardStyle.accent(for: event.service))
+            Text(event.title(at: now))
+                .caption()
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let url = event.url {
+            Link(destination: url) { text }
+                .buttonStyle(.plain)
+        } else {
+            text
+        }
     }
 }
 

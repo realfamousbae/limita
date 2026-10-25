@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var dashboardHotKey: GlobalHotKey?
     private var hoverHotKey: GlobalHotKey?
     private var hoverMenuItem: NSMenuItem?
+    private var resetNotificationsMenuItem: NSMenuItem?
     private let menu = NSMenu()
     /// One Connect/Disconnect row per service, in display order.
     private var serviceMenuItems: [Service: NSMenuItem] = [:]
@@ -18,6 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.repairClaudeHookIfNeeded()
         store.startAutoRefresh()
         store.updater.start()
+        SystemResetNotifier.shared.activate { [weak self] in
+            self?.panelController?.showAtTopOfCursorScreen()
+        }
+        store.resets.start()
 
         panelController = BezelPanelController(store: store)
         dashboardHotKey = GlobalHotKey(
@@ -111,6 +116,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             hover.keyEquivalentModifierMask = GlobalHotKey.dashboardModifiers
         }
         hoverMenuItem = hover
+        resetNotificationsMenuItem = menu.addItem(
+            withTitle: "Reset Notifications", action: #selector(toggleResetNotifications), keyEquivalent: ""
+        )
         menu.addItem(.separator())
         for service in Service.allCases {
             let item = NSMenuItem(title: "", action: #selector(toggleService(_:)), keyEquivalent: "")
@@ -144,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         hoverMenuItem?.state = store.hoverEnabled ? .on : .off
+        resetNotificationsMenuItem?.state = store.resets.notificationsEnabled ? .on : .off
         for (service, item) in serviceMenuItems {
             item.title = Self.menuTitle(for: service, connected: store.isEnabled(service))
         }
@@ -168,6 +177,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleHover() {
         store.hoverEnabled.toggle()
+    }
+
+    @objc private func toggleResetNotifications() {
+        store.resets.notificationsEnabled.toggle()
     }
 
     @objc private func toggleService(_ sender: NSMenuItem) {
