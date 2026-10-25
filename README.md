@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <a href="https://limita-landing-page-production.up.railway.app">Website</a> · <a href="https://limita-landing-page-production.up.railway.app/ru/">На русском</a>
+</p>
+
+<p align="center">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-000?logo=apple">
   <img alt="Windows 10+" src="https://img.shields.io/badge/Windows-10%2B-0078D4?logo=windows">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white">
