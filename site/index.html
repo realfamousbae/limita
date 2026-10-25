@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Limita: Claude Code and Codex limits in your menu bar</title>
+  <meta name="description" content="Limita is a tiny menu-bar app for macOS and Windows that shows your Claude Code and Codex 5-hour and weekly limits at a glance. Free and open source.">
+  <link rel="canonical" href="https://limita.example/">
+  <link rel="alternate" hreflang="en" href="https://limita.example/">
+  <link rel="alternate" hreflang="ru" href="https://limita.example/ru/">
+  <link rel="alternate" hreflang="x-default" href="https://limita.example/">
+  <meta name="theme-color" content="#000000">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Limita: Claude Code and Codex limits in your menu bar">
+  <meta property="og:description" content="See your 5-hour and weekly limits from the top of your Mac or the Windows tray.">
+  <meta property="og:url" content="https://limita.example/">
+  <meta property="og:image" content="https://limita.example/assets/og.png">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="/assets/favicon-64.png">
+  <link rel="apple-touch-icon" href="/assets/icon-256.png">
+  <link rel="preload" href="/assets/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/main.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <nav class="menubar" aria-label="Site">
+    <div class="mb-menus">
+      <a class="mb-app" href="/">Limita</a>
+      <a href="#features">Features</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/realfamousbae/limita">GitHub</a>
+    </div>
+    <div class="mb-status">
+      <button class="mb-glyph" type="button" aria-controls="stage" aria-expanded="false" aria-label="Show the Limita dashboard" data-show="Show the Limita dashboard" data-hide="Hide the Limita dashboard" hidden>
+        <img src="/assets/status.png" alt="" width="16" height="16">
+      </button>
+      <span class="mb-lang">
+        <a href="/" hreflang="en" lang="en" aria-current="page" data-lang="en">EN</a>
+        <a href="/ru/" hreflang="ru" lang="ru" data-lang="ru" aria-label="Русский">RU</a>
+      </span>
+      <time class="mb-clock" aria-hidden="true"></time>
+    </div>
+  </nav>
+
+  <div class="stage" id="stage" data-state="dashboard">
+    <p class="stage-hint" data-touch="Tap the gauge in the menu bar to open the dashboard.">Move the pointer to the top edge, or click the gauge in the menu bar.</p>
+    <div class="pill-slot"></div>
+    <div class="dash-slot" aria-label="Live demo of the Limita dashboard">
+      <noscript><img class="stage-fallback" src="/assets/dashboard.webp" width="956" height="694" alt="The Limita dashboard with Claude and Codex limits"></noscript>
+    </div>
+  </div>
+
+  <main id="main">
+    <section class="hero wrap">
+      <h1>Claude Code and Codex limits, one glance from the top of your Mac.</h1>
+      <p class="lede">Limita is a tiny menu-bar app that shows how much of your 5-hour and weekly limits you have, without opening a terminal. It runs on Windows too, in the tray.</p>
+      <div class="downloads">
+        <a class="download mac" data-download="mac" href="https://github.com/realfamousbae/limita/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M11 3h2v10.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17zM5 19h14v2H5z"/></svg>
+          Download for macOS
+        </a>
+        <a class="download win" data-download="win" href="https://github.com/realfamousbae/limita/releases/latest">Download for Windows</a>
+      </div>
+      <p class="download-note">Version <span data-version>0.17.0</span> for macOS 14 or later and Windows 10 or 11. Free and <a href="https://github.com/realfamousbae/limita">open source</a>.</p>
+    </section>
+
+    <section class="section wrap" id="features" aria-labelledby="features-title">
+      <h2 id="features-title">Out of the way until you need it</h2>
+      <p class="section-intro">No window to keep open and no Dock icon. Limita checks Claude every 3 minutes and Codex every 5, and shows the numbers where you already look.</p>
+
+      <ul class="features">
+        <li class="feature">
+          <div class="visual" aria-hidden="true">
+            <div class="notch-demo">
+              <div class="notch-bar"></div>
+              <div class="notch-zone"></div>
+              <div class="notch-cam"></div>
+              <span class="pill"><span class="pill-item"><img src="/assets/claude.png" alt=""><span class="dot"></span>5h 15% used</span></span>
+            </div>
+          </div>
+          <div>
+            <h3>A pill at the top edge</h3>
+            <p>Rest the pointer at the top edge of any screen and a pill slides in with each service's 5-hour limit. Click it for the full dashboard. The notch and 80 points on each side of it are left to other apps.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual" aria-hidden="true">
+            <div class="keys">
+              <kbd class="key">⌃<small>control</small></kbd>
+              <kbd class="key">⌥<small>option</small></kbd>
+              <kbd class="key">L</kbd>
+            </div>
+          </div>
+          <div>
+            <h3>One shortcut from any app</h3>
+            <p>Press <kbd>⌃⌥L</kbd> to open the dashboard at the top of the screen, even from a full-screen terminal. Press it again to close it. On Windows it is <kbd>Ctrl+Alt+L</kbd>.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual" aria-hidden="true">
+            <div class="terminal">
+              <div class="term-body">~/projects/app $ claude <span class="cursor"></span></div>
+              <div class="term-status">
+                <span><span class="term-dot"></span>Claude 5h 52% · 7d 49% used</span>
+                <span class="sep">│</span>
+                <span><span class="term-dot"></span>Codex 5h 80% · 7d 64% left</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h3>In iTerm2's status bar</h3>
+            <p>An optional plugin shows your limits in the status bar of tabs where Claude Code or Codex is running, and hides the bar everywhere else. Click the limits to open the dashboard.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual peak-demo">
+            <div class="limita" aria-hidden="true">
+              <div class="prime-time">
+                <span class="burning-gauge"></span>
+                <div class="prime-lines"><div>PEAK HOURS</div><div>USAGE LIMITS RUN OUT FASTER</div></div>
+              </div>
+            </div>
+            <ul class="schedule" data-local="{from}–{to} your time" data-now="peak hours now">
+              <li class="claude" data-peak="claude"><b>Claude</b><span>weekdays, 5–11 AM Pacific</span><span class="local"></span></li>
+              <li class="codex" data-peak="codex"><b>Codex</b><span>weekdays, 12:00–18:00 UTC</span><span class="local"></span></li>
+            </ul>
+          </div>
+          <div>
+            <h3>Knows the peak hours</h3>
+            <p>During a service's peak hours its limits run out faster. The dashboard shows a burning gauge then, and names the service when only one of two is affected.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual" aria-hidden="true">
+            <div class="heatmaps">
+              <div class="heatmap claude" data-seed="7"></div>
+              <div class="heatmap codex" data-seed="3"></div>
+            </div>
+          </div>
+          <div>
+            <h3>Where the tokens went</h3>
+            <p>Activity graphs tokens per day for each service: the last week, a month calendar, or up to half a year. Above it are your total tokens, favorite model, messages and peak hour.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual limita" aria-hidden="true">
+            <span class="update-announce">
+              <span class="announce-lines"><span>LIMITA <span data-version>0.17.0</span> IS OUT</span><span class="muted">CLICK TO UPDATE</span></span>
+              <span class="announce-glyph"><span class="icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 3h2v10.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17zM5 19h14v2H5z"/></svg></span></span>
+            </span>
+          </div>
+          <div>
+            <h3>Updates in one click</h3>
+            <p>When a new version is out, a green button appears in the dashboard. Click it and Limita downloads the update, checks its signature, installs it and reopens.</p>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <section class="section wrap" id="privacy" aria-labelledby="privacy-title">
+      <h2 id="privacy-title">Reads the numbers, nothing else</h2>
+      <p class="section-intro">Limita asks each service for your limits the way its own tools do. Your logins stay where they are.</p>
+
+      <div class="sources">
+        <div class="source claude">
+          <h3><img src="/assets/claude.png" alt="">Claude Code</h3>
+          <p>Limita reads Claude Code's login from the Keychain (macOS asks once) and sends it only to <code>api.anthropic.com</code>, the same request Claude Code's <code>/usage</code> makes. It never stores or renews the login. If that fails, the numbers come from Claude Code's status line.</p>
+        </div>
+        <div class="source codex">
+          <h3><img src="/assets/codex.png" alt="">Codex</h3>
+          <p>Limita asks the Codex CLI itself, through <code>codex app-server</code>, so your login stays inside the CLI. If that fails, it reads the latest limits from the session files in <code>~/.codex</code>.</p>
+        </div>
+      </div>
+
+      <ul class="promises">
+        <li>No accounts, no cookies, no analytics.</li>
+        <li>Prompts, transcripts, project paths and session IDs are ignored.</li>
+        <li>The only other request goes to GitHub, to check for updates.</li>
+      </ul>
+    </section>
+
+    <section class="section wrap" id="install" aria-labelledby="install-title">
+      <h2 id="install-title">Install</h2>
+      <div class="install-grid">
+        <div>
+          <h3>macOS 14 or later</h3>
+          <ol class="steps">
+            <li>Download <a data-download="mac" href="https://github.com/realfamousbae/limita/releases/latest">the DMG</a>, open it and drag <strong>Limita</strong> into <strong>Applications</strong>.</li>
+            <li>The build is not notarized yet. For the first launch, right-click <strong>Limita</strong> in Applications and choose <strong>Open</strong>, or use <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>.</li>
+            <li>On the first Claude refresh, macOS asks whether Limita may read <code>Claude Code-credentials</code>. Choose <strong>Always Allow</strong>.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Windows 10 or 11</h3>
+          <ol class="steps">
+            <li>Download <a data-download="win" href="https://github.com/realfamousbae/limita/releases/latest">the installer</a>.</li>
+            <li>Run it. It installs for your user, with no administrator rights. The installer is not signed yet: on the SmartScreen warning choose <strong>More info → Run anyway</strong>.</li>
+            <li>Limita waits in the tray. Rest the pointer at the middle of the top edge of the screen for the pill.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <div class="footer-row">
+      <a href="https://github.com/realfamousbae/limita">Source on GitHub</a>
+      <a href="https://github.com/realfamousbae/limita/blob/main/LICENSE">MIT license</a>
+      <a href="/assets/OFL.txt">JetBrains Mono, SIL Open Font License</a>
+      <span>Limita is not affiliated with Anthropic or OpenAI.</span>
+    </div>
+  </footer>
+</body>
+</html>
