@@ -50,19 +50,20 @@ Limita is a tiny native menu-bar app that shows how much of your **Claude** and 
 
 This is how Limita looks on your Mac.
 
-<!-- The pills sit on one line with no whitespace between them: gap.png makes their gap
-     22 px, the same as the space between paragraphs below, and 293 + 22 + 505 = 820. -->
+<!-- Window screenshots (⌘⇧4, Space) with the system shadow, taken at 2x. The pills sit
+     on one line with no whitespace between them, their shadows keep them apart, and
+     314 + 506 = 820. Both dashboards are at the same scale: 820 px for two columns,
+     429 px for one. -->
 <p align="center">
-  <img src="docs/screenshots/pill-claude.png" alt="Pill with Claude under the menu bar" width="293"><img src="docs/screenshots/gap.png" alt="" width="22" height="1"><img src="docs/screenshots/pill-both.png" alt="Pill with both services under the menu bar" width="505">
-</p>
-
-<!-- Both dashboards are at the same scale: 820 px for two columns, 465 px for one. -->
-<p align="center">
-  <img src="docs/screenshots/dashboard-both.png" alt="Dashboard with Claude and Codex in peak hours, with Fable's share of the weekly limit and the activity graph" width="820">
+  <img src="docs/screenshots/pill-claude.png" alt="Hover pill with Claude" width="314"><img src="docs/screenshots/pill-both.png" alt="Hover pill with both services" width="506">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/dashboard-claude.png" alt="Dashboard with Claude only, in peak hours" width="465">
+  <img src="docs/screenshots/dashboard-both.png" alt="Dashboard with Claude and Codex: Fable's share of the weekly limit, a Codex reset for everyone and the activity graph" width="820">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/dashboard-claude.png" alt="Dashboard with Claude only, with the activity graph" width="429">
 </p>
 
 ## Install
