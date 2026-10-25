@@ -19,6 +19,7 @@ use crate::tray_icon;
 const SHOW: &str = "show";
 const REFRESH: &str = "refresh";
 const LOGIN: &str = "launch-at-login";
+const RESET_NOTIFICATIONS: &str = "reset-notifications";
 const QUIT: &str = "quit";
 
 /// Level, stale, light taskbar, tooltip: everything the icon is drawn from.
@@ -49,6 +50,8 @@ impl Tray {
             .collect::<tauri::Result<_>>()?;
         let at_login = app.autolaunch().is_enabled().unwrap_or(false);
         let login = CheckMenuItem::with_id(app, LOGIN, "Launch at Login", true, at_login, None::<&str>)?;
+        let notifications =
+            CheckMenuItem::with_id(app, RESET_NOTIFICATIONS, "Reset Notifications", true, store.reset_notifications(), None::<&str>)?;
         let quit = MenuItem::with_id(app, QUIT, "Quit Limita", true, None::<&str>)?;
 
         let menu = Menu::new(app)?;
@@ -59,6 +62,7 @@ impl Tray {
             menu.append(item)?;
         }
         menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&notifications)?;
         menu.append(&login)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
         menu.append(&quit)?;
@@ -88,9 +92,10 @@ impl Tray {
                 }
             })
             .on_menu_event(move |app, event| {
-                let (app, store, panel, login) = (app.clone(), menu_store.clone(), menu_panel.clone(), login.clone());
+                let (app, store, panel) = (app.clone(), menu_store.clone(), menu_panel.clone());
+                let checks = (login.clone(), notifications.clone());
                 // Off the main thread; see the note on commands in lib.rs.
-                std::thread::spawn(move || handle_menu(&app, &event, &store, &panel, &login));
+                std::thread::spawn(move || handle_menu(&app, &event, &store, &panel, &checks));
             })
             .build(app)?;
 
@@ -126,7 +131,10 @@ fn physical(position: Position, size: Size, scale: f64) -> Area {
     Area::new(position.x, position.y, size.width, size.height)
 }
 
-fn handle_menu(app: &AppHandle, event: &MenuEvent, store: &Store, panel: &Arc<Panel>, login: &CheckMenuItem<tauri::Wry>) {
+/// Launch at Login and Reset Notifications, whose checkmarks follow the setting.
+type Checks = (CheckMenuItem<tauri::Wry>, CheckMenuItem<tauri::Wry>);
+
+fn handle_menu(app: &AppHandle, event: &MenuEvent, store: &Store, panel: &Arc<Panel>, (login, notifications): &Checks) {
     match event.id().as_ref() {
         SHOW => panel.show_dashboard(),
         REFRESH => {
@@ -137,6 +145,10 @@ fn handle_menu(app: &AppHandle, event: &MenuEvent, store: &Store, panel: &Arc<Pa
             let enable = !manager.is_enabled().unwrap_or(false);
             let _ = if enable { manager.enable() } else { manager.disable() };
             let _ = login.set_checked(manager.is_enabled().unwrap_or(enable));
+        }
+        RESET_NOTIFICATIONS => {
+            store.set_reset_notifications(!store.reset_notifications());
+            let _ = notifications.set_checked(store.reset_notifications());
         }
         QUIT => app.exit(0),
         id => {

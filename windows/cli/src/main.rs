@@ -71,15 +71,23 @@ fn dump() -> i32 {
     }
     println!();
 
-    // All services, and settings in a throwaway file so the app's choice is untouched.
+    // All services, and settings and seen resets in throwaway files so the app's are
+    // untouched: a reset seen here must still be announced by the app.
     let mut sources = Sources::standard(None);
-    sources.settings.file = std::env::temp_dir().join(format!("limita-dump-{}.json", std::process::id()));
-    let settings_file = sources.settings.file.clone();
+    let temp = |name: &str| std::env::temp_dir().join(format!("limita-dump-{name}-{}.json", std::process::id()));
+    sources.settings.file = temp("settings");
+    sources.resets_file = temp("resets");
+    let files = [sources.settings.file.clone(), sources.resets_file.clone()];
     let store = Store::new(sources, || Service::ALL.into(), || {});
     if let Some(worker) = store.refresh(true) {
         let _ = worker.join();
     }
-    let _ = std::fs::remove_file(settings_file);
+    for worker in store.refresh_resets() {
+        let _ = worker.join();
+    }
+    for file in files {
+        let _ = std::fs::remove_file(file);
+    }
 
     let snapshot = store.snapshot();
     let now = Utc::now();

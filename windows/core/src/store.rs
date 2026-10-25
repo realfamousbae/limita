@@ -16,6 +16,7 @@ use crate::claude_live::{self, ClaudeLiveClient};
 use crate::codex_live::CodexLiveClient;
 use crate::codex_reader::{self, CodexLimitsReader};
 use crate::model::{AccountDetails, LimitSnapshot, LiveReading, Service, ServiceState};
+use crate::resets::{self, ResetEvent, ResetFetch, ResetWatcher};
 use crate::settings::{self, ServiceSettings};
 use crate::statusline::{self, Configurator};
 use crate::time::{seconds_between, Timestamp};
@@ -42,6 +43,9 @@ pub struct Sources {
     /// from the usage API alone.
     pub configurator: Option<Configurator>,
     pub settings: ServiceSettings,
+    /// The public trackers of limit resets, and where what was seen of them is saved.
+    pub reset_fetch: ResetFetch,
+    pub resets_file: std::path::PathBuf,
 }
 
 impl Sources {
@@ -56,6 +60,8 @@ impl Sources {
             claude_live: Arc::new(move |now| claude.fetch(now)),
             configurator: cli_path.filter(|p| p.is_file()).map(Configurator::new),
             settings: ServiceSettings::default(),
+            reset_fetch: resets::standard_fetch(),
+            resets_file: resets::standard_file(),
         }
     }
 }
@@ -73,6 +79,9 @@ pub struct Snapshot {
     pub is_refreshing: bool,
     /// Result of the last connect/disconnect, for the service it concerns.
     pub setup_message: Option<(Service, String)>,
+    /// Limit resets from the public trackers and from the user's own numbers; each
+    /// column shows its newest one (`resets::latest`).
+    pub resets: Vec<ResetEvent>,
 }
 
 impl Snapshot {
@@ -103,6 +112,7 @@ pub struct Store {
     inner: Arc<Mutex<Inner>>,
     sources: Arc<Sources>,
     on_change: Arc<dyn Fn() + Send + Sync>,
+    resets: ResetWatcher,
 }
 
 impl Store {
@@ -122,7 +132,14 @@ impl Store {
         });
         let mut inner = Inner::default();
         inner.public.enabled = Service::ALL.into_iter().filter(|s| enabled.contains(s)).collect();
-        Self { inner: Arc::new(Mutex::new(inner)), sources: Arc::new(sources), on_change: Arc::new(on_change) }
+        let on_change: Arc<dyn Fn() + Send + Sync> = Arc::new(on_change);
+        let resets = ResetWatcher::new(
+            sources.resets_file.clone(),
+            sources.settings.clone(),
+            sources.reset_fetch.clone(),
+            on_change.clone(),
+        );
+        Self { inner: Arc::new(Mutex::new(inner)), sources: Arc::new(sources), on_change, resets }
     }
 
     /// The standard store for this machine.
@@ -143,7 +160,40 @@ impl Store {
     }
 
     pub fn snapshot(&self) -> Snapshot {
-        self.lock().public.clone()
+        let mut snapshot = self.lock().public.clone();
+        snapshot.resets = self.resets.events();
+        snapshot
+    }
+
+    /// How new limit resets are announced, e.g. a system notification.
+    pub fn set_reset_notifier(&self, notify: resets::Notify) {
+        self.resets.set_notifier(notify);
+    }
+
+    pub fn reset_notifications(&self) -> bool {
+        self.resets.notifications_enabled()
+    }
+
+    pub fn set_reset_notifications(&self, enabled: bool) {
+        self.resets.set_notifications_enabled(enabled);
+    }
+
+    /// Asks the reset trackers of the connected services. Returns the workers, which
+    /// tests join.
+    pub fn refresh_resets(&self) -> Vec<JoinHandle<()>> {
+        let enabled = self.lock().public.enabled.clone();
+        self.resets.refresh(&enabled, Utc::now())
+    }
+
+    /// Where a column's reset line leads: the announcement, or with `site` the tracker.
+    pub fn reset_link(&self, service: Service, site: bool) -> Option<String> {
+        let events = self.resets.events();
+        let event = resets::latest(&events, service, Utc::now())?;
+        if site {
+            event.source.site().map(String::from)
+        } else {
+            event.url.clone()
+        }
     }
 
     pub fn is_enabled(&self, service: Service) -> bool {
@@ -161,6 +211,15 @@ impl Store {
                 store.refresh(false);
             })
             .expect("spawn the refresh thread");
+        self.refresh_resets();
+        let store = self.clone();
+        std::thread::Builder::new()
+            .name("limita-resets".into())
+            .spawn(move || loop {
+                std::thread::sleep(Duration::from_secs_f64(resets::POLL_INTERVAL));
+                store.refresh_resets();
+            })
+            .expect("spawn the reset-tracker thread");
     }
 
     /// Re-reads local sources unless that happened within `max_age` seconds — for opening
@@ -232,8 +291,9 @@ impl Store {
                 (codex_local, claude_local, codex_remote.map(join), claude_remote.map(join))
             });
 
-            let pending = {
+            let (pending, observed) = {
                 let mut inner = store.lock();
+                let mut observed = Vec::new();
                 // A service disconnected while this refresh ran must stay cleared.
                 for (service, local, remote, stale_after) in [
                     (Service::Codex, codex_local, codex_remote, codex_reader::STALE_AFTER),
@@ -247,11 +307,17 @@ impl Store {
                         let merged = merge(local, inner.live_snapshots.get(&service).cloned(), stale_after, Utc::now());
                         inner.public.states.insert(service, merged);
                     }
+                    let snapshot = inner.public.states.get(&service).and_then(ServiceState::snapshot).cloned();
+                    observed.push((service, snapshot, inner.public.details.get(&service).cloned()));
                 }
                 inner.last_refresh = Some(Utc::now());
                 inner.public.is_refreshing = false;
-                std::mem::take(&mut inner.pending_live)
+                (std::mem::take(&mut inner.pending_live), observed)
             };
+            // A weekly window that started over early, or a new Codex limit reset.
+            for (service, snapshot, details) in observed {
+                store.resets.observe(service, snapshot.as_ref(), details.as_ref(), Utc::now());
+            }
             (store.on_change)();
             if pending {
                 store.refresh(true);
@@ -275,6 +341,7 @@ impl Store {
         }
         (self.on_change)();
         self.refresh(true);
+        self.refresh_resets();
     }
 
     /// Stops tracking `service` and drops its data. For Claude this also removes the
@@ -430,6 +497,8 @@ mod tests {
                 stable_roots: vec!["/Apps".into()],
             }),
             settings: ServiceSettings { file: root.join("settings.json") },
+            reset_fetch: Arc::new(|_, _| Ok(Vec::new())),
+            resets_file: root.join("resets.json"),
         }
     }
 

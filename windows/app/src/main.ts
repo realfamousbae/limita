@@ -345,7 +345,23 @@ function column(service: ServiceView): HTMLElement {
       el("div", "details", ...service.details.map((row) => el("div", "tile", el("div", "caption", row.label), el("div", "tile-value digits", row.value)))),
     );
   }
+  if (service.reset) node.append(resetLine(service.id, service.reset));
   if (service.error) node.append(el("div", "error", icon("warning"), el("span", "", service.error)));
+  return node;
+}
+
+/** The newest limit reset, e.g. "RESET FOR EVERYONE · 5 HOURS AGO", with the tracker's
+ *  credit under it. The title opens the announcement, the credit the tracker; Rust
+ *  picks both links (`open_reset`). */
+function resetLine(service: ServiceView["id"], line: NonNullable<ServiceView["reset"]>): HTMLElement {
+  const title = el(line.hasLink ? "button" : "div", "reset-title", icon("reset"), el("span", "caption", line.title));
+  if (line.hasLink) title.addEventListener("click", () => invoke("open_reset", { service, site: false }));
+  const node = el("div", "reset-line", title);
+  if (line.credit) {
+    const credit = el("button", "caption faint reset-credit", line.credit);
+    credit.addEventListener("click", () => invoke("open_reset", { service, site: true }));
+    node.append(credit);
+  }
   return node;
 }
 
