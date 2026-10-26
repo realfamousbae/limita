@@ -50,6 +50,21 @@ final class LimitsStore {
         }
     }
     @ObservationIgnored var onHoverEnabledChange: ((Bool) -> Void)?
+    /// Whether the dashboard floats where the user put it: it stays open until closed by
+    /// the shortcut, the menu-bar icon or this toggle, on every Space. Saved with its position.
+    var floatingEnabled: Bool {
+        didSet {
+            guard floatingEnabled != oldValue else { return }
+            settings.floatingEnabled = floatingEnabled
+            onFloatingChange?(floatingEnabled)
+        }
+    }
+    @ObservationIgnored var onFloatingChange: ((Bool) -> Void)?
+    /// Where the floating dashboard was last left, as its top-left corner.
+    var floatingOrigin: CGPoint? {
+        get { settings.floatingOrigin }
+        set { settings.floatingOrigin = newValue }
+    }
     /// Meters folded into a capsule under the others. Saved, like the activity panel.
     private(set) var collapsedMeters: Set<String> {
         didSet {
@@ -114,6 +129,7 @@ final class LimitsStore {
         }
         enabledServices = Service.allCases.filter(enabled.contains)
         hoverEnabled = settings.hoverEnabled
+        floatingEnabled = settings.floatingEnabled
         collapsedMeters = settings.collapsedMeters
         self.resets.trackedServices = { [weak self] in self?.enabledServices ?? [] }
     }

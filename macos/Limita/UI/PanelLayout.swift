@@ -67,6 +67,26 @@ struct PanelLayout: Equatable {
         return CGRect(x: x, y: y, width: size.width, height: size.height)
     }
 
+    /// The floating dashboard: a frame of `size` with its top-left corner at `topLeft`,
+    /// moved just enough to lie within the visible frame of the screen nearest to that
+    /// corner. A screen that has since gone leaves the window on the nearest one left.
+    static func pinnedFrame(size: CGSize, topLeft: CGPoint, visibleFrames: [CGRect]) -> CGRect {
+        let unclamped = CGRect(x: topLeft.x, y: topLeft.y - size.height, width: size.width, height: size.height)
+        guard let screen = visibleFrames.min(by: { distance(topLeft, $0) < distance(topLeft, $1) }) else {
+            return unclamped
+        }
+        // A window larger than the screen keeps its top-left corner on it.
+        let x = max(screen.minX, min(topLeft.x, screen.maxX - size.width))
+        let top = min(screen.maxY, max(topLeft.y, screen.minY + size.height))
+        return CGRect(x: x, y: top - size.height, width: size.width, height: size.height)
+    }
+
+    private static func distance(_ point: CGPoint, _ rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return hypot(dx, dy)
+    }
+
     private func clamp(_ value: CGFloat, _ lower: CGFloat, _ upper: CGFloat) -> CGFloat {
         max(lower, min(value, upper))
     }

@@ -8,6 +8,8 @@ struct ServiceSettings: @unchecked Sendable {
     static let enabledKey = "enabledServices"
     static let hoverKey = "hoverPillEnabled"
     static let collapsedKey = "collapsedMeters"
+    static let floatingKey = "floatingWindowEnabled"
+    static let floatingOriginKey = "floatingWindowOrigin"
 
     let defaults: UserDefaults
 
@@ -29,6 +31,28 @@ struct ServiceSettings: @unchecked Sendable {
     var hoverEnabled: Bool {
         get { defaults.object(forKey: Self.hoverKey) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Self.hoverKey) }
+    }
+
+    /// Whether the dashboard floats where the user left it instead of hanging from the
+    /// menu bar. Off unless the user turned it on.
+    var floatingEnabled: Bool {
+        get { defaults.bool(forKey: Self.floatingKey) }
+        nonmutating set { defaults.set(newValue, forKey: Self.floatingKey) }
+    }
+
+    /// Top-left corner of the floating dashboard in global screen coordinates, once moved.
+    var floatingOrigin: CGPoint? {
+        get {
+            guard let pair = defaults.array(forKey: Self.floatingOriginKey) as? [Double], pair.count == 2 else { return nil }
+            return CGPoint(x: pair[0], y: pair[1])
+        }
+        nonmutating set {
+            if let point = newValue {
+                defaults.set([Double(point.x), Double(point.y)], forKey: Self.floatingOriginKey)
+            } else {
+                defaults.removeObject(forKey: Self.floatingOriginKey)
+            }
+        }
     }
 
     /// Meters folded into a capsule under the others, as `"claude.FABLE"`.

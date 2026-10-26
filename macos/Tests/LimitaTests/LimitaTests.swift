@@ -662,7 +662,44 @@ final class LimitaTests: XCTestCase {
         XCTAssertTrue(layout.isTrigger(CGPoint(x: 2472, y: 1079)))
     }
 
+    func testPinnedFrameKeepsTheTopLeftCornerOnItsScreen() {
+        let laptop = CGRect(x: 0, y: 0, width: 1512, height: 944)
+        let external = CGRect(x: 1512, y: 0, width: 1920, height: 1055)
+        let size = CGSize(width: 600, height: 300)
+
+        let inside = PanelLayout.pinnedFrame(size: size, topLeft: CGPoint(x: 100, y: 800), visibleFrames: [laptop, external])
+        XCTAssertEqual(inside, CGRect(x: 100, y: 500, width: 600, height: 300), "left where it was put")
+
+        let pastRight = PanelLayout.pinnedFrame(size: size, topLeft: CGPoint(x: 3300, y: 1200), visibleFrames: [laptop, external])
+        XCTAssertEqual(pastRight, CGRect(x: 2832, y: 755, width: 600, height: 300), "pulled back onto the nearest screen")
+
+        let tooLow = PanelLayout.pinnedFrame(size: size, topLeft: CGPoint(x: 100, y: 100), visibleFrames: [laptop])
+        XCTAssertEqual(tooLow.minY, 0, "the bottom stays on screen")
+
+        let screenGone = PanelLayout.pinnedFrame(size: size, topLeft: CGPoint(x: 2500, y: 900), visibleFrames: [laptop])
+        XCTAssertTrue(laptop.contains(screenGone), "a disconnected monitor's window moves to the one left")
+
+        let huge = PanelLayout.pinnedFrame(size: CGSize(width: 2000, height: 1200), topLeft: CGPoint(x: 400, y: 500), visibleFrames: [laptop])
+        XCTAssertEqual(CGPoint(x: huge.minX, y: huge.maxY), CGPoint(x: 0, y: 944), "too big: the top-left corner stays visible")
+    }
+
     // MARK: - Connected services
+
+    func testFloatingWindowIsOffUntilTurnedOnAndRemembersItsCorner() {
+        let defaults = UserDefaults(suiteName: "limita-tests-\(UUID().uuidString)")!
+        let settings = ServiceSettings(defaults: defaults)
+        XCTAssertFalse(settings.floatingEnabled)
+        XCTAssertNil(settings.floatingOrigin)
+
+        settings.floatingEnabled = true
+        settings.floatingOrigin = CGPoint(x: 1600.5, y: 900)
+        let reloaded = ServiceSettings(defaults: defaults)
+        XCTAssertTrue(reloaded.floatingEnabled)
+        XCTAssertEqual(reloaded.floatingOrigin, CGPoint(x: 1600.5, y: 900))
+
+        reloaded.save([.claude])
+        XCTAssertTrue(reloaded.floatingEnabled, "saving services keeps the floating choice")
+    }
 
     func testServiceSettingsDetectOnceThenKeepChoice() {
         let defaults = UserDefaults(suiteName: "limita-tests-\(UUID().uuidString)")!
