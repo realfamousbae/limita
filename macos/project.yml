@@ -12,6 +12,8 @@ settings:
   configs:
     Release:
       CLANG_ENABLE_CODE_COVERAGE: NO
+      ENABLE_CODE_COVERAGE: NO
+      CLANG_COVERAGE_MAPPING: NO
 
 targets:
   Limita:
@@ -43,3 +45,16 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.limita.tests
+
+# Explicit scheme: Xcode's auto-generated one gathers coverage, which leaks into
+# Release builds and makes the status line command write default.profraw.
+schemes:
+  Limita:
+    build:
+      targets:
+        Limita: all
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - LimitaTests
