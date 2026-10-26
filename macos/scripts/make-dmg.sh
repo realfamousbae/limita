@@ -11,8 +11,11 @@ OUT="$ROOT/build"
 WIDTH=660 HEIGHT=440 TITLEBAR=28 ICON_Y=210 APP_X=180 APPS_X=480 ICON=112
 
 cd "$ROOT"
+# Coverage off on the command line, which beats scheme and project: an instrumented
+# binary writes default.profraw into every folder Claude Code runs the status line in.
 xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Release \
-    -destination 'generic/platform=macOS' -derivedDataPath "$BUILD/DerivedData" build -quiet
+    -destination 'generic/platform=macOS' -derivedDataPath "$BUILD/DerivedData" build -quiet \
+    ENABLE_CODE_COVERAGE=NO CLANG_COVERAGE_MAPPING=NO
 APP="$BUILD/DerivedData/Build/Products/Release/Limita.app"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 VOLUME="Limita $VERSION"
