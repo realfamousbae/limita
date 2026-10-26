@@ -104,7 +104,7 @@ struct ExpandedView: View {
             textWidth(appCaption, font: AppFont.ns(DashboardStyle.captionSize), tracking: DashboardStyle.captionTracking)
         )
         let left = appGlyphSize + headerSpacing + titles
-        let buttons: CGFloat = updateButton ? 4 : 3
+        let buttons: CGFloat = updateButton ? 5 : 4
         let right = buttons * headerButtonSize + (buttons - 1) * headerSpacing
         guard let primeTime else { return 2 * headerPadding + left + headerSpacing + right }
         // Each side of the badge: a spacer of zero or more between two header spacings.
@@ -177,6 +177,19 @@ struct ExpandedView: View {
             .buttonStyle(.plain)
             .help(store.hoverEnabled ? "Turn off the hover pill (⌃⌥H)" : "Turn on the hover pill (⌃⌥H)")
             .accessibilityLabel(store.hoverEnabled ? "Turn off hover pill" : "Turn on hover pill")
+
+            Button {
+                store.floatingEnabled.toggle()
+            } label: {
+                ZStack {
+                    Circle().fill(Color.white.opacity(0.08))
+                    FloatingWindowGlyph(crossedOut: !store.floatingEnabled)
+                }
+                .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
+            }
+            .buttonStyle(.plain)
+            .help(store.floatingEnabled ? "Unpin the floating window (⌃⌥P)" : "Pin as a floating window (⌃⌥P)")
+            .accessibilityLabel(store.floatingEnabled ? "Unpin floating window" : "Pin as floating window")
 
             Button {
                 store.showsMenuBarIcon.toggle()
@@ -735,6 +748,20 @@ struct HoverPillGlyph: View {
         ZStack {
             Image(systemName: "cursorarrow")
                 .font(.system(size: 11, weight: .bold))
+            if crossedOut { GlyphSlash() }
+        }
+    }
+}
+
+/// The floating-window toggle: a pin, plain while the dashboard floats, crossed out while
+/// it hangs from the menu bar.
+struct FloatingWindowGlyph: View {
+    let crossedOut: Bool
+
+    var body: some View {
+        ZStack {
+            Image(systemName: "pin.fill")
+                .font(.system(size: 10, weight: .bold))
             if crossedOut { GlyphSlash() }
         }
     }

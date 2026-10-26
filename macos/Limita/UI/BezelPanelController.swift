@@ -22,6 +22,8 @@ final class PanelModel {
 /// - The menu-bar icon opens the dashboard directly; a click outside closes it.
 /// - The global shortcut toggles the dashboard at the top of the screen under the cursor;
 ///   `limita://dashboard` (the iTerm2 status-bar component) opens it there.
+/// - Floating (⌃⌥P): the dashboard is pinned where the user drags it, on every Space, and
+///   stays open until the shortcut, the menu-bar icon or the toggle closes it.
 ///
 /// The notch area is left alone on purpose — see `PanelLayout`.
 @MainActor
@@ -70,6 +72,7 @@ final class BezelPanelController {
     private var clickMonitor: Any?
     private var screenObserver: NSObjectProtocol?
     private var spaceObserver: NSObjectProtocol?
+    private var moveObserver: NSObjectProtocol?
     private var dwellTimer: Timer?
     private var hideTimer: Timer?
 
@@ -79,6 +82,13 @@ final class BezelPanelController {
     /// Opened from the pill: follows the cursor. Opened from the menu bar: stays until
     /// a click outside.
     private var hoverDriven = false
+
+    /// The dashboard floats where the user put it instead of hanging from the menu bar.
+    private var floating = false
+    /// Top-left corner of the floating dashboard; it grows and shrinks downwards from it.
+    private var pinnedTopLeft: CGPoint?
+    /// Set while the controller moves the panel itself, so only the user's drags are saved.
+    private var isPlacing = false
 
     init(store: LimitsStore) {
         self.store = store
@@ -113,12 +123,19 @@ final class BezelPanelController {
         panel.contentView = hosting
 
         setHoverEnabled(store.hoverEnabled)
+        floating = store.floatingEnabled
+        pinnedTopLeft = store.floatingOrigin
+        applyFloatingBehaviour()
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.hide() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // The floating dashboard stays, moved back onto a screen if its own is gone.
+                if self.isFloatingShown { self.relayout() } else { self.hide() }
+            }
         }
         // Switching desktops by gesture or shortcut involves no click, so without this
         // the panel would count as open on a Space the user has left.
@@ -127,16 +144,33 @@ final class BezelPanelController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.hide(animated: false) }
+            MainActor.assumeIsolated {
+                guard let self, !self.isFloatingShown else { return }
+                self.hide(animated: false)
+            }
+        }
+        moveObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification,
+            object: panel,
+            // Delivered right away, while `isPlacing` still tells our moves from the user's.
+            queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.panelMoved() }
         }
         observeServices()
     }
 
     var isExpanded: Bool { model.state == .expanded && isOnScreen }
 
-    /// Whether the panel can actually be seen, whatever `model.state` says.
+    /// Whether the panel can actually be seen, whatever `model.state` says. The floating
+    /// dashboard is on every Space.
     private var isOnScreen: Bool {
-        panel.isVisible && panel.isOnActiveSpace
+        panel.isVisible && (panel.isOnActiveSpace || isFloatingShown)
+    }
+
+    /// The dashboard is open as the floating window.
+    private var isFloatingShown: Bool {
+        floating && model.state == .expanded && panel.isVisible
     }
 
     /// A panel left on another Space, or ordered out behind our back, is hidden in
@@ -184,9 +218,81 @@ final class BezelPanelController {
     }
 
     private func relayout() {
-        guard model.state != .hidden, let layout else { return }
-        panel.setFrame(layout.frame(size: size(for: model.state), anchorX: anchorX), display: true)
+        guard model.state != .hidden, let frame = targetFrame(for: model.state) else { return }
+        place(frame, display: true)
         refreshShadow()
+    }
+
+    /// Where the panel goes in `state`: the floating dashboard at its pinned corner,
+    /// anything else hanging from the top of `layout`'s screen.
+    private func targetFrame(for state: PanelState) -> CGRect? {
+        let size = size(for: state)
+        guard floating, state == .expanded else {
+            return layout?.frame(size: size, anchorX: anchorX)
+        }
+        let topLeft = pinnedTopLeft ?? defaultPinnedTopLeft(size: size)
+        let frame = PanelLayout.pinnedFrame(size: size, topLeft: topLeft, visibleFrames: NSScreen.screens.map(\.visibleFrame))
+        // Never dragged: stay where it first appeared, growing downwards from there.
+        if pinnedTopLeft == nil { pinnedTopLeft = CGPoint(x: frame.minX, y: frame.maxY) }
+        return frame
+    }
+
+    /// Before the first drag the floating dashboard opens where the ordinary one would:
+    /// where it is open now, or centred at the top of the screen under the cursor.
+    private func defaultPinnedTopLeft(size: CGSize) -> CGPoint {
+        let frame = layout?.frame(size: size, anchorX: anchorX) ?? {
+            let screen = screenContaining(NSEvent.mouseLocation) ?? NSScreen.main
+            guard let screen else { return CGRect(origin: .zero, size: size) }
+            return PanelLayout(screen: screen).frame(size: size, anchorX: screen.frame.midX)
+        }()
+        return CGPoint(x: frame.minX, y: frame.maxY)
+    }
+
+    private func place(_ frame: CGRect, display: Bool) {
+        isPlacing = true
+        panel.setFrame(frame, display: display)
+        isPlacing = false
+    }
+
+    /// The user dragged the floating dashboard: remember where it is now.
+    private func panelMoved() {
+        guard !isPlacing, isFloatingShown else { return }
+        let topLeft = CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        guard topLeft != pinnedTopLeft else { return }
+        pinnedTopLeft = topLeft
+        store.floatingOrigin = topLeft
+    }
+
+    // MARK: - Floating
+
+    /// Pins the dashboard as a floating window, or returns it to the menu bar. Turning it
+    /// on opens the dashboard there; turning it off closes it.
+    func setFloating(_ enabled: Bool) {
+        guard enabled != floating else { return }
+        floating = enabled
+        applyFloatingBehaviour()
+        if enabled {
+            forgetOffscreenPanel()
+            hoverDriven = false
+            if model.state == .expanded {
+                removeClickMonitor()
+                relayout()
+            } else {
+                transition(to: .expanded)
+            }
+        } else {
+            hide()
+        }
+    }
+
+    /// The floating dashboard can be dragged by its background and is on every Space; the
+    /// ordinary one is fixed and moves to whichever Space is active when ordered front.
+    private func applyFloatingBehaviour() {
+        panel.isMovable = floating
+        panel.isMovableByWindowBackground = floating
+        panel.collectionBehavior = floating
+            ? [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
+            : [.moveToActiveSpace, .ignoresCycle, .fullScreenAuxiliary]
     }
 
     /// The shadow is computed from what the panel shows when asked, not kept up to date,
@@ -207,7 +313,9 @@ final class BezelPanelController {
     private let shadowSettleDelay: TimeInterval = 0.4
 
     /// Opens the dashboard under `anchor` (a menu-bar item frame), or under the cursor.
+    /// The floating dashboard opens where it is pinned instead.
     func showExpanded(below anchor: CGRect? = nil, on screen: NSScreen? = nil) {
+        if floating { return showFloating() }
         guard let screen = screen ?? screenContaining(NSEvent.mouseLocation) ?? NSScreen.main else { return }
         layout = PanelLayout(screen: screen)
         anchorX = anchor?.midX ?? NSEvent.mouseLocation.x
@@ -229,9 +337,15 @@ final class BezelPanelController {
     /// Opens the dashboard centred at the top of the screen the cursor is on. Never
     /// toggles: the click that asks for it has already closed an open one.
     func showAtTopOfCursorScreen() {
+        if floating { return showFloating() }
         guard let screen = screenContaining(NSEvent.mouseLocation) ?? NSScreen.main else { return }
         layout = PanelLayout(screen: screen)
         anchorX = screen.frame.midX
+        hoverDriven = false
+        transition(to: .expanded)
+    }
+
+    private func showFloating() {
         hoverDriven = false
         transition(to: .expanded)
     }
@@ -342,6 +456,8 @@ final class BezelPanelController {
 
     private func expandFromPill() {
         guard model.state == .pill else { return }
+        // The floating dashboard does not follow the cursor.
+        if floating { hoverDriven = false }
         transition(to: .expanded)
     }
 
@@ -377,12 +493,16 @@ final class BezelPanelController {
             })
 
         case .pill, .expanded:
-            guard let layout else { return }
-            let size = size(for: state)
+            guard let frame = targetFrame(for: state) else { return }
             let wasHidden = model.state == .hidden
-            panel.setFrame(layout.frame(size: size, anchorX: anchorX), display: false)
+            place(frame, display: false)
             model.state = state
-            installClickMonitor()
+            // Only the shortcut, the menu-bar icon or the toggle closes the floating dashboard.
+            if floating, state == .expanded {
+                removeClickMonitor()
+            } else {
+                installClickMonitor()
+            }
             if wasHidden { panel.alphaValue = 0 }
             panel.orderFrontRegardless()
             NSAnimationContext.runAnimationGroup { context in

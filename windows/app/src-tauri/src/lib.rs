@@ -35,6 +35,7 @@ use updater::{UpdateView, Updater};
 struct Current {
     mode: Mode,
     hover_pill: bool,
+    floating: bool,
     /// Shown next to the app name, so a screenshot tells which version it is.
     version: String,
     view: view::PanelView,
@@ -46,6 +47,7 @@ fn current(app: AppHandle, panel: State<'_, Arc<Panel>>, store: State<'_, Store>
     Current {
         mode: panel.mode(),
         hover_pill: panel.hover_pill(),
+        floating: panel.floating(),
         version: app.package_info().version.to_string(),
         view: view::panel(&store.snapshot(), Utc::now()),
         update: updater.view(),
@@ -91,6 +93,17 @@ fn expand(panel: State<'_, Arc<Panel>>) {
 #[tauri::command(async)]
 fn toggle_hover_pill(panel: State<'_, Arc<Panel>>) {
     panel.toggle_hover_pill();
+}
+
+#[tauri::command(async)]
+fn toggle_floating(panel: State<'_, Arc<Panel>>) {
+    panel.toggle_floating();
+}
+
+/// A press on the header of the floating dashboard: the user moves it.
+#[tauri::command(async)]
+fn start_drag(panel: State<'_, Arc<Panel>>) {
+    panel.start_drag();
 }
 
 #[tauri::command(async)]
@@ -199,6 +212,8 @@ pub fn run() {
             expand,
             hide_panel,
             toggle_hover_pill,
+            toggle_floating,
+            start_drag,
             panel_resized,
             activity,
             set_activity_expanded,
@@ -236,20 +251,40 @@ pub fn run() {
             app.manage(panel.clone());
             let dashboard_panel = panel.clone();
             let hover_panel = panel.clone();
+            let floating_panel = panel.clone();
             let registered = platform::register_hotkeys(vec![
                 platform::HotKey { letter: b'L', on_press: Box::new(move || dashboard_panel.toggle_from_shortcut()) },
                 platform::HotKey { letter: b'H', on_press: Box::new(move || hover_panel.toggle_hover_pill()) },
+                platform::HotKey { letter: b'P', on_press: Box::new(move || floating_panel.toggle_floating()) },
             ]);
-            let tray = Tray::create(&handle, &store, panel.clone(), registered[0])?;
+            let tray = Tray::create(&handle, &store, panel.clone(), registered[0], registered[2])?;
             app.manage(tray.clone());
 
             if let Some(window) = app.get_webview_window(panel::WINDOW) {
                 let blur_panel = panel.clone();
-                window.on_window_event(move |event| {
-                    if let WindowEvent::Focused(false) = event {
+                // Moves go through one thread, in order, so the last one is what is saved.
+                let (moved, moves) = mpsc::channel::<(i32, i32)>();
+                let move_panel = panel.clone();
+                std::thread::Builder::new()
+                    .name("limita-moves".into())
+                    .spawn(move || {
+                        while let Ok(mut position) = moves.recv() {
+                            while let Ok(newer) = moves.try_recv() {
+                                position = newer;
+                            }
+                            move_panel.moved(position.0, position.1);
+                        }
+                    })
+                    .expect("spawn the moves thread");
+                window.on_window_event(move |event| match event {
+                    WindowEvent::Focused(false) => {
                         let panel = blur_panel.clone();
                         std::thread::spawn(move || panel.blurred());
                     }
+                    WindowEvent::Moved(position) => {
+                        let _ = moved.send((position.x, position.y));
+                    }
+                    _ => {}
                 });
             }
 
@@ -265,8 +300,9 @@ pub fn run() {
                 let _ = autolaunch.enable();
             }
             // Opened by hand (Start menu, a shortcut, or after an update): show the
-            // dashboard, so a fresh start is never just an icon in the tray.
-            if !std::env::args().any(|arg| arg == AUTOSTART_FLAG) {
+            // dashboard, so a fresh start is never just an icon in the tray. At login only
+            // a floating dashboard shows, since it is meant to be always there.
+            if !std::env::args().any(|arg| arg == AUTOSTART_FLAG) || panel.floating() {
                 std::thread::spawn(move || {
                     std::thread::sleep(Duration::from_millis(500));
                     panel.show_dashboard();

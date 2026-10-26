@@ -155,6 +155,22 @@ impl Store {
         self.sources.settings.set_hover_pill(enabled);
     }
 
+    pub fn floating(&self) -> bool {
+        self.sources.settings.floating()
+    }
+
+    pub fn set_floating(&self, enabled: bool) {
+        self.sources.settings.set_floating(enabled);
+    }
+
+    pub fn floating_position(&self) -> Option<(i32, i32)> {
+        self.sources.settings.floating_position()
+    }
+
+    pub fn set_floating_position(&self, position: (i32, i32)) {
+        self.sources.settings.set_floating_position(position);
+    }
+
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }

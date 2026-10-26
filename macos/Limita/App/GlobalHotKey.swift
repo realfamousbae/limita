@@ -15,6 +15,10 @@ final class GlobalHotKey {
     static let hoverToggle = (keyCode: UInt32(kVK_ANSI_H), carbonModifiers: UInt32(controlKey | optionKey))
     static let hoverToggleKeyEquivalent = "h"
 
+    /// ⌃⌥P: pins the dashboard as a floating window, or unpins it.
+    static let floatingToggle = (keyCode: UInt32(kVK_ANSI_P), carbonModifiers: UInt32(controlKey | optionKey))
+    static let floatingToggleKeyEquivalent = "p"
+
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private let action: () -> Void

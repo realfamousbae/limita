@@ -7,7 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var dashboardHotKey: GlobalHotKey?
     private var hoverHotKey: GlobalHotKey?
+    private var floatingHotKey: GlobalHotKey?
     private var hoverMenuItem: NSMenuItem?
+    private var floatingMenuItem: NSMenuItem?
     private var resetNotificationsMenuItem: NSMenuItem?
     private let menu = NSMenu()
     /// One Connect/Disconnect row per service, in display order.
@@ -41,12 +43,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) { [weak self] in
             self?.store.hoverEnabled.toggle()
         }
+        store.onFloatingChange = { [weak self] enabled in
+            self?.panelController?.setFloating(enabled)
+        }
+        floatingHotKey = GlobalHotKey(
+            id: 3,
+            keyCode: GlobalHotKey.floatingToggle.keyCode,
+            modifiers: GlobalHotKey.floatingToggle.carbonModifiers
+        ) { [weak self] in
+            self?.store.floatingEnabled.toggle()
+        }
         setupStatusItem()
 
         // Opened by hand (Launchpad, Finder, Spotlight, or after an update): show the
         // dashboard, so a fresh start is never just an icon in the menu bar. Started by
-        // the system at login: stay out of the way.
-        if CommandLine.arguments.contains("--show") || !launchedAsLoginItem {
+        // the system at login: stay out of the way, unless the dashboard is pinned as a
+        // floating window, which is meant to be always there.
+        if CommandLine.arguments.contains("--show") || !launchedAsLoginItem || store.floatingEnabled {
             // The status item is positioned on the next layout pass.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.showLimits()
@@ -116,6 +129,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             hover.keyEquivalentModifierMask = GlobalHotKey.dashboardModifiers
         }
         hoverMenuItem = hover
+        let floating = menu.addItem(withTitle: "Floating Window", action: #selector(toggleFloating), keyEquivalent: "")
+        if floatingHotKey != nil {
+            floating.keyEquivalent = GlobalHotKey.floatingToggleKeyEquivalent
+            floating.keyEquivalentModifierMask = GlobalHotKey.dashboardModifiers
+        }
+        floatingMenuItem = floating
         resetNotificationsMenuItem = menu.addItem(
             withTitle: "Reset Notifications", action: #selector(toggleResetNotifications), keyEquivalent: ""
         )
@@ -139,7 +158,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let wantsMenu = event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true
         if wantsMenu {
             guard let statusItem else { return }
-            panelController?.hide()
+            // The floating dashboard stays open under the menu.
+            if !store.floatingEnabled { panelController?.hide() }
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
@@ -152,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         hoverMenuItem?.state = store.hoverEnabled ? .on : .off
+        floatingMenuItem?.state = store.floatingEnabled ? .on : .off
         resetNotificationsMenuItem?.state = store.resets.notificationsEnabled ? .on : .off
         for (service, item) in serviceMenuItems {
             item.title = Self.menuTitle(for: service, connected: store.isEnabled(service))
@@ -177,6 +198,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleHover() {
         store.hoverEnabled.toggle()
+    }
+
+    @objc private func toggleFloating() {
+        store.floatingEnabled.toggle()
     }
 
     @objc private func toggleResetNotifications() {
