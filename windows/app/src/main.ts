@@ -9,6 +9,8 @@ import type { ActivityDay, ActivityGrid, ActivityPanel, Meter, Mode, PanelView, 
 let mode: Mode = "hidden";
 let view: PanelView | null = null;
 let hoverPill = true;
+/** The dashboard floats where the user drags it (see `Panel::set_floating`). */
+let floating = false;
 /** A newer Limita, when GitHub has one (see `updater.rs`). */
 let update: { version: string | null; installing: boolean; error: string | null } = { version: null, installing: false, error: null };
 let version = "";
@@ -90,6 +92,10 @@ function dashboard(current: PanelView): HTMLElement {
   hover.title = hoverPill ? "Turn off the hover pill (Ctrl+Alt+H)" : "Turn on the hover pill (Ctrl+Alt+H)";
   hover.addEventListener("click", () => invoke("toggle_hover_pill"));
 
+  const pin = el("button", `round${floating ? "" : " crossed"}`, icon("pin"));
+  pin.title = floating ? "Unpin the floating window (Ctrl+Alt+P)" : "Pin as a floating window (Ctrl+Alt+P)";
+  pin.addEventListener("click", () => invoke("toggle_floating"));
+
   // Only while a newer version is out: an arrow down to a line, in the healthy green.
   let install: HTMLElement | null = null;
   let announcing = false;
@@ -137,7 +143,7 @@ function dashboard(current: PanelView): HTMLElement {
     "",
     el("div", "header-side", glyph, el("div", "titles", el("div", "name-row", el("span", "app-name", "LIMITA"), version && el("span", "version", `v${version}`)), el("div", "caption", "AI USAGE MONITOR"))),
     badge,
-    el("div", "header-side end", install, hover, current.services.length > 0 && refresh),
+    el("div", "header-side end", install, hover, pin, current.services.length > 0 && refresh),
   );
 
   const body =
@@ -417,12 +423,15 @@ function sizeMeters(longest: string) {
 
 async function start() {
   await document.fonts.load('10px "JetBrains Mono"');
-  const current = await invoke<{ mode: Mode; hoverPill: boolean; version: string; view: PanelView; update: typeof update }>("current");
+  const current = await invoke<{ mode: Mode; hoverPill: boolean; floating: boolean; version: string; view: PanelView; update: typeof update }>(
+    "current",
+  );
   version = current.version;
   update = current.update;
   view = current.view;
   mode = current.mode;
   hoverPill = current.hoverPill;
+  floating = current.floating;
   sizeMeters(view.longestResetText);
   render(true);
   loadActivity();
@@ -435,6 +444,10 @@ async function start() {
     hoverPill = event.payload.enabled;
     render();
   });
+  await listen<{ enabled: boolean }>("floating", (event) => {
+    floating = event.payload.enabled;
+    render();
+  });
   await listen<typeof update>("update", (event) => {
     update = event.payload;
     render();
@@ -443,6 +456,12 @@ async function start() {
     mode = event.payload.mode;
     render(true);
     if (mode === "dashboard") loadActivity();
+  });
+  // The floating dashboard moves when dragged by anything but a button, as on macOS.
+  app.addEventListener("mousedown", (event) => {
+    if (!floating || mode !== "dashboard" || event.button !== 0) return;
+    if ((event.target as Element).closest("button, a, input")) return;
+    invoke("start_drag");
   });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") invoke("hide_panel");

@@ -93,6 +93,15 @@ impl Screen {
         Area::new(x, y, width, height)
     }
 
+    /// The floating dashboard: a frame of `size` with its top-left corner at `top_left`,
+    /// moved just enough to lie within the work area. Too big a window keeps its top-left
+    /// corner visible.
+    pub fn pinned(&self, size: (f64, f64), top_left: (f64, f64)) -> Area {
+        let x = top_left.0.clamp(self.work.x, (self.work.right() - size.0).max(self.work.x));
+        let y = top_left.1.clamp(self.work.y, (self.work.bottom() - size.1).max(self.work.y));
+        Area::new(x, y, size.0, size.1)
+    }
+
     /// Where the cursor keeps a hover-opened panel open: the panel, the strip between it
     /// and the top edge the cursor crosses to reach it, and some slop.
     pub fn hover_zone(&self, panel: Area) -> Area {
@@ -172,6 +181,16 @@ mod tests {
         let frame = s.beside_tray((520.0, 300.0), Area::new(1880.0, 1000.0, 24.0, 24.0));
         assert_eq!(frame.right(), 1854.0);
         assert_eq!(frame.bottom(), 1074.0);
+    }
+
+    #[test]
+    fn floating_dashboard_stays_where_put_within_the_work_area() {
+        let s = screen(1.0);
+        assert_eq!(s.pinned((520.0, 300.0), (100.0, 200.0)), Area::new(100.0, 200.0, 520.0, 300.0));
+        let pushed = s.pinned((520.0, 300.0), (1800.0, 1000.0));
+        assert_eq!((pushed.right(), pushed.bottom()), (1920.0, 1032.0), "kept off the taskbar and on screen");
+        assert_eq!(s.pinned((2400.0, 1200.0), (300.0, 300.0)).x, 0.0, "too big: the top-left corner stays visible");
+        assert_eq!(s.pinned((2400.0, 1200.0), (300.0, 300.0)).y, 0.0);
     }
 
     #[test]

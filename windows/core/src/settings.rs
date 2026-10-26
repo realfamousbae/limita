@@ -37,6 +37,10 @@ struct Stored {
     activity_period: Option<String>,
     /// Whether new limit resets are announced. Absent means on.
     reset_notifications: Option<bool>,
+    /// Whether the dashboard floats where the user put it. Absent means off.
+    floating: Option<bool>,
+    /// Top-left corner of the floating dashboard in physical pixels, once moved.
+    floating_position: Option<(i32, i32)>,
 }
 
 impl ServiceSettings {
@@ -64,6 +68,28 @@ impl ServiceSettings {
     pub fn set_hover_pill(&self, enabled: bool) {
         let mut stored = self.read();
         stored.hover_pill = Some(enabled);
+        self.write(&stored);
+    }
+
+    /// Whether the dashboard floats where the user put it instead of next to the tray.
+    pub fn floating(&self) -> bool {
+        self.read().floating.unwrap_or(false)
+    }
+
+    pub fn set_floating(&self, enabled: bool) {
+        let mut stored = self.read();
+        stored.floating = Some(enabled);
+        self.write(&stored);
+    }
+
+    /// Where the floating dashboard was last left, as its top-left corner.
+    pub fn floating_position(&self) -> Option<(i32, i32)> {
+        self.read().floating_position
+    }
+
+    pub fn set_floating_position(&self, position: (i32, i32)) {
+        let mut stored = self.read();
+        stored.floating_position = Some(position);
         self.write(&stored);
     }
 
@@ -160,6 +186,19 @@ mod tests {
         settings.save(&[Service::Codex].into());
         assert!(!settings.hover_pill(), "saving services keeps the hover choice");
         assert_eq!(settings.load(BTreeSet::new), [Service::Codex].into());
+    }
+
+    #[test]
+    fn floating_defaults_off_and_remembers_its_corner() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = ServiceSettings { file: dir.path().join("settings.json") };
+        assert!(!settings.floating());
+        assert_eq!(settings.floating_position(), None);
+        settings.set_floating(true);
+        settings.set_floating_position((-1200, 40));
+        settings.save(&[Service::Claude].into());
+        assert!(settings.floating(), "saving services keeps the floating choice");
+        assert_eq!(settings.floating_position(), Some((-1200, 40)));
     }
 
     #[test]

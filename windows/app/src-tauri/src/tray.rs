@@ -20,6 +20,7 @@ const SHOW: &str = "show";
 const REFRESH: &str = "refresh";
 const LOGIN: &str = "launch-at-login";
 const RESET_NOTIFICATIONS: &str = "reset-notifications";
+const FLOATING: &str = "floating-window";
 const QUIT: &str = "quit";
 
 /// Level, stale, light taskbar, tooltip: everything the icon is drawn from.
@@ -28,6 +29,7 @@ type Drawn = (Option<limita_core::LimitLevel>, bool, bool, String);
 pub struct Tray {
     icon: TrayIcon,
     services: Vec<(Service, MenuItem<tauri::Wry>)>,
+    floating: CheckMenuItem<tauri::Wry>,
     /// What the icon shows now, to skip redrawing an identical one.
     shown: Mutex<Option<Drawn>>,
 }
@@ -37,9 +39,12 @@ pub fn menu_title(service: Service, connected: bool) -> String {
 }
 
 impl Tray {
-    /// `shortcut`: Ctrl+Alt+L was registered, so "Show Limits" shows it as a hint.
-    pub fn create(app: &AppHandle, store: &Store, panel: Arc<Panel>, shortcut: bool) -> tauri::Result<Arc<Self>> {
+    /// `shortcut`, `floating_shortcut`: Ctrl+Alt+L and Ctrl+Alt+P were registered, so their
+    /// items show them as a hint.
+    pub fn create(app: &AppHandle, store: &Store, panel: Arc<Panel>, shortcut: bool, floating_shortcut: bool) -> tauri::Result<Arc<Self>> {
         let show = MenuItem::with_id(app, SHOW, "Show Limits", true, shortcut.then_some("Ctrl+Alt+L"))?;
+        let floating =
+            CheckMenuItem::with_id(app, FLOATING, "Floating Window", true, panel.floating(), floating_shortcut.then_some("Ctrl+Alt+P"))?;
         let refresh = MenuItem::with_id(app, REFRESH, "Refresh", true, None::<&str>)?;
         let services: Vec<_> = Service::ALL
             .into_iter()
@@ -57,6 +62,7 @@ impl Tray {
         let menu = Menu::new(app)?;
         menu.append(&show)?;
         menu.append(&refresh)?;
+        menu.append(&floating)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
         for (_, item) in &services {
             menu.append(item)?;
@@ -99,7 +105,12 @@ impl Tray {
             })
             .build(app)?;
 
-        Ok(Arc::new(Self { icon, services, shown: Mutex::new(Some((summary.level, summary.stale, light, summary.tooltip))) }))
+        Ok(Arc::new(Self { icon, services, floating, shown: Mutex::new(Some((summary.level, summary.stale, light, summary.tooltip))) }))
+    }
+
+    /// Puts the Floating Window checkmark in step, however the mode was switched.
+    pub fn set_floating(&self, enabled: bool) {
+        let _ = self.floating.set_checked(enabled);
     }
 
     /// Redraws the icon and tooltip and retitles the Connect/Disconnect items.
@@ -137,6 +148,11 @@ type Checks = (CheckMenuItem<tauri::Wry>, CheckMenuItem<tauri::Wry>);
 fn handle_menu(app: &AppHandle, event: &MenuEvent, store: &Store, panel: &Arc<Panel>, (login, notifications): &Checks) {
     match event.id().as_ref() {
         SHOW => panel.show_dashboard(),
+        // The click has already flipped the checkmark; put it in step with the mode.
+        FLOATING => {
+            panel.toggle_floating();
+            app.state::<Arc<Tray>>().set_floating(panel.floating());
+        }
         REFRESH => {
             store.refresh(true);
         }

@@ -28,7 +28,8 @@ onto the taskbar to keep it visible.
   click it for the dashboard. It never takes keyboard focus and does not appear over
   full-screen or borderless full-screen apps such as games.
 - **Shortcuts.** **Ctrl+Alt+L** opens the dashboard at the top of the screen the cursor
-  is on, or closes it; **Ctrl+Alt+H** turns the hover pill on or off. Ctrl+Alt+L also
+  is on, or closes it; **Ctrl+Alt+H** turns the hover pill on or off; **Ctrl+Alt+P** pins
+  the dashboard as a floating window you can drag anywhere. Ctrl+Alt+L also
   works in other apps, so it replaces Reformat Code in JetBrains IDEs and AltGr+L on
   layouts that type a letter with it (Polish ł).
 

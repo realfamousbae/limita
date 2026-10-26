@@ -4,6 +4,8 @@
 //! - Resting the cursor at the top edge of a screen shows a compact pill there; clicking
 //!   it expands the dashboard. Moving away hides either again.
 //! - The tray icon opens the dashboard next to it; clicking elsewhere closes it.
+//! - Floating (Ctrl+Alt+P): the dashboard stays where the user drags it until the
+//!   shortcut, the tray icon or the toggle closes it, and never takes the keyboard.
 //!
 //! The webview renders whatever mode it is told and reports the size it needs; the panel
 //! is sized and placed here, in physical pixels of the target monitor.
@@ -44,12 +46,14 @@ enum Anchor {
     Top { screen: Screen, x: f64 },
     /// Next to the tray icon.
     Tray { screen: Screen, icon: Area },
+    /// The floating dashboard, its top-left corner at `x`, `y`.
+    Pinned { screen: Screen, x: f64, y: f64 },
 }
 
 impl Anchor {
     fn screen(&self) -> Screen {
         match self {
-            Anchor::Top { screen, .. } | Anchor::Tray { screen, .. } => *screen,
+            Anchor::Top { screen, .. } | Anchor::Tray { screen, .. } | Anchor::Pinned { screen, .. } => *screen,
         }
     }
 
@@ -59,6 +63,7 @@ impl Anchor {
         match self {
             Anchor::Top { screen, x } => screen.below_top(size, *x),
             Anchor::Tray { screen, icon } => screen.beside_tray(size, *icon),
+            Anchor::Pinned { screen, x, y } => screen.pinned(size, (*x, *y)),
         }
     }
 }
@@ -81,6 +86,8 @@ struct State {
     outside_since: Option<Instant>,
     blur_hidden_at: Option<Instant>,
     last_tray_icon: Option<Area>,
+    /// Top-left corner of the floating dashboard; it grows and shrinks downwards from it.
+    pinned: Option<(f64, f64)>,
     screens: Vec<Screen>,
     screens_read_at: Option<Instant>,
 }
@@ -92,6 +99,8 @@ pub struct Panel {
     /// Whether resting the cursor at the screen edge shows the pill. While it is off and
     /// nothing is open, the hover thread sleeps and does not poll the cursor at all.
     hover_pill: AtomicBool,
+    /// Whether the dashboard floats where the user put it.
+    floating: AtomicBool,
     /// Wakes the sleeping hover thread.
     wake: Mutex<mpsc::Sender<()>>,
     wake_receiver: Mutex<Option<mpsc::Receiver<()>>>,
@@ -103,6 +112,11 @@ pub struct HoverPayload {
 }
 
 #[derive(Clone, Serialize)]
+pub struct FloatingPayload {
+    pub enabled: bool,
+}
+
+#[derive(Clone, Serialize)]
 pub struct ModePayload {
     pub mode: Mode,
 }
@@ -110,8 +124,10 @@ pub struct ModePayload {
 impl Panel {
     pub fn new(app: AppHandle, store: Store) -> Arc<Self> {
         let (wake, wake_receiver) = mpsc::channel();
+        let pinned = store.floating_position().map(|(x, y)| (f64::from(x), f64::from(y)));
         Arc::new(Self {
             hover_pill: AtomicBool::new(store.hover_pill()),
+            floating: AtomicBool::new(store.floating()),
             wake: Mutex::new(wake),
             wake_receiver: Mutex::new(Some(wake_receiver)),
             app,
@@ -129,6 +145,7 @@ impl Panel {
                 outside_since: None,
                 blur_hidden_at: None,
                 last_tray_icon: None,
+                pinned,
                 screens: Vec::new(),
                 screens_read_at: None,
             }),
@@ -173,6 +190,89 @@ impl Panel {
         self.set_hover_pill(!self.hover_pill());
     }
 
+    pub fn floating(&self) -> bool {
+        self.floating.load(Ordering::Relaxed)
+    }
+
+    /// Pins the dashboard as a floating window, or returns it to the tray, and remembers
+    /// the choice. Turning it on opens the dashboard; turning it off closes it.
+    pub fn set_floating(&self, enabled: bool) {
+        if self.floating.swap(enabled, Ordering::Relaxed) == enabled {
+            return;
+        }
+        self.store.set_floating(enabled);
+        {
+            let mut state = self.lock();
+            if enabled {
+                if state.mode == Mode::Dashboard {
+                    // Stays where it is open now until it is dragged.
+                    if state.pinned.is_none() {
+                        state.pinned = state.frame.map(|frame| (frame.x, frame.y));
+                    }
+                }
+                let anchor = self.pinned_anchor(&mut state).or_else(|| self.top_of_cursor_screen(&mut state));
+                self.transition(&mut state, Mode::Dashboard, false, anchor);
+            } else {
+                self.transition(&mut state, Mode::Hidden, false, None);
+            }
+        }
+        // Outside the lock: the menu call waits for the main thread.
+        if let Some(tray) = self.app.try_state::<Arc<crate::tray::Tray>>() {
+            tray.set_floating(enabled);
+        }
+        let _ = self.app.emit("floating", FloatingPayload { enabled });
+    }
+
+    pub fn toggle_floating(&self) {
+        self.set_floating(!self.floating());
+    }
+
+    /// The floating dashboard's place, once it has one.
+    fn pinned_anchor(&self, state: &mut State) -> Option<Anchor> {
+        if !self.floating() {
+            return None;
+        }
+        let (x, y) = state.pinned?;
+        screen_containing(&self.screens(state), x, y).map(|screen| Anchor::Pinned { screen, x, y })
+    }
+
+    /// Centred at the top of the screen the cursor is on.
+    fn top_of_cursor_screen(&self, state: &mut State) -> Option<Anchor> {
+        let screens = self.screens(state);
+        let cursor = self.app.cursor_position().ok();
+        let screen = cursor.and_then(|c| screen_containing(&screens, c.x, c.y)).or_else(|| screens.first().copied())?;
+        Some(Anchor::Top { screen, x: screen.frame.x + screen.frame.width / 2.0 })
+    }
+
+    /// The window moved. A move the panel did not make is the user dragging the floating
+    /// dashboard: it stays there from now on.
+    pub fn moved(&self, x: i32, y: i32) {
+        let mut state = self.lock();
+        if !self.floating() || state.mode != Mode::Dashboard {
+            return;
+        }
+        let Some(frame) = state.frame else { return };
+        let (x, y) = (f64::from(x), f64::from(y));
+        if frame.x.round() == x && frame.y.round() == y {
+            return;
+        }
+        state.frame = Some(Area::new(x, y, frame.width, frame.height));
+        state.pinned = Some((x, y));
+        if let Some(screen) = screen_containing(&self.screens(&mut state), x, y) {
+            state.anchor = Some(Anchor::Pinned { screen, x, y });
+        }
+        self.store.set_floating_position((x as i32, y as i32));
+    }
+
+    /// Drags the floating dashboard by its header. The ordinary one stays put.
+    pub fn start_drag(&self) {
+        if self.floating() && self.mode() == Mode::Dashboard {
+            if let Some(window) = self.window() {
+                let _ = window.start_dragging();
+            }
+        }
+    }
+
     fn wake_hover_thread(&self) {
         let _ = self.wake.lock().unwrap_or_else(|p| p.into_inner()).send(());
     }
@@ -191,6 +291,10 @@ impl Panel {
         if state.blur_hidden_at.is_some_and(|at| at.elapsed() < BLUR_GRACE) {
             return;
         }
+        if let Some(anchor) = self.pinned_anchor(&mut state) {
+            self.transition(&mut state, Mode::Dashboard, false, Some(anchor));
+            return;
+        }
         let Some(screen) = screen_containing(&self.screens(&mut state), icon.x + icon.width / 2.0, icon.y + icon.height / 2.0)
         else {
             return;
@@ -202,6 +306,10 @@ impl Panel {
     /// or under the cursor before the tray has been clicked.
     pub fn show_dashboard(&self) {
         let mut state = self.lock();
+        if let Some(anchor) = self.pinned_anchor(&mut state) {
+            self.transition(&mut state, Mode::Dashboard, false, Some(anchor));
+            return;
+        }
         let screens = self.screens(&mut state);
         let anchor = match state.last_tray_icon {
             Some(icon) => screen_containing(&screens, icon.x + icon.width / 2.0, icon.y + icon.height / 2.0)
@@ -224,21 +332,18 @@ impl Panel {
             self.transition(&mut state, Mode::Hidden, false, None);
             return;
         }
-        let screens = self.screens(&mut state);
-        let cursor = self.app.cursor_position().ok();
-        let Some(screen) = cursor.and_then(|c| screen_containing(&screens, c.x, c.y)).or_else(|| screens.first().copied()) else {
-            return;
-        };
-        let x = screen.frame.x + screen.frame.width / 2.0;
-        self.transition(&mut state, Mode::Dashboard, false, Some(Anchor::Top { screen, x }));
+        let anchor = self.pinned_anchor(&mut state).or_else(|| self.top_of_cursor_screen(&mut state));
+        self.transition(&mut state, Mode::Dashboard, false, anchor);
     }
 
     /// The pill was clicked.
     pub fn expand(&self) {
         let mut state = self.lock();
         if state.mode == Mode::Pill {
-            let anchor = state.anchor;
-            self.transition(&mut state, Mode::Dashboard, true, anchor);
+            // The floating dashboard opens where it is pinned and does not follow the cursor.
+            let floating = self.floating();
+            let anchor = self.pinned_anchor(&mut state).or(state.anchor);
+            self.transition(&mut state, Mode::Dashboard, !floating, anchor);
         }
     }
 
@@ -250,7 +355,7 @@ impl Panel {
     /// The window lost focus: a tray-opened dashboard closes, as a click elsewhere should.
     pub fn blurred(&self) {
         let mut state = self.lock();
-        if state.mode == Mode::Dashboard && !state.hover_driven {
+        if state.mode == Mode::Dashboard && !state.hover_driven && !self.floating() {
             state.blur_hidden_at = Some(Instant::now());
             self.transition(&mut state, Mode::Hidden, false, None);
         }
@@ -279,7 +384,7 @@ impl Panel {
         std::thread::Builder::new()
             .name("limita-hover".into())
             .spawn(move || loop {
-                if !panel.hover_pill() && panel.mode() == Mode::Hidden {
+                if panel.idle() {
                     // A wake-up sent after the check above is queued, so it is not lost.
                     if wake.recv().is_err() {
                         return;
@@ -291,6 +396,20 @@ impl Panel {
                 panel.track_cursor();
             })
             .expect("spawn the hover thread");
+    }
+
+    /// Nothing to watch: no pill to pop, no hover-opened panel to follow, no click outside
+    /// to close on, and no window waiting for its size.
+    fn idle(&self) -> bool {
+        let state = self.lock();
+        if state.pending_show {
+            return false;
+        }
+        match state.mode {
+            Mode::Hidden => !self.hover_pill(),
+            Mode::Dashboard => self.floating() && !state.hover_driven,
+            Mode::Pill => false,
+        }
     }
 
     fn track_cursor(&self) {
@@ -305,7 +424,8 @@ impl Panel {
 
         // A click anywhere else closes the panel, as on macOS. Focus alone is not enough:
         // Windows may refuse to focus the dashboard, and then it never blurs.
-        if state.mode != Mode::Hidden && crate::platform::mouse_button_down() {
+        let pinned = self.floating() && state.mode == Mode::Dashboard;
+        if state.mode != Mode::Hidden && !pinned && crate::platform::mouse_button_down() {
             let on_panel = state.frame.is_some_and(|frame| frame.contains(cursor.x, cursor.y));
             let on_tray = state.last_tray_icon.is_some_and(|icon| icon.inflated(2.0).contains(cursor.x, cursor.y));
             if !on_panel && !on_tray && state.frame.is_some() {
@@ -371,15 +491,16 @@ impl Panel {
                 let _ = window.hide();
                 self.store.dismiss_setup_message();
                 let _ = self.app.emit("panel-mode", ModePayload { mode });
+                // A closed floating dashboard leaves the hover pill to watch for again.
+                self.wake_hover_thread();
             }
             return;
         }
         let Some(anchor) = anchor.or(state.anchor) else { return };
         let changed = state.mode != mode || state.hover_driven != hover_driven;
-        if state.mode == Mode::Hidden {
-            // Click-outside detection needs the hover thread even while the pill is off.
-            self.wake_hover_thread();
-        }
+        // Click-outside detection needs the hover thread even while the pill is off, and
+        // so does the size timeout of a floating dashboard.
+        self.wake_hover_thread();
         state.mode = mode;
         state.hover_driven = hover_driven;
         state.anchor = Some(anchor);
@@ -400,12 +521,19 @@ impl Panel {
         let (Some(anchor), Some(size), Some(window)) = (state.anchor, state.size, self.window()) else { return };
         let frame = anchor.frame(size);
         state.frame = Some(frame);
+        if self.floating() && state.mode == Mode::Dashboard && !state.hover_driven {
+            // From now on it grows and shrinks downwards from this corner.
+            let (x, y) = (frame.x, frame.y);
+            state.pinned = Some((x, y));
+            state.anchor = Some(Anchor::Pinned { screen: anchor.screen(), x, y });
+        }
         // Position first: moving to a monitor with another scale may resize the window.
         let _ = window.set_position(PhysicalPosition::new(frame.x.round() as i32, frame.y.round() as i32));
         let _ = window.set_size(PhysicalSize::new(frame.width as u32, frame.height as u32));
         if state.pending_show {
             state.pending_show = false;
-            let takes_focus = state.mode == Mode::Dashboard && !state.hover_driven;
+            // The floating dashboard stays open over the app the user is typing in.
+            let takes_focus = state.mode == Mode::Dashboard && !state.hover_driven && !self.floating();
             crate::platform::show(&window, takes_focus);
         }
     }
