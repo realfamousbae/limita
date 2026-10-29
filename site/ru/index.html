@@ -208,9 +208,11 @@
           <h3>macOS 14 и новее</h3>
           <ol class="steps">
             <li>Скачайте <a data-download="mac" href="https://github.com/realfamousbae/limita/releases/latest">DMG</a>, откройте его и перетащите <strong>Limita</strong> в <strong>Программы</strong>.</li>
-            <li>Сборка пока не нотаризована. Для первого запуска нажмите на <strong>Limita</strong> в Программах правой кнопкой и выберите <strong>Открыть</strong>, или используйте <strong>Системные настройки → Конфиденциальность и безопасность → Всё равно открыть</strong>.</li>
+            <li>Сборка пока не нотаризована, поэтому macOS блокирует первый запуск. На macOS 14 нажмите на <strong>Limita</strong> в Программах правой кнопкой и выберите <strong>Открыть</strong>. На macOS 15 и новее откройте Limita один раз, закройте предупреждение и нажмите <strong>Системные настройки → Конфиденциальность и безопасность → Всё равно открыть</strong>.</li>
+            <li>Если macOS всё равно не открывает Limita или пишет, что приложение повреждено, выполните в Терминале и откройте Limita снова:<code class="command">xattr -dr com.apple.quarantine /Applications/Limita.app</code></li>
             <li>При первом обновлении Claude macOS спросит, можно ли Limita читать <code>Claude Code-credentials</code>. Выберите <strong>Разрешать всегда</strong>.</li>
           </ol>
+          <p class="install-note">Крайняя мера — <code>sudo spctl --master-disable</code>: она отключает эту проверку для всех приложений на Mac. Лучше обойтись командой выше; если всё же воспользуетесь, в <a href="https://github.com/realfamousbae/limita#if-macos-wont-open-limita">README</a> написано, как включить проверку обратно.</p>
         </div>
         <div>
           <h3>Windows 10 или 11</h3>

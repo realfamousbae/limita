@@ -728,6 +728,17 @@ code {
   color: var(--ink);
 }
 
+.steps .command {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.install-note {
+  margin: 4px 0 0;
+  color: var(--ink-62);
+}
+
 /* ---------------------------------------------------------------------------------
    Footer */
 
