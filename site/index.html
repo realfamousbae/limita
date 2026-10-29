@@ -208,9 +208,11 @@
           <h3>macOS 14 or later</h3>
           <ol class="steps">
             <li>Download <a data-download="mac" href="https://github.com/realfamousbae/limita/releases/latest">the DMG</a>, open it and drag <strong>Limita</strong> into <strong>Applications</strong>.</li>
-            <li>The build is not notarized yet. For the first launch, right-click <strong>Limita</strong> in Applications and choose <strong>Open</strong>, or use <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>.</li>
+            <li>The build is not notarized yet, so macOS blocks the first launch. On macOS 14, right-click <strong>Limita</strong> in Applications and choose <strong>Open</strong>. On macOS 15 or later, open Limita once, close the warning, then click <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>.</li>
+            <li>If macOS still refuses or says Limita is damaged, run this in Terminal and open Limita again:<code class="command">xattr -dr com.apple.quarantine /Applications/Limita.app</code></li>
             <li>On the first Claude refresh, macOS asks whether Limita may read <code>Claude Code-credentials</code>. Choose <strong>Always Allow</strong>.</li>
           </ol>
+          <p class="install-note">A last resort is <code>sudo spctl --master-disable</code>, which turns off this check for every app on the Mac. Prefer the command above; if you do use it, see <a href="https://github.com/realfamousbae/limita#if-macos-wont-open-limita">the README</a> for how to turn the check back on.</p>
         </div>
         <div>
           <h3>Windows 10 or 11</h3>

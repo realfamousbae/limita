@@ -71,11 +71,28 @@ This is how Limita looks on your Mac.
 
 1. Download `Limita-<version>.dmg` from [Releases](../../releases). Take the latest release; anything from 0.13.0 on updates itself from then on, while older versions can't and are not worth installing.
 2. Open it and drag **Limita** into **Applications**.
-3. The build is not notarized yet, so the first launch needs one extra step: right-click **Limita** in Applications → **Open** → **Open**. On recent macOS versions, use **System Settings → Privacy & Security → Open Anyway** instead.
+3. The build is not notarized yet, so macOS blocks the first launch. On macOS 14, right-click **Limita** in Applications → **Open** → **Open**. On macOS 15 or later, open Limita once, close the warning, then click **System Settings → Privacy & Security → Open Anyway** and confirm with your password. If that doesn't work, see [If macOS won't open Limita](#if-macos-wont-open-limita).
 
 Limita lives in the menu bar only; it has no Dock icon.
 
 On the first Claude refresh, macOS asks whether Limita may read `Claude Code-credentials` from the Keychain. Choose **Always Allow**.
+
+### If macOS won't open Limita
+
+If there is no **Open Anyway** button, or macOS says Limita "is damaged and can't be opened", remove the download quarantine from Limita alone and open it again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Limita.app
+```
+
+This only touches Limita; every other app is still checked as before. Updates installed with the **⤓** button need nothing of the kind.
+
+As a last resort, you can turn off Gatekeeper, the check that blocks the app, for the whole Mac. This is not recommended: while it is off, macOS no longer checks any app you open.
+
+1. Run `sudo spctl --master-disable`.
+2. On macOS 15 or later this only unlocks a setting: open **System Settings → Privacy & Security** and set **Allow applications from** to **Anywhere**.
+3. Open Limita once.
+4. Turn the check back on with `sudo spctl --master-enable`. Limita should keep opening; if macOS blocks it again, use the `xattr` command above.
 
 ## Updates
 
