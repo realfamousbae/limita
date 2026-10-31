@@ -450,8 +450,9 @@ struct ExpandedView: View {
         case .spent(let dollars, _):
             meters.append(CreditMeter(title: "USAGE CREDITS", value: usd(dollars), amount: "SPENT", fill: 0, used: 0, caption: "NO SPEND LIMIT"))
         }
-        if let cloud = details.cloudCredits {
-            let caption = cloudResetText(cloud.expiresAt, now: now)
+        // Cloud credits are a grant that ends: once the date has passed they are gone.
+        if let cloud = details.cloudCredits, cloud.expiresAt.map({ $0 > now }) ?? true {
+            let caption = cloudExpiryText(cloud.expiresAt, spent: cloud.remaining < 0.005, now: now)
             if let limit = cloud.limit, limit > 0 {
                 let used = 1 - min(max(cloud.remaining / limit, 0), 1)
                 meters.append(CreditMeter(
@@ -473,17 +474,22 @@ struct ExpandedView: View {
             : usd(value)
     }
 
-    /// A countdown within a week, like the limits'; further out the date, which stays
-    /// within the meter's width.
-    static func cloudResetText(_ date: Date?, now: Date) -> String {
-        guard let date else { return "NO RESET DATE" }
-        if date.timeIntervalSince(now) <= 7 * 86400 {
-            return LimitWindow(usedPercent: 0, resetsAt: date).resetText(at: now)?.uppercased() ?? ""
+    /// When the credits run out, or, with all of them spent, when the row goes away. A
+    /// countdown within a week, without the minutes while it counts days, and further
+    /// out the date: both stay within the meter's width.
+    static func cloudExpiryText(_ date: Date?, spent: Bool, now: Date) -> String {
+        guard let date else { return "NO EXPIRY DATE" }
+        let verb = spent ? "DISAPPEARS" : "EXPIRES"
+        let left = date.timeIntervalSince(now)
+        if left <= 7 * 86400 {
+            let words = LimitWindow.durationText(left).split(separator: " ")
+            let shown = words.count > 4 ? words.dropLast(2) : words[...]
+            return "\(verb) IN \(shown.joined(separator: " "))".uppercased()
         }
         let formatter = DateFormatter()
         formatter.locale = .english
         formatter.setLocalizedDateFormatFromTemplate("MMMd")
-        return "RESETS ON \(formatter.string(from: date).uppercased())"
+        return "\(verb) ON \(formatter.string(from: date).uppercased())"
     }
 
     private static func percent(_ fraction: Double) -> String {

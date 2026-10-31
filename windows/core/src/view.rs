@@ -5,7 +5,7 @@
 use serde::Serialize;
 
 use crate::model::{
-    longest_reset_text, AccountDetails, LimitLevel, LimitSnapshot, LimitWindow, Service, ServiceState, UsageCredits,
+    duration_text, longest_reset_text, AccountDetails, LimitLevel, LimitSnapshot, LimitWindow, Service, ServiceState, UsageCredits,
 };
 use crate::prime_time::PrimeTimeNotice;
 use crate::store::Snapshot;
@@ -316,8 +316,9 @@ pub fn credit_meters(service: Service, details: &AccountDetails, now: Timestamp)
         }
         Some(UsageCredits::Off) | None => {}
     }
-    if let Some(cloud) = &details.cloud_credits {
-        let caption = cloud_reset_text(cloud.expires_at, now);
+    // Cloud credits are a grant that ends: once the date has passed they are gone.
+    if let Some(cloud) = details.cloud_credits.as_ref().filter(|c| c.expires_at.is_none_or(|date| date > now)) {
+        let caption = cloud_expiry_text(cloud.expires_at, cloud.remaining < 0.005, now);
         match cloud.limit.filter(|limit| *limit > 0.0) {
             Some(limit) => {
                 let used = 1.0 - (cloud.remaining / limit).clamp(0.0, 1.0);
@@ -330,14 +331,20 @@ pub fn credit_meters(service: Service, details: &AccountDetails, now: Timestamp)
     meters
 }
 
-/// A countdown within a week, like the limits'; further out the date, which stays within
-/// the meter's width.
-pub fn cloud_reset_text(date: Option<Timestamp>, now: Timestamp) -> String {
-    let Some(date) = date else { return "NO RESET DATE".into() };
-    if seconds_between(now, date) <= 7.0 * 86400.0 {
-        return LimitWindow::new(0.0, Some(date)).reset_text(now).unwrap_or_default().to_uppercase();
+/// When the credits run out, or, with all of them spent, when the row goes away. A
+/// countdown within a week, without the minutes while it counts days, and further out
+/// the date: both stay within the meter's width.
+pub fn cloud_expiry_text(date: Option<Timestamp>, spent: bool, now: Timestamp) -> String {
+    let Some(date) = date else { return "NO EXPIRY DATE".into() };
+    let verb = if spent { "DISAPPEARS" } else { "EXPIRES" };
+    let left = seconds_between(now, date);
+    if left <= 7.0 * 86400.0 {
+        let text = duration_text(left);
+        let words: Vec<&str> = text.split(' ').collect();
+        let shown = if words.len() > 4 { &words[..words.len() - 2] } else { &words[..] };
+        return format!("{verb} IN {}", shown.join(" ")).to_uppercase();
     }
-    format!("RESETS ON {}", date.with_timezone(&chrono::Local).format("%b %-d").to_string().to_uppercase())
+    format!("{verb} ON {}", date.with_timezone(&chrono::Local).format("%b %-d").to_string().to_uppercase())
 }
 
 /// "just now" for fresh data. A tick can predate a just-fetched snapshot, which would
@@ -468,7 +475,7 @@ pub fn reset_dates(snapshot: &Snapshot) -> Vec<Timestamp> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{duration_text, Allowance, LimitSnapshot};
+    use crate::model::{Allowance, LimitSnapshot};
     use crate::time::from_unix;
 
     fn at(seconds: f64) -> Timestamp {
@@ -512,7 +519,7 @@ mod tests {
         assert_eq!(cloud.amount.as_deref(), Some("$163 OF $250 LEFT"), "the dollars are what is left");
         assert!((cloud.fill - 0.348).abs() < 0.001, "the bar shows what is spent");
         assert_eq!(cloud.tone, BarTone::AccentSoft);
-        assert!(cloud.caption.starts_with("RESETS ON NOV"), "{}", cloud.caption);
+        assert!(cloud.caption.starts_with("EXPIRES ON NOV"), "{}", cloud.caption);
 
         details.claude_usage_credits = Some(UsageCredits::Spent { dollars: 12.5, limit: Some(50.0) });
         details.cloud_credits = Some(Allowance { remaining: 5.0, limit: Some(100.0), expires_at: Some(now + chrono::Duration::minutes(90)) });
@@ -522,7 +529,18 @@ mod tests {
         assert_eq!(meters[0].amount.as_deref(), Some("$38 OF $50 LEFT"));
         assert_eq!(meters[1].amount.as_deref(), Some("$5.00 OF $100 LEFT"), "cents below $10");
         assert_eq!(meters[1].tone, BarTone::Critical, "the colour follows what is spent");
-        assert_eq!(meters[1].caption, "RESETS IN 1 HOUR 30 MIN", "a near reset counts down");
+        assert_eq!(meters[1].caption, "EXPIRES IN 1 HOUR 30 MIN", "a near expiry counts down");
+        let in_days = now + chrono::Duration::hours(4 * 24 + 19) + chrono::Duration::minutes(1);
+        details.cloud_credits = Some(Allowance { remaining: 5.0, limit: Some(100.0), expires_at: Some(in_days) });
+        assert_eq!(credit_meters(Service::Claude, &details, now)[1].caption, "EXPIRES IN 4 DAYS 19 HOURS");
+        details.cloud_credits = Some(Allowance { remaining: 0.0, limit: Some(250.0), expires_at: Some(in_days) });
+        assert_eq!(credit_meters(Service::Claude, &details, now)[1].caption, "DISAPPEARS IN 4 DAYS 19 HOURS", "nothing left to expire");
+        details.cloud_credits = Some(Allowance { remaining: 0.0, limit: Some(250.0), expires_at: Some(now + chrono::Duration::days(30)) });
+        assert!(credit_meters(Service::Claude, &details, now)[1].caption.starts_with("DISAPPEARS ON "));
+        details.cloud_credits = Some(Allowance { remaining: 5.0, limit: Some(100.0), expires_at: None });
+        assert_eq!(credit_meters(Service::Claude, &details, now)[1].caption, "NO EXPIRY DATE");
+        details.cloud_credits = Some(Allowance { remaining: 5.0, limit: Some(100.0), expires_at: Some(now) });
+        assert_eq!(credit_meters(Service::Claude, &details, now).len(), 1, "expired credits are gone");
         assert!(credit_meters(Service::Claude, &AccountDetails::default(), now).is_empty(), "missing values hide meters");
         assert!(credit_meters(Service::Codex, &details, now).is_empty());
     }
