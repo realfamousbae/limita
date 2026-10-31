@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn pro_has_no_five_hour_limit_wherever_the_weekly_window_comes() {
         let weekly = r#"{"usedPercent":34,"windowDurationMins":10080,"resetsAt":1789897438}"#;
-        for (kind, name) in [("pro", "Pro"), ("prolite", "Pro 100")] {
+        for (kind, name) in [("prolite", "Pro 100"), ("pro", "Pro 200"), ("promax", "Pro 500")] {
             for shape in [format!(r#""primary":{weekly},"secondary":null"#), format!(r#""primary":null,"secondary":{weekly}"#)] {
                 let response = format!(r#"{{"id":2,"result":{{"rateLimitsByLimitId":{{"codex":{{{shape},"planType":"{kind}"}}}}}}}}"#);
                 let reading = reading_from_response(response.as_bytes(), from_unix(1.0).unwrap()).unwrap();
