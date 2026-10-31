@@ -133,13 +133,16 @@ struct CodexLimitsReader: Sendable {
         )
     }
 
-    /// `"plus"` → "Plus"; `"prolite"`, the $100 Pro, → "Pro 100". The CLI does not tell the
-    /// $200 Pro from the $500 one. `nil` for an unknown plan.
+    /// `"plus"` → "Plus"; the Pro tiers by price, as the CLI's own `/status` names them:
+    /// `"prolite"` → "Pro 100", `"pro"` → "Pro 200", `"promax"` → "Pro 500". `nil` for an
+    /// unknown plan.
     static func planName(_ planType: String?) -> String? {
         guard let type = planType?.trimmingCharacters(in: .whitespaces).lowercased(),
               !type.isEmpty, type != "unknown"
         else { return nil }
         if type == "prolite" { return "Pro 100" }
+        if type == "pro" { return "Pro 200" }
+        if type == "promax" { return "Pro 500" }
         if type.hasPrefix("self_serve_business") { return "Business" }
         if type.hasPrefix("enterprise") { return "Enterprise" }
         return type.prefix(1).uppercased() + type.dropFirst()
@@ -163,7 +166,7 @@ struct CodexLimitsReader: Sendable {
     struct RateLimitsPayload: Decodable {
         let primary: Entry?
         let secondary: Entry?
-        /// "plus", "pro", "prolite", "team", …
+        /// "plus", "pro", "prolite", "promax", "team", …
         var planType: String? = nil
 
         enum CodingKeys: String, CodingKey {
@@ -172,7 +175,7 @@ struct CodexLimitsReader: Sendable {
         }
 
         var isProPlan: Bool {
-            planType == "pro" || planType == "prolite"
+            planType == "pro" || planType == "prolite" || planType == "promax"
         }
 
         struct Entry: Decodable {

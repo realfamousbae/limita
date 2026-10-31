@@ -53,8 +53,8 @@ struct ResetEvent: Codable, Sendable, Equatable {
     /// Not yet confirmed by the tracker: shown, but not announced.
     var isProvisional = false
 
-    /// Lines stay up for a week, banked resets for as long as they can be applied.
-    static let shownFor: TimeInterval = 7 * 24 * 60 * 60
+    /// Lines stay up for 48 hours, banked resets for as long as they can be applied.
+    static let shownFor: TimeInterval = 48 * 60 * 60
 
     func isShown(at now: Date = Date()) -> Bool {
         if case .banked(let until?) = kind { return now < until }

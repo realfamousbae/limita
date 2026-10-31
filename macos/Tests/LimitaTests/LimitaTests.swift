@@ -196,7 +196,7 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(meters[0].amount, "$163 OF $250 LEFT", "the dollars are what is left")
         XCTAssertEqual(meters[0].fill, 0.348, accuracy: 0.001, "the bar shows what is spent")
         XCTAssertEqual(meters[0].used, 0.348, accuracy: 0.001)
-        XCTAssertTrue(meters[0].caption.hasPrefix("RESETS ON NOV"), meters[0].caption)
+        XCTAssertTrue(meters[0].caption.hasPrefix("EXPIRES ON NOV"), meters[0].caption)
 
         details.claudeUsageCredits = .spent(dollars: 12.5, limit: 50)
         details.cloudCredits = .init(remaining: 5.5, limit: 100, expiresAt: now.addingTimeInterval(90 * 60))
@@ -204,7 +204,18 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(spent[0], .init(title: "USAGE CREDITS", value: "25%", amount: "$38 OF $50 LEFT",
                                        fill: 0.25, used: 0.25, caption: "SPEND LIMIT"))
         XCTAssertEqual(spent[1].amount, "$5.50 OF $100 LEFT", "cents below $10")
-        XCTAssertEqual(spent[1].caption, "RESETS IN 1 HOUR 30 MIN", "a near reset counts down")
+        XCTAssertEqual(spent[1].caption, "EXPIRES IN 1 HOUR 30 MIN", "a near expiry counts down")
+
+        details.cloudCredits = .init(remaining: 5.5, limit: 100, expiresAt: now.addingTimeInterval(4 * 86400 + 19 * 3600 + 60))
+        XCTAssertEqual(ExpandedView.creditMeters(for: .claude, details: details, now: now)[1].caption, "EXPIRES IN 4 DAYS 19 HOURS")
+        details.cloudCredits = .init(remaining: 0, limit: 250, expiresAt: now.addingTimeInterval(4 * 86400 + 19 * 3600 + 60))
+        XCTAssertEqual(ExpandedView.creditMeters(for: .claude, details: details, now: now)[1].caption, "DISAPPEARS IN 4 DAYS 19 HOURS", "nothing left to expire")
+        details.cloudCredits = .init(remaining: 0, limit: 250, expiresAt: now.addingTimeInterval(30 * 86400))
+        XCTAssertTrue(ExpandedView.creditMeters(for: .claude, details: details, now: now)[1].caption.hasPrefix("DISAPPEARS ON "))
+        details.cloudCredits = .init(remaining: 5.5, limit: 100, expiresAt: nil)
+        XCTAssertEqual(ExpandedView.creditMeters(for: .claude, details: details, now: now)[1].caption, "NO EXPIRY DATE")
+        details.cloudCredits = .init(remaining: 5.5, limit: 100, expiresAt: now)
+        XCTAssertEqual(ExpandedView.creditMeters(for: .claude, details: details, now: now).count, 1, "expired credits are gone")
 
         details.claudeUsageCredits = .balance(dollars: 20)
         details.cloudCredits = nil
@@ -383,7 +394,7 @@ final class LimitaTests: XCTestCase {
 
     func testCodexProHasNoFiveHourLimitWhereverTheWeeklyWindowComes() throws {
         let weekly = #"{"usedPercent":34,"windowDurationMins":10080,"resetsAt":1789897438}"#
-        for (type, name) in [("pro", "Pro"), ("prolite", "Pro 100")] {
+        for (type, name) in [("prolite", "Pro 100"), ("pro", "Pro 200"), ("promax", "Pro 500")] {
             for shape in [#""primary":\#(weekly),"secondary":null"#, #""primary":null,"secondary":\#(weekly)"#] {
                 let response = #"{"id":2,"result":{"rateLimitsByLimitId":{"codex":{\#(shape),"planType":"\#(type)"}}}}"#
                 let reading = try CodexLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: Date())
@@ -1291,12 +1302,12 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(ResetFeed.claudeResets(from: Data(#"{"providers":{}}"#.utf8)), [])
     }
 
-    func testResetLinesStayForAWeekOrWhileBankedIsUsable() throws {
+    func testResetLinesStayFor48HoursOrWhileBankedIsUsable() throws {
         let date = Date(timeIntervalSince1970: 1_800_000_000)
         let day: TimeInterval = 24 * 60 * 60
         let global = ResetEvent(id: "a", service: .codex, kind: .global, date: date, source: .codexReset)
-        XCTAssertTrue(global.isShown(at: date.addingTimeInterval(6.9 * day)))
-        XCTAssertFalse(global.isShown(at: date.addingTimeInterval(7 * day)))
+        XCTAssertTrue(global.isShown(at: date.addingTimeInterval(47.9 * 3600)))
+        XCTAssertFalse(global.isShown(at: date.addingTimeInterval(48 * 3600)))
         XCTAssertEqual(global.title(at: date.addingTimeInterval(5 * 3600)), "RESET FOR EVERYONE · 5 HOURS AGO")
 
         let until = try XCTUnwrap(ISO8601DateFormatter.parseFlexible("2026-10-22T23:59:59Z"))
