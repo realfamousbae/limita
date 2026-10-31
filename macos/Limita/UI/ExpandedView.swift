@@ -299,12 +299,12 @@ struct ExpandedView: View {
     static let rowSpacing: CGFloat = 16
 
     /// One row per meter: the plan's windows, the per-model ones, then the credits. The
-    /// per-model ones and the credits can be folded into capsules in the activity
-    /// toggle's line.
+    /// per-model ones, the credits and a 5-hour window the plan does not have can be
+    /// folded into capsules in the activity toggle's line.
     private func meterRows(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> some View {
         let soft = DashboardStyle.accent(for: service).opacity(0.72)
         let rows: [(fold: String?, meter: MeterView)] = [
-            (nil, fiveHourMetric(service: service, snapshot: snapshot, stale: stale, now: now)),
+            (Self.fiveHourFold(snapshot), fiveHourMetric(service: service, snapshot: snapshot, stale: stale, now: now)),
             (nil, sevenDayMetric(service: service, snapshot: snapshot, stale: stale, now: now)),
         ]
             + snapshot.scoped.map {
@@ -330,13 +330,18 @@ struct ExpandedView: View {
     /// together. Only meters the service reported count.
     static func foldedMeters(service: Service, store: LimitsStore) -> [String] {
         guard let snapshot = store.state(for: service).snapshot else { return [] }
-        let names = snapshot.scoped.map { $0.name.uppercased() }
+        let names = [fiveHourFold(snapshot)].compactMap { $0 } + snapshot.scoped.map { $0.name.uppercased() }
             + creditMeters(for: service, details: store.details[service] ?? AccountDetails(), now: Date()).map(\.title)
         var folded: [String] = []
         for name in names where store.isCollapsed(name, of: service) && !folded.contains(name) {
             folded.append(name)
         }
         return folded
+    }
+
+    /// Only a plan without a 5-hour limit can fold that meter: a real limit stays in view.
+    static func fiveHourFold(_ snapshot: LimitSnapshot) -> String? {
+        snapshot.hasNoFiveHourLimit ? "5 HOURS" : nil
     }
 
     private func fiveHourMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> MeterView {

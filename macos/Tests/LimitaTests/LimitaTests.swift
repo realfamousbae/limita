@@ -393,6 +393,14 @@ final class LimitaTests: XCTestCase {
         }
     }
 
+    func testOnlyAMissingFiveHourLimitCanBeFolded() {
+        let weekly = LimitWindow(usedPercent: 40, resetsAt: nil)
+        let now = Date(timeIntervalSince1970: 0)
+        XCTAssertEqual(ExpandedView.fiveHourFold(LimitSnapshot(fiveHour: nil, sevenDay: weekly, capturedAt: now, hasNoFiveHourLimit: true)), "5 HOURS")
+        XCTAssertNil(ExpandedView.fiveHourFold(LimitSnapshot(fiveHour: weekly, sevenDay: weekly, capturedAt: now)))
+        XCTAssertNil(ExpandedView.fiveHourFold(LimitSnapshot(fiveHour: nil, sevenDay: weekly, capturedAt: now)))
+    }
+
     func testCodexPlanNames() {
         XCTAssertEqual(CodexLimitsReader.planName("plus"), "Plus")
         XCTAssertEqual(CodexLimitsReader.planName("self_serve_business_usage_based"), "Business")
