@@ -3,6 +3,9 @@
 //!
 //! Unlike the session logs, this asks the backend, so the numbers are current even when
 //! Codex has not been used for hours. Authentication stays inside the CLI.
+//!
+//! Set `LIMITA_CODEX_CLI` to another executable (see `scripts/fake-api.py`) to test
+//! against fake responses.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -41,6 +44,9 @@ impl CodexLiveClient {
         if let Some(path) = &self.executable {
             return Some(path.clone());
         }
+        if let Some(path) = std::env::var_os("LIMITA_CODEX_CLI") {
+            return Some(path.into());
+        }
         let found = locator::find("codex")?;
         let is_shim = found
             .extension()
@@ -74,6 +80,7 @@ pub fn reading_from_response(data: &[u8], captured_at: Timestamp) -> Result<Live
     let payload = RateLimitsPayload {
         primary: limits.as_ref().and_then(|l| l.primary.as_ref()).map(Window::entry),
         secondary: limits.as_ref().and_then(|l| l.secondary.as_ref()).map(Window::entry),
+        plan_type: limits.as_ref().and_then(|l| l.plan_type.clone()),
     };
     let snapshot = codex_reader::snapshot(&payload, captured_at);
     if snapshot.is_empty() {
@@ -82,6 +89,7 @@ pub fn reading_from_response(data: &[u8], captured_at: Timestamp) -> Result<Live
 
     let mut details = AccountDetails {
         limit_resets: result.rate_limit_reset_credits.and_then(|c| c.available_count),
+        plan: codex_reader::plan_name(payload.plan_type.as_deref()),
         ..AccountDetails::default()
     };
     if let Some(credits) = limits.and_then(|l| l.credits) {
@@ -118,6 +126,8 @@ struct Limits {
     primary: Option<Window>,
     secondary: Option<Window>,
     credits: Option<Credits>,
+    #[serde(rename = "planType")]
+    plan_type: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -325,6 +335,28 @@ mod tests {
         assert_eq!(details.limit_resets, Some(2));
         assert_eq!(details.codex_credits, Some(250.0));
         assert!(!details.codex_credits_unlimited);
+    }
+
+    #[test]
+    fn pro_has_no_five_hour_limit_wherever_the_weekly_window_comes() {
+        let weekly = r#"{"usedPercent":34,"windowDurationMins":10080,"resetsAt":1789897438}"#;
+        for (kind, name) in [("pro", "Pro"), ("prolite", "Pro 100")] {
+            for shape in [format!(r#""primary":{weekly},"secondary":null"#), format!(r#""primary":null,"secondary":{weekly}"#)] {
+                let response = format!(r#"{{"id":2,"result":{{"rateLimitsByLimitId":{{"codex":{{{shape},"planType":"{kind}"}}}}}}}}"#);
+                let reading = reading_from_response(response.as_bytes(), from_unix(1.0).unwrap()).unwrap();
+                assert!(reading.snapshot.has_no_five_hour_limit);
+                assert_eq!(reading.details.plan.as_deref(), Some(name));
+            }
+        }
+    }
+
+    #[test]
+    fn plan_type_names() {
+        assert_eq!(codex_reader::plan_name(Some("plus")).as_deref(), Some("Plus"));
+        assert_eq!(codex_reader::plan_name(Some("self_serve_business_usage_based")).as_deref(), Some("Business"));
+        assert_eq!(codex_reader::plan_name(Some("enterprise_cbp_trial")).as_deref(), Some("Enterprise"));
+        assert_eq!(codex_reader::plan_name(Some("unknown")), None);
+        assert_eq!(codex_reader::plan_name(None), None);
     }
 
     #[test]

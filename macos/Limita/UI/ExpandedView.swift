@@ -299,12 +299,12 @@ struct ExpandedView: View {
     static let rowSpacing: CGFloat = 16
 
     /// One row per meter: the plan's windows, the per-model ones, then the credits. The
-    /// per-model ones and the credits can be folded into capsules in the activity
-    /// toggle's line.
+    /// per-model ones, the credits and a 5-hour window the plan does not have can be
+    /// folded into capsules in the activity toggle's line.
     private func meterRows(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> some View {
         let soft = DashboardStyle.accent(for: service).opacity(0.72)
         let rows: [(fold: String?, meter: MeterView)] = [
-            (nil, fiveHourMetric(service: service, snapshot: snapshot, stale: stale, now: now)),
+            (Self.fiveHourFold(snapshot), fiveHourMetric(service: service, snapshot: snapshot, stale: stale, now: now)),
             (nil, sevenDayMetric(service: service, snapshot: snapshot, stale: stale, now: now)),
         ]
             + snapshot.scoped.map {
@@ -330,7 +330,7 @@ struct ExpandedView: View {
     /// together. Only meters the service reported count.
     static func foldedMeters(service: Service, store: LimitsStore) -> [String] {
         guard let snapshot = store.state(for: service).snapshot else { return [] }
-        let names = snapshot.scoped.map { $0.name.uppercased() }
+        let names = [fiveHourFold(snapshot)].compactMap { $0 } + snapshot.scoped.map { $0.name.uppercased() }
             + creditMeters(for: service, details: store.details[service] ?? AccountDetails(), now: Date()).map(\.title)
         var folded: [String] = []
         for name in names where store.isCollapsed(name, of: service) && !folded.contains(name) {
@@ -339,11 +339,16 @@ struct ExpandedView: View {
         return folded
     }
 
+    /// Only a plan without a 5-hour limit can fold that meter: a real limit stays in view.
+    static func fiveHourFold(_ snapshot: LimitSnapshot) -> String? {
+        snapshot.hasNoFiveHourLimit ? "5 HOURS" : nil
+    }
+
     private func fiveHourMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> MeterView {
         if snapshot.hasNoFiveHourLimit {
             // Stands in for the 5-hour meter when the plan has no 5-hour limit.
-            return MeterView(title: "5 HOURS", value: "∞", amount: nil, fill: 0, color: .clear,
-                             caption: "NO 5-HOUR LIMIT", stale: false)
+            return MeterView(title: "5 HOURS", value: "∞", amount: nil, fill: 1, color: DashboardStyle.unlimited,
+                             caption: "UNLIMITED", stale: false, glow: DashboardStyle.unlimited)
         }
         return metric("5 HOURS", service: service, window: snapshot.fiveHour,
                       color: DashboardStyle.fiveHourBar(for: service), stale: stale, now: now)
@@ -571,6 +576,8 @@ struct MeterView: View {
     var highlight: (fill: Double, color: Color)?
     let caption: String
     let stale: Bool
+    /// Tints the value and makes it and the bar shine in this colour.
+    var glow: Color? = nil
     /// Shows a chevron after the title that folds the meter away.
     var onCollapse: (() -> Void)?
 
@@ -605,11 +612,7 @@ struct MeterView: View {
             }
 
             HStack(alignment: .center, spacing: 10) {
-                Text(value)
-                    .font(.app(DashboardStyle.meterValueSize))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .fixedSize()
+                valueView
                     .frame(minWidth: Self.valueWidth, alignment: .leading)
                     .opacity(stale ? 0.55 : 1)
 
@@ -635,6 +638,30 @@ struct MeterView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// A shining meter has no number: its symbol, as wide as "100%". The font's own ∞
+    /// is a narrow glyph, squeezed into a monospaced cell.
+    @ViewBuilder
+    private var valueView: some View {
+        if let glow {
+            Image(systemName: "infinity")
+                .resizable()
+                .fontWeight(.medium)
+                .frame(width: Self.valueWidth, height: 30)
+                // As tall as a percentage's line, so all rows keep their height.
+                .padding(.vertical, 2)
+                .foregroundStyle(glow)
+                .shadow(color: glow, radius: 3)
+                .shadow(color: glow, radius: 9)
+                .accessibilityLabel(value)
+        } else {
+            Text(value)
+                .font(.app(DashboardStyle.meterValueSize))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+
     private var bar: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
@@ -643,6 +670,7 @@ struct MeterView: View {
                     .fill(color)
                     .frame(width: geometry.size.width * min(max(fill, 0), 1))
                     .opacity(stale ? 0.55 : 1)
+                    .shadow(color: glow ?? .clear, radius: 5)
                 if let highlight, highlight.fill > 0 {
                     Capsule()
                         .fill(highlight.color)
@@ -1189,6 +1217,9 @@ enum DashboardStyle {
             ? Color(red: 0.31, green: 0.67, blue: 1)
             : Color(red: 1, green: 0.58, blue: 0.30)
     }
+
+    /// The 5-hour meter of a plan without a 5-hour limit, on either service.
+    static let unlimited = Color(red: 0.69, green: 0.42, blue: 1)
 
     /// Claude's two bars share the softer weekly tone; Codex keeps a brighter 5-hour bar.
     static func fiveHourBar(for service: Service) -> Color {

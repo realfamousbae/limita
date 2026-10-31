@@ -15,6 +15,7 @@
   /* A model's share of the weekly limit, lighter than the bar it sits on. */
   --claude-share: rgb(255, 199, 148);
   --codex-share: rgb(158, 209, 255);
+  --unlimited: rgb(176, 107, 255);
   --healthy: rgb(82, 235, 148);
   --yellow: #ffd60a;
   --orange: #ff9f0a;
@@ -550,6 +551,24 @@ header {
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.09);
   overflow: hidden;
+}
+
+/* A plan without a 5-hour limit: a shining ∞ and a full bar, on either service. */
+.meter.unlimited .big {
+  /* As wide as "100%": the font's own ∞ is a narrow glyph. */
+  width: 4ch;
+  height: 30px;
+  color: var(--unlimited);
+  filter: drop-shadow(0 0 2px var(--unlimited)) drop-shadow(0 0 7px var(--unlimited));
+}
+
+.meter.unlimited .bar {
+  overflow: visible;
+}
+
+.fill.unlimited {
+  background: var(--unlimited);
+  box-shadow: 0 0 8px var(--unlimited);
 }
 
 /* Fable's share, over the start of the weekly fill. */

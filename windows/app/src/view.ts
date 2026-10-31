@@ -2,7 +2,7 @@
 
 export type Service = "claude" | "codex";
 export type Level = "normal" | "warning" | "critical";
-export type Tone = "accent" | "accentSoft" | "share" | "warning" | "critical";
+export type Tone = "accent" | "accentSoft" | "share" | "unlimited" | "warning" | "critical";
 export type Mode = "hidden" | "pill" | "dashboard";
 
 export interface Meter {

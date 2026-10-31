@@ -13,7 +13,15 @@ struct ServiceSettings: @unchecked Sendable {
 
     let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    /// Fake numbers must stay out of the real settings: the reset watcher remembers what it
+    /// saw and would take the real numbers for a reset at the next launch.
+    static let standardDefaults: UserDefaults = {
+        let environment = ProcessInfo.processInfo.environment
+        let isFake = environment["LIMITA_CLAUDE_API"] != nil || environment["LIMITA_CODEX_CLI"] != nil
+        return isFake ? UserDefaults(suiteName: "com.limita.fake")! : .standard
+    }()
+
+    init(defaults: UserDefaults = ServiceSettings.standardDefaults) {
         self.defaults = defaults
     }
 

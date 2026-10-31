@@ -381,12 +381,12 @@ function meter(m: Meter, stale: boolean): HTMLElement {
   const amount = m.amount ? el("span", "caption meter-caption digits nowrap amount", m.amount) : null;
   return el(
     "div",
-    `meter${stale ? " stale" : ""}`,
+    `meter${stale ? " stale" : ""}${m.tone === "unlimited" ? " unlimited" : ""}`,
     el("div", "caption meter-caption nowrap", m.title),
     el(
       "div",
       "meter-body",
-      el("span", "big digits", m.value),
+      m.tone === "unlimited" ? icon("infinity", "big") : el("span", "big digits", m.value),
       el("div", "meter-track", el("div", "bar-line", el("div", "bar", fill, highlight), amount), el("div", "caption meter-caption nowrap", m.caption)),
     ),
   );

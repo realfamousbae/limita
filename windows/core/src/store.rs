@@ -482,13 +482,9 @@ fn merge(local: ServiceState, live: Option<LimitSnapshot>, stale_after: f64, now
     let Some(live) = live else { return local };
     match local.snapshot() {
         Some(newer) if newer.captured_at >= live.captured_at => {
-            // The status line reports no per-model windows; keep those of the last network
-            // read, or the per-model meters would vanish after every Claude Code reply.
-            let mut newer = newer.clone();
-            if newer.scoped.is_empty() {
-                newer.scoped = live.scoped;
-            }
-            ServiceState::from_snapshot(newer, stale_after, now)
+            // Otherwise the per-model meters and the unlimited 5-hour meter would vanish
+            // after every Claude Code reply.
+            ServiceState::from_snapshot(newer.clone().keeping_live_data(live), stale_after, now)
         }
         _ => ServiceState::from_snapshot(live, stale_after, now),
     }
@@ -498,6 +494,7 @@ fn merge(local: ServiceState, live: Option<LimitSnapshot>, stale_after: f64, now
 mod tests {
     use super::*;
     use crate::model::LimitWindow;
+    use crate::time::from_unix;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn sources(root: &std::path::Path, claude_live: LiveFetch) -> Sources {
@@ -520,6 +517,20 @@ mod tests {
 
     fn no_token() -> LiveFetch {
         Arc::new(|_| Err("no token in tests".into()))
+    }
+
+    #[test]
+    fn newer_status_line_keeps_the_missing_five_hour_limit() {
+        let weekly = LimitWindow::new(40.0, None);
+        let (old, now) = (from_unix(100.0).unwrap(), from_unix(200.0).unwrap());
+        let live = LimitSnapshot::with_flag(None, Some(weekly), old, true);
+        let status_line = LimitSnapshot::new(None, Some(weekly), now);
+        let merged = merge(ServiceState::Fresh(status_line), Some(live.clone()), 3600.0, now);
+        assert!(merged.snapshot().unwrap().has_no_five_hour_limit);
+
+        let back = LimitSnapshot::new(Some(LimitWindow::new(5.0, None)), Some(weekly), now);
+        let merged = merge(ServiceState::Fresh(back), Some(live), 3600.0, now);
+        assert!(!merged.snapshot().unwrap().has_no_five_hour_limit, "a 5-hour window that came back wins");
     }
 
     #[test]

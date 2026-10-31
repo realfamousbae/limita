@@ -122,14 +122,27 @@ struct CodexLimitsReader: Sendable {
         }
 
         // Codex puts the shortest window in `primary`. A weekly `primary` with no
-        // `secondary` is how it reports a plan without a 5-hour limit.
-        let weeklyOnly = payload.primary?.scale == .sevenDay && payload.secondary == nil
+        // `secondary` is how it reports a plan without a 5-hour limit. Pro has none at
+        // all, wherever the weekly window comes.
+        let weeklyOnly = (payload.primary?.scale == .sevenDay && payload.secondary == nil) || payload.isProPlan
         return LimitSnapshot(
             fiveHour: fiveHour,
             sevenDay: sevenDay,
             capturedAt: capturedAt,
             hasNoFiveHourLimit: weeklyOnly
         )
+    }
+
+    /// `"plus"` → "Plus"; `"prolite"`, the $100 Pro, → "Pro 100". The CLI does not tell the
+    /// $200 Pro from the $500 one. `nil` for an unknown plan.
+    static func planName(_ planType: String?) -> String? {
+        guard let type = planType?.trimmingCharacters(in: .whitespaces).lowercased(),
+              !type.isEmpty, type != "unknown"
+        else { return nil }
+        if type == "prolite" { return "Pro 100" }
+        if type.hasPrefix("self_serve_business") { return "Business" }
+        if type.hasPrefix("enterprise") { return "Enterprise" }
+        return type.prefix(1).uppercased() + type.dropFirst()
     }
 
     // MARK: - Wire format
@@ -150,6 +163,17 @@ struct CodexLimitsReader: Sendable {
     struct RateLimitsPayload: Decodable {
         let primary: Entry?
         let secondary: Entry?
+        /// "plus", "pro", "prolite", "team", …
+        var planType: String? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case primary, secondary
+            case planType = "plan_type"
+        }
+
+        var isProPlan: Bool {
+            planType == "pro" || planType == "prolite"
+        }
 
         struct Entry: Decodable {
             let usedPercent: Double?

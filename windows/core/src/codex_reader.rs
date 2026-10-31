@@ -136,10 +136,28 @@ pub fn snapshot(payload: &RateLimitsPayload, captured_at: Timestamp) -> LimitSna
         }
     }
     // Codex puts the shortest window in `primary`. A weekly `primary` with no
-    // `secondary` is how it reports a plan without a 5-hour limit.
-    let weekly_only = payload.primary.as_ref().map(Entry::scale) == Some(WindowScale::SevenDay)
-        && payload.secondary.is_none();
+    // `secondary` is how it reports a plan without a 5-hour limit. Pro has none at all,
+    // wherever the weekly window comes.
+    let is_pro = matches!(payload.plan_type.as_deref(), Some("pro" | "prolite"));
+    let weekly_only = is_pro
+        || (payload.primary.as_ref().map(Entry::scale) == Some(WindowScale::SevenDay) && payload.secondary.is_none());
     LimitSnapshot::with_flag(five_hour, seven_day, captured_at, weekly_only)
+}
+
+/// `"plus"` → "Plus"; `"prolite"`, the $100 Pro, → "Pro 100". The CLI does not tell the
+/// $200 Pro from the $500 one. `None` for an unknown plan.
+pub fn plan_name(plan_type: Option<&str>) -> Option<String> {
+    let kind = plan_type?.trim().to_lowercase();
+    match kind.as_str() {
+        "" | "unknown" => None,
+        "prolite" => Some("Pro 100".into()),
+        _ if kind.starts_with("self_serve_business") => Some("Business".into()),
+        _ if kind.starts_with("enterprise") => Some("Enterprise".into()),
+        _ => {
+            let mut chars = kind.chars();
+            Some(chars.next()?.to_uppercase().chain(chars).collect())
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -157,6 +175,9 @@ struct Payload {
 pub struct RateLimitsPayload {
     pub primary: Option<Entry>,
     pub secondary: Option<Entry>,
+    /// "plus", "pro", "prolite", "team", …
+    #[serde(default)]
+    pub plan_type: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -264,6 +285,7 @@ mod tests {
         let payload = RateLimitsPayload {
             primary: None,
             secondary: Some(Entry { used_percent: Some(40.0), window_minutes: Some(10080.0), resets_at: None }),
+            plan_type: None,
         };
         let codex = snapshot(&payload, now);
         assert!(!codex.has_no_five_hour_limit);

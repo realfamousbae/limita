@@ -5,6 +5,9 @@ import Foundation
 ///
 /// Unlike the session logs, this asks the backend, so the numbers are current even
 /// when Codex has not been used for hours. Authentication stays inside the CLI.
+///
+/// Set `LIMITA_CODEX_CLI` to another executable (see `scripts/fake-api.py`) to test
+/// against fake responses.
 struct CodexLiveClient: Sendable {
     struct FetchError: LocalizedError {
         let message: String
@@ -13,7 +16,9 @@ struct CodexLiveClient: Sendable {
 
     var timeout: TimeInterval = 20
     /// Injectable so tests never start the real CLI.
-    var findExecutable: @Sendable () -> URL? = { CLILocator.find("codex") }
+    var findExecutable: @Sendable () -> URL? = {
+        ProcessInfo.processInfo.environment["LIMITA_CODEX_CLI"].map(URL.init(fileURLWithPath:)) ?? CLILocator.find("codex")
+    }
 
     func fetch(now: Date = Date()) throws -> LiveReading {
         guard let executable = findExecutable() else {
@@ -44,7 +49,8 @@ struct CodexLiveClient: Sendable {
         let limits = result.rateLimitsByLimitId?["codex"] ?? result.rateLimits
         let payload = CodexLimitsReader.RateLimitsPayload(
             primary: limits?.primary?.entry,
-            secondary: limits?.secondary?.entry
+            secondary: limits?.secondary?.entry,
+            planType: limits?.planType
         )
         let snapshot = CodexLimitsReader.snapshot(from: payload, capturedAt: capturedAt)
         guard !snapshot.isEmpty else {
@@ -52,6 +58,7 @@ struct CodexLiveClient: Sendable {
         }
 
         var details = AccountDetails()
+        details.plan = CodexLimitsReader.planName(limits?.planType)
         details.limitResets = result.rateLimitResetCredits?.availableCount
         if let credits = limits?.credits {
             details.codexCreditsUnlimited = credits.unlimited ?? false
@@ -82,6 +89,7 @@ struct CodexLiveClient: Sendable {
         let primary: Window?
         let secondary: Window?
         let credits: Credits?
+        let planType: String?
     }
 
     private struct Credits: Decodable {
