@@ -607,17 +607,7 @@ struct MeterView: View {
             }
 
             HStack(alignment: .center, spacing: 10) {
-                Text(value)
-                    .font(.app(DashboardStyle.meterValueSize))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .fixedSize()
-                    .foregroundStyle(glow.map(AnyShapeStyle.init) ?? AnyShapeStyle(.foreground))
-                    // The ∞ is a small glyph; scaling it leaves the row's height alone.
-                    .scaleEffect(glow == nil ? 1 : 1.6, anchor: .leading)
-                    .offset(y: glow == nil ? 0 : -2)
-                    .shadow(color: glow ?? .clear, radius: 3)
-                    .shadow(color: glow ?? .clear, radius: 9)
+                valueView
                     .frame(minWidth: Self.valueWidth, alignment: .leading)
                     .opacity(stale ? 0.55 : 1)
 
@@ -641,6 +631,30 @@ struct MeterView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A shining meter has no number: its symbol, as wide as "100%". The font's own ∞
+    /// is a narrow glyph, squeezed into a monospaced cell.
+    @ViewBuilder
+    private var valueView: some View {
+        if let glow {
+            Image(systemName: "infinity")
+                .resizable()
+                .fontWeight(.medium)
+                .frame(width: Self.valueWidth, height: 30)
+                // As tall as a percentage's line, so all rows keep their height.
+                .padding(.vertical, 2)
+                .foregroundStyle(glow)
+                .shadow(color: glow, radius: 3)
+                .shadow(color: glow, radius: 9)
+                .accessibilityLabel(value)
+        } else {
+            Text(value)
+                .font(.app(DashboardStyle.meterValueSize))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
+        }
     }
 
     private var bar: some View {

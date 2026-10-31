@@ -386,7 +386,7 @@ function meter(m: Meter, stale: boolean): HTMLElement {
     el(
       "div",
       "meter-body",
-      el("span", "big digits", m.value),
+      m.tone === "unlimited" ? icon("infinity", "big") : el("span", "big digits", m.value),
       el("div", "meter-track", el("div", "bar-line", el("div", "bar", fill, highlight), amount), el("div", "caption meter-caption nowrap", m.caption)),
     ),
   );

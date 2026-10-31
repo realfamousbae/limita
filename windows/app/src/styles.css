@@ -555,11 +555,11 @@ header {
 
 /* A plan without a 5-hour limit: a shining ∞ and a full bar, on either service. */
 .meter.unlimited .big {
+  /* As wide as "100%": the font's own ∞ is a narrow glyph. */
+  width: 4ch;
+  height: 30px;
   color: var(--unlimited);
-  text-shadow: 0 0 4px var(--unlimited), 0 0 14px var(--unlimited);
-  /* The ∞ is a small glyph; scaling it leaves the row's height alone. */
-  transform: translateY(-2px) scale(1.6);
-  transform-origin: left center;
+  filter: drop-shadow(0 0 2px var(--unlimited)) drop-shadow(0 0 7px var(--unlimited));
 }
 
 .meter.unlimited .bar {
