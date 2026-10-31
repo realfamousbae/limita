@@ -36,8 +36,8 @@ pub const CODEX_URL: &str = "https://codex-reset.com/api/forecast";
 pub const CLAUDE_URL: &str = "https://claude-resets.com/api/resets";
 /// How often the trackers are asked.
 pub const POLL_INTERVAL: f64 = 15.0 * 60.0;
-/// Lines stay up for a week, banked resets for as long as they can be applied.
-pub const SHOWN_FOR: f64 = 7.0 * 86400.0;
+/// Lines stay up for 48 hours, banked resets for as long as they can be applied.
+pub const SHOWN_FOR: f64 = 48.0 * 3600.0;
 const TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -695,7 +695,8 @@ mod tests {
         event.scope = Some("Max".into());
         assert_eq!(event.title(now), "RESET FOR MAX · 5 HOURS AGO");
         assert!(event.is_shown(now));
-        assert!(!codex(at(-7.0 * DAY)).is_shown(now), "a week later the line is gone");
+        assert!(codex(at(-47.9 * HOUR)).is_shown(now));
+        assert!(!codex(at(-48.0 * HOUR)).is_shown(now), "48 hours later the line is gone");
 
         let until = parse_flexible("2026-10-22T23:59:59Z").unwrap();
         let banked = ResetEvent::new("b".into(), Service::Claude, ResetKind::Banked { usable_until: Some(until) }, at(-30.0 * DAY), ResetSource::ClaudeResets);
