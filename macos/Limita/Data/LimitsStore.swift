@@ -311,8 +311,9 @@ final class LimitsStore {
     ) -> ServiceState {
         guard let live else { return local }
         if let localSnapshot = local.snapshot, localSnapshot.capturedAt >= live.capturedAt {
-            // Otherwise the per-model meters would vanish after every Claude Code reply.
-            return .from(localSnapshot.keepingScoped(from: live), staleAfter: staleAfter, now: now)
+            // Otherwise the per-model meters and the unlimited 5-hour meter would vanish
+            // after every Claude Code reply.
+            return .from(localSnapshot.keepingLiveData(from: live), staleAfter: staleAfter, now: now)
         }
         return .from(live, staleAfter: staleAfter, now: now)
     }

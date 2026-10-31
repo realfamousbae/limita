@@ -381,6 +381,54 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(snapshot.headline?.label, "7d")
     }
 
+    func testCodexProHasNoFiveHourLimitWhereverTheWeeklyWindowComes() throws {
+        let weekly = #"{"usedPercent":34,"windowDurationMins":10080,"resetsAt":1789897438}"#
+        for (type, name) in [("pro", "Pro"), ("prolite", "Pro 100")] {
+            for shape in [#""primary":\#(weekly),"secondary":null"#, #""primary":null,"secondary":\#(weekly)"#] {
+                let response = #"{"id":2,"result":{"rateLimitsByLimitId":{"codex":{\#(shape),"planType":"\#(type)"}}}}"#
+                let reading = try CodexLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: Date())
+                XCTAssertTrue(reading.snapshot.hasNoFiveHourLimit)
+                XCTAssertEqual(reading.details.plan, name)
+            }
+        }
+    }
+
+    func testCodexPlanNames() {
+        XCTAssertEqual(CodexLimitsReader.planName("plus"), "Plus")
+        XCTAssertEqual(CodexLimitsReader.planName("self_serve_business_usage_based"), "Business")
+        XCTAssertEqual(CodexLimitsReader.planName("enterprise_cbp_trial"), "Enterprise")
+        XCTAssertNil(CodexLimitsReader.planName("unknown"))
+        XCTAssertNil(CodexLimitsReader.planName(nil))
+    }
+
+    func testOnlyUltraTurnsAMissingClaudeWindowIntoNoLimit() throws {
+        let now = Date(timeIntervalSince1970: 0)
+        let weeklyOnly = Data(#"{"five_hour":null,"seven_day":{"utilization":40,"resets_at":"2030-01-01T00:00:00Z"}}"#.utf8)
+        XCTAssertTrue(try ClaudeLiveClient.reading(fromResponse: weeklyOnly, capturedAt: now, plan: "Ultra").snapshot.hasNoFiveHourLimit)
+        XCTAssertFalse(try ClaudeLiveClient.reading(fromResponse: weeklyOnly, capturedAt: now, plan: "Max").snapshot.hasNoFiveHourLimit)
+        XCTAssertFalse(try ClaudeLiveClient.reading(fromResponse: weeklyOnly, capturedAt: now).snapshot.hasNoFiveHourLimit)
+
+        // An Ultra account awaiting verification keeps its temporary 5-hour limit.
+        let both = Data(#"{"five_hour":{"utilization":12,"resets_at":"2030-01-01T00:00:00Z"},"seven_day":{"utilization":40,"resets_at":"2030-01-01T00:00:00Z"}}"#.utf8)
+        let verifying = try ClaudeLiveClient.reading(fromResponse: both, capturedAt: now, plan: "Ultra").snapshot
+        XCTAssertFalse(verifying.hasNoFiveHourLimit)
+        XCTAssertEqual(verifying.fiveHour?.usedPercent, 12)
+    }
+
+    func testNewerStatusLineKeepsTheMissingFiveHourLimit() {
+        let weekly = LimitWindow(usedPercent: 40, resetsAt: nil)
+        let live = LimitSnapshot(fiveHour: nil, sevenDay: weekly, capturedAt: Date(timeIntervalSince1970: 100), hasNoFiveHourLimit: true)
+        let now = Date(timeIntervalSince1970: 200)
+        let statusLine = LimitSnapshot(fiveHour: nil, sevenDay: weekly, capturedAt: now)
+        XCTAssertTrue(LimitsStore.merge(.fresh(statusLine), live: live, staleAfter: 3600, now: now).snapshot?.hasNoFiveHourLimit == true)
+
+        // A 5-hour window that came back wins over the old word.
+        let window = LimitWindow(usedPercent: 5, resetsAt: nil)
+        let back = LimitSnapshot(fiveHour: window, sevenDay: weekly, capturedAt: now)
+        XCTAssertEqual(LimitsStore.merge(.fresh(back), live: live, staleAfter: 3600, now: now).snapshot?.fiveHour, window)
+        XCTAssertFalse(LimitsStore.merge(.fresh(back), live: live, staleAfter: 3600, now: now).snapshot?.hasNoFiveHourLimit == true)
+    }
+
     func testMissingFiveHourWindowIsUnknownUnlessTheSourceSaysSo() throws {
         let now = Date(timeIntervalSince1970: 0)
         // Weekly window reported in `secondary` with `primary` missing: not proof of "no limit".
@@ -393,7 +441,7 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(MiniPillView.label(for: .codex, state: .fresh(codex), now: now), "5h —")
         XCTAssertNil(ServiceState.fresh(codex).level(at: now))
 
-        // Claude never reports "no 5-hour limit"; a missing window stays unknown.
+        // Without the network source's word, a missing Claude window stays unknown.
         let claude = LimitSnapshot(fiveHour: nil, sevenDay: LimitWindow(usedPercent: 40, resetsAt: nil), capturedAt: now)
         XCTAssertFalse(claude.hasNoFiveHourLimit)
         XCTAssertEqual(MiniPillView.label(for: .claude, state: .fresh(claude), now: now), "5h —")
@@ -897,13 +945,16 @@ final class LimitaTests: XCTestCase {
     func testPlanNameComesFromTheLogin() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let max = #"{"claudeAiOauth":{"accessToken":"t","subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}"#
-        XCTAssertEqual(try ClaudeLiveClient.login(fromCredentials: Data(max.utf8), now: now).plan, "Max X20")
+        XCTAssertEqual(try ClaudeLiveClient.login(fromCredentials: Data(max.utf8), now: now).plan, "Ultra")
         XCTAssertEqual(ClaudeLiveClient.planName(subscription: "pro", tier: "default_claude_ai"), "Pro")
-        XCTAssertEqual(ClaudeLiveClient.planName(subscription: "max", tier: "default_claude_max_5x"), "Max X5")
+        XCTAssertEqual(ClaudeLiveClient.planName(subscription: "max", tier: "default_claude_max_5x"), "Max")
+        XCTAssertEqual(ClaudeLiveClient.planName(subscription: "max", tier: nil), "Max")
+        XCTAssertEqual(ClaudeLiveClient.planName(subscription: "ultra", tier: "default_claude_ultra"), "Ultra")
+        XCTAssertEqual(ClaudeLiveClient.planName(subscription: "team", tier: "default_claude_max_5x"), "Team X5")
         XCTAssertNil(ClaudeLiveClient.planName(subscription: nil, tier: "default_claude_max_5x"))
 
         let profile = #"{"account":{},"organization":{"organization_type":"claude_max","rate_limit_tier":"default_claude_max_5x"}}"#
-        XCTAssertEqual(ClaudeLiveClient.plan(fromProfile: Data(profile.utf8)), "Max X5")
+        XCTAssertEqual(ClaudeLiveClient.plan(fromProfile: Data(profile.utf8)), "Max")
         XCTAssertNil(ClaudeLiveClient.plan(fromProfile: Data("{}".utf8)))
     }
 

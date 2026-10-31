@@ -97,7 +97,7 @@ pub fn longest_reset_text() -> String {
     format!("resets in {}", duration_text(7.0 * 86400.0 - 60.0))
 }
 
-/// A window that covers one model only, e.g. Fable's own weekly limit on a Max plan.
+/// A window that covers one model only, e.g. Fable's own weekly limit on an Ultra plan.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScopedWindow {
     /// The model's name as the service reports it, e.g. "Fable".
@@ -137,9 +137,10 @@ pub struct LimitSnapshot {
     pub five_hour: Option<LimitWindow>,
     pub seven_day: Option<LimitWindow>,
     pub captured_at: Timestamp,
-    /// The source said outright that the plan has no 5-hour limit (Codex on a Team plan
-    /// puts the weekly window where the 5-hour one goes). A merely missing `five_hour`
-    /// means "unknown", never "no limit".
+    /// The source said outright that the plan has no 5-hour limit: Codex on a Team plan
+    /// puts the weekly window where the 5-hour one goes, and Codex Pro or Claude Ultra
+    /// reports no 5-hour window. Otherwise a missing `five_hour` means "unknown", never
+    /// "no limit": Claude Code drops a window from the status line once it has reset.
     pub has_no_five_hour_limit: bool,
     /// Per-model windows on top of the two above. Only Claude's network source reports
     /// them; with any, the dashboard stacks the meters one per row.
@@ -169,6 +170,15 @@ impl LimitSnapshot {
     pub fn with_scoped(mut self, scoped: Vec<ScopedWindow>) -> Self {
         self.scoped = scoped;
         self
+    }
+
+    /// This snapshot with what only the network source knows. The status line reports
+    /// neither per-model windows nor a missing 5-hour limit, so a newer one keeps those
+    /// of the last network read.
+    pub fn keeping_live_data(self, other: LimitSnapshot) -> Self {
+        let scoped = if self.scoped.is_empty() { other.scoped } else { self.scoped };
+        let flag = self.has_no_five_hour_limit || other.has_no_five_hour_limit;
+        Self::with_flag(self.five_hour, self.seven_day, self.captured_at, flag).with_scoped(scoped)
     }
 
     /// Every reset time the snapshot reports, for the countdown ticks.
@@ -328,6 +338,8 @@ pub struct AccountDetails {
     pub claude_usage_credits: Option<UsageCredits>,
     /// Claude: cloud session credits.
     pub cloud_credits: Option<Allowance>,
+    /// The subscription, e.g. "Ultra" or "Pro 100", shown after the service's name.
+    pub plan: Option<String>,
 }
 
 impl AccountDetails {

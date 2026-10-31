@@ -381,7 +381,7 @@ function meter(m: Meter, stale: boolean): HTMLElement {
   const amount = m.amount ? el("span", "caption meter-caption digits nowrap amount", m.amount) : null;
   return el(
     "div",
-    `meter${stale ? " stale" : ""}`,
+    `meter${stale ? " stale" : ""}${m.tone === "unlimited" ? " unlimited" : ""}`,
     el("div", "caption meter-caption nowrap", m.title),
     el(
       "div",

@@ -76,7 +76,7 @@ struct LimitWindow: Codable, Sendable, Equatable {
     static let longestResetText = "resets in 6 days 23 hours 59 min"
 }
 
-/// A window that covers one model only, e.g. Fable's own weekly limit on a Max plan.
+/// A window that covers one model only, e.g. Fable's own weekly limit on an Ultra plan.
 struct ScopedWindow: Codable, Sendable, Equatable {
     /// The model's name as the service reports it, e.g. "Fable".
     let name: String
@@ -111,9 +111,10 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
     let fiveHour: LimitWindow?
     let sevenDay: LimitWindow?
     let capturedAt: Date
-    /// The source said outright that the plan has no 5-hour limit (Codex on a Team plan
-    /// puts the weekly window where the 5-hour one goes). A merely missing `fiveHour`
-    /// means "unknown", never "no limit".
+    /// The source said outright that the plan has no 5-hour limit: Codex on a Team plan
+    /// puts the weekly window where the 5-hour one goes, and Codex Pro or Claude Ultra
+    /// reports no 5-hour window. Otherwise a missing `fiveHour` means "unknown", never
+    /// "no limit": Claude Code drops a window from the status line once it has reset.
     let hasNoFiveHourLimit: Bool
     /// Per-model windows on top of the two above. Only Claude's network source reports
     /// them; with any, the dashboard stacks the meters one per row.
@@ -130,13 +131,14 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
         self.scoped = scoped
     }
 
-    /// This snapshot with `scoped` windows from another source. The status line reports
-    /// no per-model windows, so a newer one keeps those of the last network read.
-    func keepingScoped(from other: LimitSnapshot) -> LimitSnapshot {
-        guard scoped.isEmpty, !other.scoped.isEmpty else { return self }
-        return LimitSnapshot(
+    /// This snapshot with what only the network source knows. The status line reports
+    /// neither per-model windows nor a missing 5-hour limit, so a newer one keeps those
+    /// of the last network read.
+    func keepingLiveData(from other: LimitSnapshot) -> LimitSnapshot {
+        LimitSnapshot(
             fiveHour: fiveHour, sevenDay: sevenDay, capturedAt: capturedAt,
-            hasNoFiveHourLimit: hasNoFiveHourLimit, scoped: other.scoped
+            hasNoFiveHourLimit: hasNoFiveHourLimit || other.hasNoFiveHourLimit,
+            scoped: scoped.isEmpty ? other.scoped : scoped
         )
     }
 
@@ -285,7 +287,7 @@ struct AccountDetails: Sendable, Equatable {
     var claudeUsageCredits: UsageCredits?
     /// Claude: cloud session credits.
     var cloudCredits: Allowance?
-    /// Claude: the subscription, e.g. "Max X20", shown after the service's name.
+    /// The subscription, e.g. "Ultra" or "Pro 100", shown after the service's name.
     var plan: String?
 
     var isEmpty: Bool {

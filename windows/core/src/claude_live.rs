@@ -9,6 +9,9 @@
 //! on Windows, the Keychain on macOS) and is only ever sent to api.anthropic.com. It is
 //! never stored or refreshed by Limita: refreshing would rotate the token under Claude
 //! Code's feet.
+//!
+//! Set `LIMITA_CLAUDE_API` to another origin (see `scripts/fake-api.py`) to test against
+//! fake responses. The login is then not read at all, so no token ever goes there.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -20,7 +23,8 @@ use crate::model::{AccountDetails, Allowance, LimitSnapshot, LimitWindow, LiveRe
 use crate::paths;
 use crate::time::{from_unix, parse_flexible, relative_text, Timestamp};
 
-pub const ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
+const API: &str = "https://api.anthropic.com";
+const ULTRA_PLAN: &str = "Ultra";
 const TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Debug)]
@@ -36,9 +40,14 @@ impl Default for ClaudeLiveClient {
 
 impl ClaudeLiveClient {
     pub fn fetch(&self, now: Timestamp) -> Result<LiveReading, String> {
-        let token = self.access_token(now)?;
+        let api_override = std::env::var("LIMITA_CLAUDE_API").ok().filter(|url| !url.is_empty());
+        let (token, login_plan) = match api_override {
+            Some(_) => ("fake".to_string(), None),
+            None => self.login(now)?,
+        };
+        let api = api_override.unwrap_or_else(|| API.to_string());
         let response = agent()?
-            .get(ENDPOINT)
+            .get(&format!("{api}/api/oauth/usage"))
             .timeout(TIMEOUT)
             .set("Authorization", &format!("Bearer {token}"))
             .set("anthropic-beta", "oauth-2025-04-20")
@@ -49,7 +58,9 @@ impl ClaudeLiveClient {
                 let body = response
                     .into_string()
                     .map_err(|error| format!("Could not read the Claude usage response: {error}"))?;
-                reading_from_response(body.as_bytes(), now)
+                // The login keeps the plan from when the user signed in; the profile is current.
+                let plan = profile_plan(&api, &token).or(login_plan);
+                reading_for_plan(body.as_bytes(), now, plan)
             }
             Err(ureq::Error::Status(status @ (401 | 403), _)) => {
                 Err(format!("Claude rejected the login ({status}) — open Claude Code to renew it"))
@@ -63,12 +74,73 @@ impl ClaudeLiveClient {
     }
 
     pub fn access_token(&self, now: Timestamp) -> Result<String, String> {
+        self.login(now).map(|(token, _)| token)
+    }
+
+    /// The token, and the plan Claude Code saved next to it.
+    fn login(&self, now: Timestamp) -> Result<(String, Option<String>), String> {
         let data = match std::fs::read(&self.credentials_file) {
             Ok(data) => data,
             Err(_) => platform_credentials().ok_or("Not signed in to Claude Code — sign in there first")?,
         };
-        access_token_from_credentials(&data, now)
+        Ok((access_token_from_credentials(&data, now)?, plan_from_credentials(&data)))
     }
+}
+
+/// The current plan from `GET /api/oauth/profile`, also undocumented. `None` on any
+/// failure: the plan is a nicety and must never cost the limits.
+fn profile_plan(api: &str, token: &str) -> Option<String> {
+    let body = agent()
+        .ok()?
+        .get(&format!("{api}/api/oauth/profile"))
+        .timeout(TIMEOUT)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("anthropic-beta", "oauth-2025-04-20")
+        .set("Accept", "application/json")
+        .call()
+        .ok()?
+        .into_string()
+        .ok()?;
+    plan_from_profile(body.as_bytes())
+}
+
+/// `{"organization": {"organization_type": "claude_max", "rate_limit_tier":
+/// "default_claude_max_5x"}}` → "Max".
+pub fn plan_from_profile(data: &[u8]) -> Option<String> {
+    let profile: Value = serde_json::from_slice(data).ok()?;
+    let organization = &profile["organization"];
+    let kind = organization["organization_type"].as_str()?;
+    plan_name(Some(kind.strip_prefix("claude_").unwrap_or(kind)), organization["rate_limit_tier"].as_str())
+}
+
+fn plan_from_credentials(data: &[u8]) -> Option<String> {
+    let credentials: Value = serde_json::from_slice(data).ok()?;
+    let oauth = &credentials["claudeAiOauth"];
+    plan_name(oauth["subscriptionType"].as_str(), oauth["rateLimitTier"].as_str())
+}
+
+/// `"pro"` → "Pro". Max 5x is now called Max and Max 20x Ultra, but logins still say
+/// `"max"` with tier `"default_claude_max_5x"` or `"default_claude_max_20x"`.
+pub fn plan_name(subscription: Option<&str>, tier: Option<&str>) -> Option<String> {
+    let subscription = subscription?.trim().to_lowercase();
+    if subscription.is_empty() {
+        return None;
+    }
+    let tier = tier.unwrap_or("").to_lowercase();
+    if tier.contains("ultra") {
+        return Some(ULTRA_PLAN.into());
+    }
+    if subscription == "max" {
+        return Some(if tier.ends_with("_20x") { ULTRA_PLAN.into() } else { "Max".into() });
+    }
+    let mut chars = subscription.chars();
+    let mut name: String = chars.next()?.to_uppercase().chain(chars).collect();
+    if let Some(multiplier) = tier.rsplit('_').next().and_then(|last| last.strip_suffix('x')) {
+        if multiplier.parse::<u32>().is_ok() {
+            name += &format!(" X{multiplier}");
+        }
+    }
+    Some(name)
 }
 
 /// HTTPS through the system's TLS (SChannel on Windows), so the system's certificates
@@ -128,9 +200,16 @@ pub fn access_token_from_credentials(data: &[u8], now: Timestamp) -> Result<Stri
 /// Parses the usage response. Extras never cost us the limits themselves: a balance of
 /// an unexpected shape just hides its row.
 pub fn reading_from_response(data: &[u8], captured_at: Timestamp) -> Result<LiveReading, String> {
+    reading_for_plan(data, captured_at, None)
+}
+
+/// A verified Ultra account has no 5-hour limit, and the response no such window. Only
+/// Ultra counts: on other plans the window may be missing merely because it has reset.
+pub fn reading_for_plan(data: &[u8], captured_at: Timestamp, plan: Option<String>) -> Result<LiveReading, String> {
     let usage: Value =
         serde_json::from_slice(data).map_err(|error| format!("Claude usage API returned invalid JSON: {error}"))?;
-    let snapshot = LimitSnapshot::new(window(&usage["five_hour"]), window(&usage["seven_day"]), captured_at)
+    let no_five_hour = plan.as_deref() == Some(ULTRA_PLAN) && usage["five_hour"].is_null();
+    let snapshot = LimitSnapshot::with_flag(window(&usage["five_hour"]), window(&usage["seven_day"]), captured_at, no_five_hour)
         .with_scoped(scoped_windows(&usage["limits"], &usage["weekly_scoped_shares"]));
     if snapshot.is_empty() {
         return Err("Claude usage API returned no limit windows".into());
@@ -140,6 +219,7 @@ pub fn reading_from_response(data: &[u8], captured_at: Timestamp) -> Result<Live
         // Cloud session credits. The key is an internal code name, so it may change; the
         // row then disappears instead of breaking the parse.
         cloud_credits: allowance(&usage["iguana_necktie"]),
+        plan,
         ..AccountDetails::default()
     };
     Ok(LiveReading { snapshot, details })
@@ -254,6 +334,36 @@ mod tests {
 
     fn now() -> Timestamp {
         from_unix(1_800_000_000.0).unwrap()
+    }
+
+    #[test]
+    fn plan_names_follow_the_renamed_subscriptions() {
+        assert_eq!(plan_name(Some("max"), Some("default_claude_max_20x")).as_deref(), Some("Ultra"));
+        assert_eq!(plan_name(Some("max"), Some("default_claude_max_5x")).as_deref(), Some("Max"));
+        assert_eq!(plan_name(Some("max"), None).as_deref(), Some("Max"));
+        assert_eq!(plan_name(Some("ultra"), Some("default_claude_ultra")).as_deref(), Some("Ultra"));
+        assert_eq!(plan_name(Some("pro"), Some("default_claude_ai")).as_deref(), Some("Pro"));
+        assert_eq!(plan_name(Some("team"), Some("default_claude_max_5x")).as_deref(), Some("Team X5"));
+        assert_eq!(plan_name(None, Some("default_claude_max_5x")), None);
+        let profile = br#"{"organization":{"organization_type":"claude_max","rate_limit_tier":"default_claude_max_20x"}}"#;
+        assert_eq!(plan_from_profile(profile).as_deref(), Some("Ultra"));
+    }
+
+    #[test]
+    fn only_ultra_turns_a_missing_window_into_no_limit() {
+        let weekly_only = br#"{"five_hour":null,"seven_day":{"utilization":40,"resets_at":"2030-01-01T00:00:00Z"}}"#;
+        let flag = |plan: Option<&str>| {
+            reading_for_plan(weekly_only, now(), plan.map(String::from)).unwrap().snapshot.has_no_five_hour_limit
+        };
+        assert!(flag(Some("Ultra")));
+        assert!(!flag(Some("Max")));
+        assert!(!flag(None));
+
+        // An Ultra account awaiting verification keeps its temporary 5-hour limit.
+        let both = br#"{"five_hour":{"utilization":12,"resets_at":"2030-01-01T00:00:00Z"},"seven_day":{"utilization":40,"resets_at":"2030-01-01T00:00:00Z"}}"#;
+        let verifying = reading_for_plan(both, now(), Some("Ultra".into())).unwrap().snapshot;
+        assert!(!verifying.has_no_five_hour_limit);
+        assert_eq!(verifying.five_hour.unwrap().used_percent, 12.0);
     }
 
     #[test]

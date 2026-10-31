@@ -342,8 +342,8 @@ struct ExpandedView: View {
     private func fiveHourMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> MeterView {
         if snapshot.hasNoFiveHourLimit {
             // Stands in for the 5-hour meter when the plan has no 5-hour limit.
-            return MeterView(title: "5 HOURS", value: "∞", amount: nil, fill: 0, color: .clear,
-                             caption: "NO 5-HOUR LIMIT", stale: false)
+            return MeterView(title: "5 HOURS", value: "∞", amount: nil, fill: 1, color: DashboardStyle.unlimited,
+                             caption: "UNLIMITED", stale: false, glow: DashboardStyle.unlimited)
         }
         return metric("5 HOURS", service: service, window: snapshot.fiveHour,
                       color: DashboardStyle.fiveHourBar(for: service), stale: stale, now: now)
@@ -571,6 +571,8 @@ struct MeterView: View {
     var highlight: (fill: Double, color: Color)?
     let caption: String
     let stale: Bool
+    /// Tints the value and makes it and the bar shine in this colour.
+    var glow: Color? = nil
     /// Shows a chevron after the title that folds the meter away.
     var onCollapse: (() -> Void)?
 
@@ -610,6 +612,12 @@ struct MeterView: View {
                     .monospacedDigit()
                     .lineLimit(1)
                     .fixedSize()
+                    .foregroundStyle(glow.map(AnyShapeStyle.init) ?? AnyShapeStyle(.foreground))
+                    // The ∞ is a small glyph; scaling it leaves the row's height alone.
+                    .scaleEffect(glow == nil ? 1 : 1.6, anchor: .leading)
+                    .offset(y: glow == nil ? 0 : -2)
+                    .shadow(color: glow ?? .clear, radius: 3)
+                    .shadow(color: glow ?? .clear, radius: 9)
                     .frame(minWidth: Self.valueWidth, alignment: .leading)
                     .opacity(stale ? 0.55 : 1)
 
@@ -643,6 +651,7 @@ struct MeterView: View {
                     .fill(color)
                     .frame(width: geometry.size.width * min(max(fill, 0), 1))
                     .opacity(stale ? 0.55 : 1)
+                    .shadow(color: glow ?? .clear, radius: 5)
                 if let highlight, highlight.fill > 0 {
                     Capsule()
                         .fill(highlight.color)
@@ -1189,6 +1198,9 @@ enum DashboardStyle {
             ? Color(red: 0.31, green: 0.67, blue: 1)
             : Color(red: 1, green: 0.58, blue: 0.30)
     }
+
+    /// The 5-hour meter of a plan without a 5-hour limit, on either service.
+    static let unlimited = Color(red: 0.69, green: 0.42, blue: 1)
 
     /// Claude's two bars share the softer weekly tone; Codex keeps a brighter 5-hour bar.
     static func fiveHourBar(for service: Service) -> Color {

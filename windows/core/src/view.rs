@@ -77,6 +77,8 @@ pub enum BarTone {
     AccentSoft,
     /// A model's share of the weekly limit: a lighter tone that stands out on the bar.
     Share,
+    /// The 5-hour meter of a plan without a 5-hour limit, on either service.
+    Unlimited,
     Warning,
     Critical,
 }
@@ -180,7 +182,10 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
 
     let mut view = ServiceView {
         id: service,
-        name: service.display_name().into(),
+        name: match snapshot.details.get(&service).and_then(|details| details.plan.as_deref()) {
+            Some(plan) => format!("{} {plan}", service.display_name()),
+            None => service.display_name().into(),
+        },
         level: state.level(now),
         stale: state.is_stale(),
         status: status.into(),
@@ -205,10 +210,10 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
             title: "5 HOURS".into(),
             value: "∞".into(),
             amount: None,
-            fill: 0.0,
-            tone: BarTone::AccentSoft,
+            fill: 1.0,
+            tone: BarTone::Unlimited,
             highlight: None,
-            caption: "NO 5-HOUR LIMIT".into(),
+            caption: "UNLIMITED".into(),
         }
     } else {
         // Claude's two bars share the softer weekly tone; Codex keeps a brighter 5-hour bar.
