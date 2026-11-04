@@ -75,7 +75,7 @@ def is_stale(entry, now):
 
 
 def headline(entry):
-    """The 5-hour window, or the weekly one only when the plan has no 5-hour limit."""
+    """The 5-hour window, or the long one (7 or 30 days) only when the plan has no 5-hour limit."""
     if entry.get("fiveHour"):
         return entry["fiveHour"]
     if entry.get("hasNoFiveHourLimit") and entry.get("sevenDay"):
@@ -97,7 +97,7 @@ def service_text(entry, now, weekly=True):
     if not entry.get("hasNoFiveHourLimit"):
         windows.append(("5h", entry.get("fiveHour")))
     if weekly or entry.get("hasNoFiveHourLimit"):
-        windows.append(("7d", entry.get("sevenDay")))
+        windows.append((f"{entry.get('longWindowDays') or 7}d", entry.get("sevenDay")))
     parts = []
     for label, window in windows:
         percent = f"{shown_percent(window, entry['meaning'], now):.0f}%" if window else "—"

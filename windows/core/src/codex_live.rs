@@ -364,7 +364,23 @@ mod tests {
         let response = r#"{"id":2,"result":{"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":34,"windowDurationMins":10080,"resetsAt":1789897438},"secondary":null}}}}"#;
         let snapshot = reading_from_response(response.as_bytes(), from_unix(1.0).unwrap()).unwrap().snapshot;
         assert!(snapshot.has_no_five_hour_limit);
-        assert_eq!(snapshot.headline().map(|h| h.0), Some("7d"));
+        assert_eq!(snapshot.headline().map(|h| h.0).as_deref(), Some("7d"));
+    }
+
+    #[test]
+    fn free_plan_reports_a_thirty_day_window() {
+        let response = r#"{"id":2,"result":{"ordinaryUsageAllowed":true,"rateLimits":{"limitId":"codex","primary":{"usedPercent":12,"windowDurationMins":43200,"resetsAt":1796393128},"secondary":null,"credits":{"hasCredits":false,"unlimited":false,"balance":null},"planType":"free"},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":12,"windowDurationMins":43200,"resetsAt":1796393128},"secondary":null,"credits":{"hasCredits":false,"unlimited":false,"balance":null},"planType":"free"}},"rateLimitResetCredits":{"availableCount":0,"credits":null}}}"#;
+        let reading = reading_from_response(response.as_bytes(), from_unix(1.0).unwrap()).unwrap();
+        let snapshot = reading.snapshot;
+        assert!(snapshot.five_hour.is_none());
+        assert_eq!(snapshot.seven_day.unwrap().used_percent, 12.0);
+        assert_eq!(snapshot.long_window_days, 30);
+        assert!(snapshot.has_no_five_hour_limit);
+        assert!(!snapshot.is_long_window_weekly());
+        assert_eq!(snapshot.long_window_title(), "30 DAYS");
+        assert_eq!(snapshot.headline().map(|h| h.0).as_deref(), Some("30d"));
+        assert_eq!(reading.details.plan.as_deref(), Some("Free"));
+        assert_eq!(reading.details.codex_credits, None);
     }
 
     #[cfg(unix)]

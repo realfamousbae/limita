@@ -145,6 +145,8 @@ pub struct LimitSnapshot {
     /// Per-model windows on top of the two above. Only Claude's network source reports
     /// them; with any, the dashboard stacks the meters one per row.
     pub scoped: Vec<ScopedWindow>,
+    /// How many days the long window (`seven_day`) spans: 7, or 30 on Codex Free.
+    pub long_window_days: u32,
 }
 
 impl LimitSnapshot {
@@ -164,7 +166,24 @@ impl LimitSnapshot {
             captured_at,
             has_no_five_hour_limit: has_no_five_hour_limit && five_hour.is_none() && seven_day.is_some(),
             scoped: Vec::new(),
+            long_window_days: 7,
         }
+    }
+
+    /// The same snapshot with a long window of `days` days instead of a week.
+    pub fn with_long_window_days(mut self, days: u32) -> Self {
+        self.long_window_days = days;
+        self
+    }
+
+    /// Whether the long window is a week, the only one an early reset is looked for in.
+    pub fn is_long_window_weekly(&self) -> bool {
+        self.long_window_days == 7
+    }
+
+    /// "7 DAYS" or "30 DAYS", the long meter's title.
+    pub fn long_window_title(&self) -> String {
+        format!("{} DAYS", self.long_window_days)
     }
 
     pub fn with_scoped(mut self, scoped: Vec<ScopedWindow>) -> Self {
@@ -178,7 +197,10 @@ impl LimitSnapshot {
     pub fn keeping_live_data(self, other: LimitSnapshot) -> Self {
         let scoped = if self.scoped.is_empty() { other.scoped } else { self.scoped };
         let flag = self.has_no_five_hour_limit || other.has_no_five_hour_limit;
-        Self::with_flag(self.five_hour, self.seven_day, self.captured_at, flag).with_scoped(scoped)
+        let days = if self.long_window_days == 7 { other.long_window_days } else { self.long_window_days };
+        Self::with_flag(self.five_hour, self.seven_day, self.captured_at, flag)
+            .with_scoped(scoped)
+            .with_long_window_days(days)
     }
 
     /// Every reset time the snapshot reports, for the countdown ticks.
@@ -195,14 +217,15 @@ impl LimitSnapshot {
         self.five_hour.is_none() && self.seven_day.is_none()
     }
 
-    /// The window the pill and the traffic light follow: the 5-hour one, or the weekly
-    /// one only when the plan has no 5-hour limit. `None` while the 5-hour window is unknown.
-    pub fn headline(&self) -> Option<(&'static str, LimitWindow)> {
+    /// The window the pill and the traffic light follow: the 5-hour one, or the long
+    /// one ("7d", "30d") only when the plan has no 5-hour limit. `None` while the 5-hour
+    /// window is unknown.
+    pub fn headline(&self) -> Option<(String, LimitWindow)> {
         if let Some(window) = self.five_hour {
-            return Some(("5h", window));
+            return Some(("5h".into(), window));
         }
         if self.has_no_five_hour_limit {
-            return self.seven_day.map(|window| ("7d", window));
+            return self.seven_day.map(|window| (format!("{}d", self.long_window_days), window));
         }
         None
     }
@@ -451,7 +474,7 @@ mod tests {
         assert!(!both.has_no_five_hour_limit);
         assert!(!LimitSnapshot::with_flag(None, None, now, true).has_no_five_hour_limit);
         let weekly = LimitSnapshot::with_flag(None, Some(LimitWindow::new(92.0, None)), now, true);
-        assert_eq!(weekly.headline().map(|h| h.0), Some("7d"));
+        assert_eq!(weekly.headline().map(|h| h.0).as_deref(), Some("7d"));
         assert_eq!(ServiceState::Fresh(weekly).level(now), Some(LimitLevel::Critical), "the dot follows the weekly window");
     }
 

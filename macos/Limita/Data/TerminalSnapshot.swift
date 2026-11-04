@@ -15,6 +15,8 @@ struct TerminalSnapshot: Encodable, Equatable {
         let fiveHour: LimitWindow?
         let sevenDay: LimitWindow?
         let hasNoFiveHourLimit: Bool
+        /// Days in the `sevenDay` window: 7, or 30 on Codex Free.
+        let longWindowDays: Int
         let capturedAt: Date?
         /// Seconds after `capturedAt` when the data counts as stale. The reader decides,
         /// so a file left behind by a crashed app goes stale on its own.
@@ -43,6 +45,7 @@ struct TerminalSnapshot: Encodable, Equatable {
                 fiveHour: snapshot?.fiveHour,
                 sevenDay: snapshot?.sevenDay,
                 hasNoFiveHourLimit: snapshot?.hasNoFiveHourLimit ?? false,
+                longWindowDays: snapshot?.longWindowSpan ?? 7,
                 capturedAt: snapshot?.capturedAt,
                 staleAfter: service == .claude ? ClaudeLimitsReader.staleAfter : CodexLimitsReader.staleAfter,
                 primeTime: primeTime.contains(service)

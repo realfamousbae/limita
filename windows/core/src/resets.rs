@@ -488,7 +488,7 @@ impl ResetWatcher {
             let before = state.memory.clone();
             let mut recorded = Vec::new();
             if let Some((snapshot, weekly, resets_at)) =
-                snapshot.and_then(|s| s.seven_day.and_then(|w| w.resets_at.map(|r| (s, w, r))))
+                snapshot.filter(|s| s.is_long_window_weekly()).and_then(|s| s.seven_day.and_then(|w| w.resets_at.map(|r| (s, w, r))))
             {
                 let previous = state.memory.weekly.get(&service).copied();
                 // An older snapshot (e.g. a stale local file) must not overwrite a newer one.

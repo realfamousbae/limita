@@ -155,7 +155,7 @@ final class ResetWatcher {
     /// Compares a service's numbers with the last ones seen: a weekly window that
     /// started over early, or a new Codex limit reset to redeem, is an event.
     func observe(_ service: Service, snapshot: LimitSnapshot?, details: AccountDetails?, now: Date = Date()) {
-        if let weekly = snapshot?.sevenDay, let resetsAt = weekly.resetsAt, let snapshot {
+        if let snapshot, snapshot.isLongWindowWeekly, let weekly = snapshot.sevenDay, let resetsAt = weekly.resetsAt {
             let previous = memory.weekly[service]
             // An older snapshot (e.g. a stale local file) must not overwrite a newer one.
             if previous.map({ snapshot.capturedAt >= $0.capturedAt }) ?? true {
