@@ -392,6 +392,42 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(snapshot.headline?.label, "7d")
     }
 
+    func testFreePlanReportsAThirtyDayWindow() throws {
+        let response = #"{"id":2,"result":{"ordinaryUsageAllowed":true,"rateLimits":{"limitId":"codex","primary":{"usedPercent":12,"windowDurationMins":43200,"resetsAt":1796393128},"secondary":null,"credits":{"hasCredits":false,"unlimited":false,"balance":null},"planType":"free"},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":12,"windowDurationMins":43200,"resetsAt":1796393128},"secondary":null,"credits":{"hasCredits":false,"unlimited":false,"balance":null},"planType":"free"}},"rateLimitResetCredits":{"availableCount":0,"credits":null}}}"#
+        let reading = try CodexLiveClient.reading(fromResponse: Data(response.utf8), capturedAt: Date())
+        let snapshot = reading.snapshot
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertEqual(snapshot.sevenDay?.usedPercent, 12)
+        XCTAssertEqual(snapshot.longWindowSpan, 30)
+        XCTAssertFalse(snapshot.isLongWindowWeekly)
+        XCTAssertEqual(snapshot.longWindowTitle, "30 DAYS")
+        XCTAssertTrue(snapshot.hasNoFiveHourLimit)
+        XCTAssertEqual(snapshot.headline?.label, "30d")
+        XCTAssertEqual(reading.details.plan, "Free")
+        XCTAssertNil(reading.details.codexCredits)
+    }
+
+    func testFreePlanSessionLogReportsTheThirtyDayWindow() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("rollout-free.jsonl")
+        try #"{"timestamp":"2026-11-04T10:00:00Z","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":5.0,"window_minutes":43200,"resets_at":1796393128},"secondary":null,"plan_type":"free"}}}"#
+            .write(to: file, atomically: true, encoding: .utf8)
+        let snapshot = try XCTUnwrap(CodexLimitsReader.lastSnapshot(in: file, fallbackDate: Date()))
+        XCTAssertEqual(snapshot.sevenDay?.usedPercent, 5)
+        XCTAssertEqual(snapshot.longWindowSpan, 30)
+        XCTAssertTrue(snapshot.hasNoFiveHourLimit)
+    }
+
+    func testSnapshotStoredBeforeLongWindowDaysReadsAsWeekly() throws {
+        let stored = #"{"fiveHour":null,"sevenDay":{"usedPercent":40},"capturedAt":0,"hasNoFiveHourLimit":true,"scoped":[]}"#
+        let snapshot = try JSONDecoder().decode(LimitSnapshot.self, from: Data(stored.utf8))
+        XCTAssertEqual(snapshot.longWindowSpan, 7)
+        XCTAssertEqual(snapshot.longWindowTitle, "7 DAYS")
+        XCTAssertEqual(snapshot.headline?.label, "7d")
+    }
+
     func testCodexProHasNoFiveHourLimitWhereverTheWeeklyWindowComes() throws {
         let weekly = #"{"usedPercent":34,"windowDurationMins":10080,"resetsAt":1789897438}"#
         for (type, name) in [("prolite", "Pro 100"), ("pro", "Pro 200"), ("promax", "Pro 500")] {

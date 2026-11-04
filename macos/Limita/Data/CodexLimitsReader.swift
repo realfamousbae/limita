@@ -88,7 +88,7 @@ struct CodexLimitsReader: Sendable {
     ///
     /// Rate limits are appended throughout the session, so the last one is the current
     /// one and reading the tail avoids parsing megabytes of transcript. Records without
-    /// any 5h/7d window are skipped: Codex also logs other buckets (e.g. `premium`)
+    /// any 5-hour or long window are skipped: Codex also logs other buckets (e.g. `premium`)
     /// whose `primary`/`secondary` are null.
     static func lastSnapshot(in file: URL, fallbackDate: Date) -> LimitSnapshot? {
         let decoder = JSONDecoder()
@@ -110,26 +110,27 @@ struct CodexLimitsReader: Sendable {
 
     static func snapshot(from payload: RateLimitsPayload, capturedAt: Date) -> LimitSnapshot {
         var fiveHour: LimitWindow?
-        var sevenDay: LimitWindow?
+        var long: (window: LimitWindow, days: Int)?
 
         for entry in [payload.primary, payload.secondary].compactMap({ $0 }) {
             guard let window = entry.limitWindow else { continue }
             switch entry.scale {
             case .fiveHour: fiveHour = fiveHour ?? window
-            case .sevenDay: sevenDay = sevenDay ?? window
+            case .long(let days): long = long ?? (window, days)
             case .unknown: continue
             }
         }
 
-        // Codex puts the shortest window in `primary`. A weekly `primary` with no
-        // `secondary` is how it reports a plan without a 5-hour limit. Pro has none at
-        // all, wherever the weekly window comes.
-        let weeklyOnly = (payload.primary?.scale == .sevenDay && payload.secondary == nil) || payload.isProPlan
+        // Codex puts the shortest window in `primary`. A long `primary` with no
+        // `secondary` is how it reports a plan without a 5-hour limit: weekly on Team,
+        // 30 days on Free. Pro has none at all, wherever the weekly window comes.
+        let longOnly = (payload.primary?.scale.isLong == true && payload.secondary == nil) || payload.isProPlan
         return LimitSnapshot(
             fiveHour: fiveHour,
-            sevenDay: sevenDay,
+            sevenDay: long?.window,
             capturedAt: capturedAt,
-            hasNoFiveHourLimit: weeklyOnly
+            hasNoFiveHourLimit: longOnly,
+            longWindowDays: long?.days
         )
     }
 
@@ -196,19 +197,27 @@ struct CodexLimitsReader: Sendable {
             }
 
             /// Classify by duration, tolerating small drift in what the server reports.
+            /// Anything a day or longer is the long window, counted in whole days: a week
+            /// on most plans, 30 days (43 200 minutes) on Free.
             var scale: WindowScale {
                 guard let windowMinutes, windowMinutes > 0 else { return .unknown }
                 if windowMinutes.isWithin10Percent(of: 300) { return .fiveHour }
-                if windowMinutes.isWithin10Percent(of: 10080) { return .sevenDay }
+                if windowMinutes.isWithin10Percent(of: 10080) { return .long(days: 7) }
+                if windowMinutes >= 1440 { return .long(days: Int((windowMinutes / 1440).rounded())) }
                 return .unknown
             }
         }
     }
 
-    enum WindowScale {
-        case fiveHour   // window_minutes == 300
-        case sevenDay   // window_minutes == 10080
+    enum WindowScale: Equatable {
+        case fiveHour            // window_minutes == 300
+        case long(days: Int)     // 10080 (a week), 43200 (30 days on Free), …
         case unknown
+
+        var isLong: Bool {
+            if case .long = self { return true }
+            return false
+        }
     }
 }
 

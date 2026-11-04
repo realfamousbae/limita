@@ -63,9 +63,10 @@ def codex(plan, primary, secondary):
     }
 
 
-FIVE_HOURS, WEEK = 300, 10080
+FIVE_HOURS, WEEK, MONTH = 300, 10080, 43200
 CODEX = {
-    "free": codex("free", codex_window(55, FIVE_HOURS, 3 * HOUR), codex_window(72, WEEK, 130 * HOUR)),
+    # Free has no 5-hour or weekly limit, only one 30-day window, and no credits.
+    "free": dict(codex("free", codex_window(55, MONTH, 400 * HOUR), None), credits={"hasCredits": False, "unlimited": False, "balance": None}),
     "plus": codex("plus", codex_window(9, FIVE_HOURS, 4 * HOUR), codex_window(28, WEEK, 90 * HOUR)),
     "pro100": codex("prolite", codex_window(41, WEEK, 72 * HOUR), None),
     "pro": codex("pro", None, codex_window(19, WEEK, 120 * HOUR)),

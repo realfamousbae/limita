@@ -123,25 +123,27 @@ pub fn last_snapshot(file: &Path, fallback_date: Timestamp) -> Option<LimitSnaps
     None
 }
 
-/// Classifies `primary`/`secondary` by duration into 5-hour and weekly windows.
+/// Classifies `primary`/`secondary` by duration into the 5-hour and the long window
+/// (a week on most plans, 30 days on Free).
 pub fn snapshot(payload: &RateLimitsPayload, captured_at: Timestamp) -> LimitSnapshot {
     let mut five_hour = None;
-    let mut seven_day = None;
+    let mut long = None;
     for entry in [&payload.primary, &payload.secondary].into_iter().flatten() {
         let Some(window) = entry.limit_window() else { continue };
         match entry.scale() {
             WindowScale::FiveHour => five_hour = five_hour.or(Some(window)),
-            WindowScale::SevenDay => seven_day = seven_day.or(Some(window)),
+            WindowScale::Long(days) => long = long.or(Some((window, days))),
             WindowScale::Unknown => {}
         }
     }
-    // Codex puts the shortest window in `primary`. A weekly `primary` with no
-    // `secondary` is how it reports a plan without a 5-hour limit. Pro has none at all,
-    // wherever the weekly window comes.
+    // Codex puts the shortest window in `primary`. A long `primary` with no `secondary`
+    // is how it reports a plan without a 5-hour limit: weekly on Team, 30 days on Free.
+    // Pro has none at all, wherever the weekly window comes.
     let is_pro = matches!(payload.plan_type.as_deref(), Some("pro" | "prolite" | "promax"));
-    let weekly_only = is_pro
-        || (payload.primary.as_ref().map(Entry::scale) == Some(WindowScale::SevenDay) && payload.secondary.is_none());
-    LimitSnapshot::with_flag(five_hour, seven_day, captured_at, weekly_only)
+    let long_only = is_pro
+        || (matches!(payload.primary.as_ref().map(Entry::scale), Some(WindowScale::Long(_))) && payload.secondary.is_none());
+    LimitSnapshot::with_flag(five_hour, long.map(|(window, _)| window), captured_at, long_only)
+        .with_long_window_days(long.map_or(7, |(_, days)| days))
 }
 
 /// `"plus"` → "Plus"; the Pro tiers by price, as the CLI's own `/status` names them:
@@ -196,11 +198,14 @@ impl Entry {
         Some(LimitWindow::new(used, self.resets_at.and_then(from_unix)))
     }
 
-    /// Classify by duration, tolerating small drift in what the server reports.
+    /// Classify by duration, tolerating small drift in what the server reports. Anything
+    /// a day or longer is the long window, counted in whole days: a week on most plans,
+    /// 30 days (43 200 minutes) on Free.
     fn scale(&self) -> WindowScale {
         match self.window_minutes {
             Some(minutes) if minutes > 0.0 && within_10_percent(minutes, 300.0) => WindowScale::FiveHour,
-            Some(minutes) if minutes > 0.0 && within_10_percent(minutes, 10080.0) => WindowScale::SevenDay,
+            Some(minutes) if minutes > 0.0 && within_10_percent(minutes, 10080.0) => WindowScale::Long(7),
+            Some(minutes) if minutes >= 1440.0 => WindowScale::Long((minutes / 1440.0).round() as u32),
             _ => WindowScale::Unknown,
         }
     }
@@ -209,7 +214,8 @@ impl Entry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WindowScale {
     FiveHour,
-    SevenDay,
+    /// The long window, in days.
+    Long(u32),
     Unknown,
 }
 
@@ -280,6 +286,31 @@ mod tests {
         assert!(snapshot.five_hour.is_none());
         assert_eq!(snapshot.seven_day.unwrap().used_percent, 34.0);
         assert!(snapshot.has_no_five_hour_limit);
+    }
+
+    #[test]
+    fn free_plan_session_log_reports_the_thirty_day_window() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("rollout-free.jsonl");
+        std::fs::write(&file, r#"{"timestamp":"2026-11-04T10:00:00Z","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":5.0,"window_minutes":43200,"resets_at":1796393128},"secondary":null,"plan_type":"free"}}}"#).unwrap();
+        let snapshot = last_snapshot(&file, from_unix(1.0).unwrap()).unwrap();
+        assert!(snapshot.five_hour.is_none());
+        assert_eq!(snapshot.seven_day.unwrap().used_percent, 5.0);
+        assert_eq!(snapshot.long_window_days, 30);
+        assert!(snapshot.has_no_five_hour_limit);
+    }
+
+    #[test]
+    fn weekly_windows_stay_seven_days() {
+        let payload = RateLimitsPayload {
+            primary: Some(Entry { used_percent: Some(3.0), window_minutes: Some(300.0), resets_at: None }),
+            secondary: Some(Entry { used_percent: Some(40.0), window_minutes: Some(10080.0), resets_at: None }),
+            plan_type: Some("plus".into()),
+        };
+        let codex = snapshot(&payload, from_unix(1.0).unwrap());
+        assert_eq!(codex.long_window_days, 7);
+        assert_eq!(codex.long_window_title(), "7 DAYS");
+        assert!(!codex.has_no_five_hour_limit);
     }
 
     #[test]

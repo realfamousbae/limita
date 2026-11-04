@@ -119,17 +119,34 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
     /// Per-model windows on top of the two above. Only Claude's network source reports
     /// them; with any, the dashboard stacks the meters one per row.
     let scoped: [ScopedWindow]
+    /// How many days the long window (`sevenDay`) spans, when it is not a week: Codex
+    /// Free has a 30-day window instead. `nil` means 7, so snapshots stored before this
+    /// field still read as weekly.
+    let longWindowDays: Int?
 
     init(
         fiveHour: LimitWindow?, sevenDay: LimitWindow?, capturedAt: Date,
-        hasNoFiveHourLimit: Bool = false, scoped: [ScopedWindow] = []
+        hasNoFiveHourLimit: Bool = false, scoped: [ScopedWindow] = [], longWindowDays: Int? = nil
     ) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.capturedAt = capturedAt
         self.hasNoFiveHourLimit = hasNoFiveHourLimit && fiveHour == nil && sevenDay != nil
         self.scoped = scoped
+        self.longWindowDays = longWindowDays == 7 ? nil : longWindowDays
     }
+
+    /// Days in the long window: 7 for a week, 30 on Codex Free.
+    var longWindowSpan: Int { longWindowDays ?? 7 }
+
+    /// Whether the long window is a week, the only one an early reset is looked for in.
+    var isLongWindowWeekly: Bool { longWindowSpan == 7 }
+
+    /// "7 DAYS" or "30 DAYS", the long meter's title.
+    var longWindowTitle: String { "\(longWindowSpan) DAYS" }
+
+    /// "7d" or "30d", the long window in the pill and the terminal.
+    var longWindowLabel: String { "\(longWindowSpan)d" }
 
     /// This snapshot with what only the network source knows. The status line reports
     /// neither per-model windows nor a missing 5-hour limit, so a newer one keeps those
@@ -138,7 +155,8 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
         LimitSnapshot(
             fiveHour: fiveHour, sevenDay: sevenDay, capturedAt: capturedAt,
             hasNoFiveHourLimit: hasNoFiveHourLimit || other.hasNoFiveHourLimit,
-            scoped: scoped.isEmpty ? other.scoped : scoped
+            scoped: scoped.isEmpty ? other.scoped : scoped,
+            longWindowDays: longWindowDays ?? other.longWindowDays
         )
     }
 
@@ -151,11 +169,11 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
         fiveHour == nil && sevenDay == nil
     }
 
-    /// The window the pill and the traffic light follow: the 5-hour one, or the weekly
+    /// The window the pill and the traffic light follow: the 5-hour one, or the long
     /// one only when the plan has no 5-hour limit. `nil` while the 5-hour window is unknown.
     var headline: (label: String, window: LimitWindow)? {
         if let fiveHour { return ("5h", fiveHour) }
-        if hasNoFiveHourLimit, let sevenDay { return ("7d", sevenDay) }
+        if hasNoFiveHourLimit, let sevenDay { return (longWindowLabel, sevenDay) }
         return nil
     }
 }

@@ -222,7 +222,7 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
     };
     // While the bar shows what is used, the per-model windows' part of the week is drawn
     // first in their own lighter tone, like Claude's settings do.
-    let mut seven_day = meter("7 DAYS", service, data.seven_day, BarTone::AccentSoft, now);
+    let mut seven_day = meter(&data.long_window_title(), service, data.seven_day, BarTone::AccentSoft, now);
     let share: f64 = data.scoped.iter().filter_map(|s| s.weekly_share_percent(now)).sum();
     if !service.shows_remaining() && share > 0.0 {
         seven_day.highlight = Some((share / 100.0).min(seven_day.fill));

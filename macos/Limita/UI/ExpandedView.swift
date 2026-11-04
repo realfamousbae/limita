@@ -357,7 +357,7 @@ struct ExpandedView: View {
     /// The weekly meter. While the bar shows what is used, the per-model windows' part of
     /// it is drawn first in their own lighter tone, like Claude's settings do.
     private func sevenDayMetric(service: Service, snapshot: LimitSnapshot, stale: Bool, now: Date) -> MeterView {
-        var meter = metric("7 DAYS", service: service, window: snapshot.sevenDay,
+        var meter = metric(snapshot.longWindowTitle, service: service, window: snapshot.sevenDay,
                            color: DashboardStyle.accent(for: service).opacity(0.72), stale: stale, now: now)
         if !service.showsRemaining {
             let share = snapshot.scoped.compactMap { $0.weeklySharePercent(at: now) }.reduce(0, +)
