@@ -966,6 +966,39 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(sheet.width, PrimeTimeSprite.columns * PrimeTimeSprite.framePixels)
         XCTAssertEqual(sheet.height, rows * PrimeTimeSprite.framePixels)
         XCTAssertEqual(PrimeTimeSprite.cut(sheet).count, PrimeTimeSprite.frameCount)
+
+        // Each frame is the matching cell of the sheet, not flipped or shifted.
+        let frames = PrimeTimeSprite.cutFrames(sheet)
+        let size = PrimeTimeSprite.framePixels
+        for index in [0, 15, PrimeTimeSprite.frameCount - 1] {
+            let rect = CGRect(
+                x: (index % PrimeTimeSprite.columns) * size,
+                y: (index / PrimeTimeSprite.columns) * size,
+                width: size,
+                height: size
+            )
+            let expected = try XCTUnwrap(sheet.cropping(to: rect))
+            XCTAssertEqual(frames[index].width, size)
+            XCTAssertEqual(frames[index].height, size)
+            XCTAssertEqual(pixels(of: frames[index]), pixels(of: expected), "frame \(index)")
+        }
+    }
+
+    private func pixels(of image: CGImage) -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        bytes.withUnsafeMutableBytes { buffer in
+            let context = CGContext(
+                data: buffer.baseAddress,
+                width: image.width,
+                height: image.height,
+                bitsPerComponent: 8,
+                bytesPerRow: image.width * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+            context?.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        return bytes
     }
 
     func testCodexPrimeTimeIsWeekdaysUTC() throws {

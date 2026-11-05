@@ -970,14 +970,30 @@ enum PrimeTimeSprite {
     }()
 
     static func cut(_ sheet: CGImage) -> [NSImage] {
-        (0..<frameCount).compactMap { index in
-            let rect = CGRect(
-                x: (index % columns) * framePixels,
-                y: (index / columns) * framePixels,
+        cutFrames(sheet).map { NSImage(cgImage: $0, size: .zero) }
+    }
+
+    /// Each frame is drawn into a bitmap of its own. `CGImage.cropping` would keep
+    /// the sheet lazily decoded by ImageIO, and every cropped frame would decode a full
+    /// copy of it when drawn: hundreds of megabytes for a 26 pt badge.
+    static func cutFrames(_ sheet: CGImage) -> [CGImage] {
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return [] }
+        return (0..<frameCount).compactMap { index in
+            guard let context = CGContext(
+                data: nil,
                 width: framePixels,
-                height: framePixels
-            )
-            return sheet.cropping(to: rect).map { NSImage(cgImage: $0, size: .zero) }
+                height: framePixels,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            // The sheet's rows count from the top, a context's y axis points up.
+            let x = (index % columns) * framePixels
+            let y = sheet.height - (index / columns + 1) * framePixels
+            context.interpolationQuality = .none
+            context.draw(sheet, in: CGRect(x: -x, y: -y, width: sheet.width, height: sheet.height))
+            return context.makeImage()
         }
     }
 }
