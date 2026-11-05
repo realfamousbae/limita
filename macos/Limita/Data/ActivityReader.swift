@@ -358,9 +358,13 @@ final class ActivityReader: @unchecked Sendable {
         while start < data.endIndex {
             let end = data[start...].firstIndex(of: UInt8(ascii: "\n")) ?? data.endIndex
             let line = data[start..<end]
-            if line.range(of: needle) != nil,
-               let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] {
-                body(object)
+            // The parsed objects are autoreleased: without a pool per line every line of
+            // every log stays in memory until the scan ends, gigabytes on the first run.
+            autoreleasepool {
+                if line.range(of: needle) != nil,
+                   let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] {
+                    body(object)
+                }
             }
             start = end < data.endIndex ? data.index(after: end) : data.endIndex
         }
