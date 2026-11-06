@@ -132,10 +132,10 @@ function dashboard(current: PanelView): HTMLElement {
   }
 
   const glyph = el("span", "app-glyph");
-  // Titles left, buttons right; the prime-time badge, when shown, between them with equal gaps.
+  // Titles left, buttons right; the prime-time badge, when shown, in the middle of the panel.
   const badge = current.primeTime ? primeTimeBadge(current.primeTime) : el("div");
   // Over one column the spelled-out update button would cover it.
-  else if (announcing) badge.classList.add("covered");
+  if (current.services.length <= 1 && announcing) badge.classList.add("covered");
   const header = el(
     "header",
     "",
