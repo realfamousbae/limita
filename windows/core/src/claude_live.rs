@@ -19,6 +19,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::live::agent;
 use crate::model::{AccountDetails, Allowance, LimitSnapshot, LimitWindow, LiveReading, ScopedWindow, UsageCredits, WeeklyShare};
 use crate::paths;
 use crate::time::{from_unix, parse_flexible, relative_text, Timestamp};
@@ -143,13 +144,6 @@ pub fn plan_name(subscription: Option<&str>, tier: Option<&str>) -> Option<Strin
     Some(name)
 }
 
-/// HTTPS through the system's TLS (SChannel on Windows), so the system's certificates
-/// and any corporate root CA are trusted.
-fn agent() -> Result<ureq::Agent, String> {
-    let tls = native_tls::TlsConnector::new().map_err(|error| format!("Could not set up TLS: {error}"))?;
-    Ok(ureq::AgentBuilder::new().tls_connector(std::sync::Arc::new(tls)).build())
-}
-
 /// On macOS Claude Code keeps its login in the Keychain, not in the file.
 #[cfg(target_os = "macos")]
 fn platform_credentials() -> Option<Vec<u8>> {
@@ -232,24 +226,16 @@ fn window(value: &Value) -> Option<LimitWindow> {
 }
 
 const RATE_LIMITED: &str = "Claude is rate-limiting usage requests";
-const RETRY_AFTER_TAG: &str = " [retry after ";
 
 /// The error for a 429, carrying the server's `Retry-After` in seconds when it named
-/// one. The store reads it back with `rate_limit_of` and shows only the first part.
+/// one. The store reads it back with `live::rate_limit_of` and shows only the message.
 pub fn rate_limited(retry_after: Option<f64>) -> String {
-    match retry_after {
-        Some(seconds) => format!("{RATE_LIMITED}{RETRY_AFTER_TAG}{seconds}]"),
-        None => RATE_LIMITED.into(),
-    }
+    crate::live::rate_limited(RATE_LIMITED, retry_after)
 }
 
 /// `Some(retry_after)` for an error made by `rate_limited`, `None` for any other.
 pub fn rate_limit_of(error: &str) -> Option<Option<f64>> {
-    let rest = error.strip_prefix(RATE_LIMITED)?;
-    if rest.is_empty() {
-        return Some(None);
-    }
-    Some(rest.strip_prefix(RETRY_AFTER_TAG)?.strip_suffix(']')?.parse().ok())
+    crate::live::rate_limit_of(error).map(|(_, retry_after)| retry_after)
 }
 
 /// `Retry-After` in seconds, or as an HTTP date.

@@ -245,6 +245,8 @@ impl ActivityReader {
             let scanned = match service {
                 Service::Claude => scan_claude(&mut cache, &self.claude_projects, tz),
                 Service::Codex => scan_codex(&mut cache, &self.codex_dirs, tz),
+                // No local logs: DeepSeek is called by whatever tool holds the key.
+                Service::DeepSeek => continue,
             };
             merge(history.entry(service.id().to_string()).or_default(), &scanned);
         }
@@ -551,6 +553,22 @@ pub struct ActivityGrid {
     pub row_labels: Vec<Option<String>>,
     /// Four to a row: the totals, then tokens by kind.
     pub summary: Vec<Tile>,
+    /// Shown instead of the graph, for a service without local logs.
+    pub message: Option<String>,
+}
+
+/// The column of a service without local logs to count tokens in (DeepSeek); its
+/// spending is in the dashboard column above.
+pub fn no_activity(service: Service) -> ActivityGrid {
+    ActivityGrid {
+        id: service,
+        layout: Layout::Row,
+        cells: Vec::new(),
+        column_labels: Vec::new(),
+        row_labels: Vec::new(),
+        summary: Vec::new(),
+        message: Some(format!("No local activity for {}", service.display_name())),
+    }
 }
 
 pub fn grid(service: Service, days: &Days, period: Period, today: NaiveDate) -> ActivityGrid {
@@ -614,7 +632,7 @@ pub fn grid(service: Service, days: &Days, period: Period, today: NaiveDate) -> 
     };
 
     let shown_days: Vec<&DayStats> = shown.iter().filter_map(|&d| days.get(&key(d))).collect();
-    ActivityGrid { id: service, layout, cells, column_labels, row_labels, summary: summary(&shown_days) }
+    ActivityGrid { id: service, layout, cells, column_labels, row_labels, summary: summary(&shown_days), message: None }
 }
 
 /// A day's shade is the share of active days with as many tokens or fewer, in

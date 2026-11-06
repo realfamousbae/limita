@@ -88,13 +88,19 @@ function dashboard(current: PanelView): HTMLElement {
     loadActivity();
   });
 
+  // No shortcut in the tooltips: shortcuts can be changed or turned off in Settings.
   const hover = el("button", `round${hoverPill ? "" : " crossed"}`, icon("cursor"));
-  hover.title = hoverPill ? "Turn off the hover pill (Ctrl+Alt+H)" : "Turn on the hover pill (Ctrl+Alt+H)";
+  hover.title = hoverPill ? "Turn off the hover pill" : "Turn on the hover pill";
   hover.addEventListener("click", () => invoke("toggle_hover_pill"));
 
   const pin = el("button", `round${floating ? "" : " crossed"}`, icon("pin"));
-  pin.title = floating ? "Unpin the floating window (Ctrl+Alt+P)" : "Pin as a floating window (Ctrl+Alt+P)";
+  pin.title = floating ? "Unpin the floating window" : "Pin as a floating window";
   pin.addEventListener("click", () => invoke("toggle_floating"));
+
+  const settings = el("button", "round", icon("gear"));
+  settings.title = "Settings";
+  settings.setAttribute("aria-label", "Settings");
+  settings.addEventListener("click", () => invoke("open_settings"));
 
   // Only while a newer version is out: an arrow down to a line, in the healthy green.
   let install: HTMLElement | null = null;
@@ -133,15 +139,14 @@ function dashboard(current: PanelView): HTMLElement {
 
   const glyph = el("span", "app-glyph");
   // Titles left, buttons right; the prime-time badge, when shown, in the middle of the panel.
+  // Where the spelled-out update button would reach it, it steps aside (see `hideCoveredBadge`).
   const badge = current.primeTime ? primeTimeBadge(current.primeTime) : el("div");
-  // Over one column the spelled-out update button would cover it.
-  if (current.services.length <= 1 && announcing) badge.classList.add("covered");
   const header = el(
     "header",
     "",
     el("div", "header-side", glyph, el("div", "titles", el("div", "name-row", el("span", "app-name", "LIMITA"), version && el("span", "version", `v${version}`)), el("div", "caption", "AI USAGE MONITOR"))),
     badge,
-    el("div", "header-side end", install, hover, pin, current.services.length > 0 && refresh),
+    el("div", "header-side end", install, hover, pin, settings, current.services.length > 0 && refresh),
   );
 
   const body =
@@ -219,6 +224,10 @@ function activityToggle(): HTMLElement {
  * tokens in a chip over it. */
 function activityColumn(grid: ActivityGrid): HTMLElement {
   const node = el("section", `column activity ${grid.id}`);
+  if (grid.message) {
+    node.append(el("p", "activity-message", grid.message));
+    return node;
+  }
   const chip = el("span", "activity-chip");
   const date = el("div", "caption nowrap activity-date");
   const columns = grid.cells[0]?.length ?? 0;
@@ -277,6 +286,19 @@ function activityColumn(grid: ActivityGrid): HTMLElement {
   return node;
 }
 
+/** The spelled-out update button grows left over the header from the ⤓ button; the badge
+ *  in the middle hides while the two would touch, whatever the number of columns. Measured
+ *  without transforms, so the capsule's grow-in animation does not hide an overlap. */
+function hideCoveredBadge() {
+  const capsule = app.querySelector<HTMLElement>(".update-announce");
+  const slot = app.querySelector<HTMLElement>(".update-slot");
+  const badge = app.querySelector<HTMLElement>(".prime-time");
+  if (!capsule || !slot || !badge) return;
+  // `right: -4px` in styles.css: the capsule's round end sits 4 px right of the button.
+  const capsuleLeft = slot.getBoundingClientRect().right + 4 - capsule.offsetWidth;
+  if (capsuleLeft < badge.getBoundingClientRect().right + 9) badge.classList.add("covered");
+}
+
 /** Puts each hover chip back over its day. Runs after the dashboard is in the document. */
 function restoreActivity() {
   for (const node of Array.from(app.querySelectorAll(".column.activity"))) node.dispatchEvent(new Event("restore"));
@@ -312,7 +334,10 @@ function connectPrompt(current: PanelView): HTMLElement {
     el("p", "value muted", "Connect a service to see its limits."),
     ...current.connect.map((option) => {
       const button = el("button", "connect-button", badge(option.id, "small"), el("span", "", option.label), el("span", "spacer"), icon("plus", "muted"));
-      button.addEventListener("click", () => invoke("connect", { service: option.id }));
+      // A key is needed first, and it is entered in Settings.
+      button.addEventListener("click", () =>
+        option.inSettings ? invoke("open_settings", { tab: "providers" }) : invoke("connect", { service: option.id }),
+      );
       return button;
     }),
   );
@@ -400,7 +425,10 @@ function render(modeChanged = false) {
     return;
   }
   app.replaceChildren(mode === "pill" ? pill(view) : dashboard(view));
-  if (mode === "dashboard") restoreActivity();
+  if (mode === "dashboard") {
+    hideCoveredBadge();
+    restoreActivity();
+  }
   // Measured right away: a hidden window gets no animation frames, and it stays hidden
   // until Rust knows the size.
   const box = app.firstElementChild?.getBoundingClientRect();

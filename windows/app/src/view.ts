@@ -1,6 +1,6 @@
 // The shapes Rust sends (limita-core `view.rs`); the webview only renders them.
 
-export type Service = "claude" | "codex";
+export type Service = "claude" | "codex" | "deepseek";
 export type Level = "normal" | "warning" | "critical";
 export type Tone = "accent" | "accentSoft" | "share" | "unlimited" | "warning" | "critical";
 export type Mode = "hidden" | "pill" | "dashboard";
@@ -46,7 +46,8 @@ export interface ResetLine {
 
 export interface PanelView {
   services: ServiceView[];
-  connect: { id: Service; label: string }[];
+  /** `inSettings`: connected in Settings, where the API key is entered (DeepSeek). */
+  connect: { id: Service; label: string; inSettings: boolean }[];
   isRefreshing: boolean;
   pill: { id: Service; level: Level | null; stale: boolean; label: string }[];
   longestResetText: string;
@@ -80,6 +81,8 @@ export interface ActivityGrid {
   rowLabels: (string | null)[];
   /** Four to a row: the totals, then tokens by kind. */
   summary: { label: string; value: string }[];
+  /** Shown instead of the graph, for a service without local logs (DeepSeek). */
+  message: string | null;
 }
 
 export interface ActivityDay {

@@ -91,6 +91,8 @@ impl Service {
             Service::Claude => Some(PrimeTime { zone: Zone::UsPacific, weekdays: WORKDAYS, start: 5 * 60, end: 11 * 60 }),
             // Chosen by the user: weekdays 12:00–18:00 UTC.
             Service::Codex => Some(PrimeTime { zone: Zone::Utc, weekdays: WORKDAYS, start: 12 * 60, end: 18 * 60 }),
+            // Billed per token, without limits that could run out faster.
+            Service::DeepSeek => None,
         }
     }
 
@@ -110,21 +112,21 @@ pub struct PrimeTimeNotice {
 }
 
 impl PrimeTimeNotice {
-    /// `None` when no connected service is in peak hours. One service names itself, in
-    /// bold if another service is connected; every connected service in peak hours at
-    /// once reads as all providers.
+    /// `None` when no connected service is in peak hours. Services in peak hours name
+    /// themselves, in bold if another connected service is not; every connected service
+    /// in peak hours at once reads as all providers. DeepSeek has no peak hours, so with it
+    /// connected Claude and Codex are named: "CLAUDE & CODEX PEAK HOURS".
     pub fn new(active: &[Service], connected: &[Service]) -> Option<Self> {
-        let (strong, title) = match active {
-            [] => return None,
-            [service] => {
-                let name = service.display_name().to_uppercase();
-                if connected.len() > 1 {
-                    (Some(name), " PEAK HOURS".to_string())
-                } else {
-                    (None, format!("{name} PEAK HOURS"))
-                }
-            }
-            _ => (None, "PEAK HOURS FOR ALL PROVIDERS".to_string()),
+        if active.is_empty() {
+            return None;
+        }
+        let names = active.iter().map(|service| service.display_name().to_uppercase()).collect::<Vec<_>>().join(" & ");
+        let (strong, title) = if active.len() > 1 && connected.iter().all(|service| active.contains(service)) {
+            (None, "PEAK HOURS FOR ALL PROVIDERS".to_string())
+        } else if connected.len() > active.len() {
+            (Some(names), " PEAK HOURS".to_string())
+        } else {
+            (None, format!("{names} PEAK HOURS"))
         };
         Some(PrimeTimeNotice { strong, title, detail: "USAGE LIMITS RUN OUT FASTER".to_string() })
     }
@@ -200,6 +202,17 @@ mod tests {
         let all = PrimeTimeNotice::new(&both, &both).unwrap();
         assert_eq!(all.strong, None);
         assert_eq!(all.first_line(), "PEAK HOURS FOR ALL PROVIDERS");
+    }
+
+    #[test]
+    fn peak_hours_name_the_services_when_deepseek_is_connected() {
+        let three = Service::ALL;
+        let both = PrimeTimeNotice::new(&[Service::Claude, Service::Codex], &three).unwrap();
+        assert_eq!(both.strong.as_deref(), Some("CLAUDE & CODEX"));
+        assert_eq!(both.first_line(), "CLAUDE & CODEX PEAK HOURS");
+        let codex = PrimeTimeNotice::new(&[Service::Codex], &[Service::Codex, Service::DeepSeek]).unwrap();
+        assert_eq!(codex.strong.as_deref(), Some("CODEX"));
+        assert_eq!(Service::DeepSeek.prime_time(), None, "billed per token, no peak hours");
     }
 
     #[test]

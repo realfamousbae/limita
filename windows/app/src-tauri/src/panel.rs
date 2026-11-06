@@ -4,8 +4,8 @@
 //! - Resting the cursor at the top edge of a screen shows a compact pill there; clicking
 //!   it expands the dashboard. Moving away hides either again.
 //! - The tray icon opens the dashboard next to it; clicking elsewhere closes it.
-//! - Floating (Ctrl+Alt+P): the dashboard stays where the user drags it until the
-//!   shortcut, the tray icon or the toggle closes it, and never takes the keyboard.
+//! - Floating (Ctrl+Alt+P by default): the dashboard stays where the user drags it until
+//!   the shortcut, the tray icon or the toggle closes it, and never takes the keyboard.
 //!
 //! The webview renders whatever mode it is told and reports the size it needs; the panel
 //! is sized and placed here, in physical pixels of the target monitor.
@@ -216,10 +216,6 @@ impl Panel {
                 self.transition(&mut state, Mode::Hidden, false, None);
             }
         }
-        // Outside the lock: the menu call waits for the main thread.
-        if let Some(tray) = self.app.try_state::<Arc<crate::tray::Tray>>() {
-            tray.set_floating(enabled);
-        }
         let _ = self.app.emit("floating", FloatingPayload { enabled });
     }
 
@@ -324,8 +320,8 @@ impl Panel {
         self.transition(&mut state, Mode::Dashboard, false, Some(anchor));
     }
 
-    /// Ctrl+Alt+L: hides whatever is open, otherwise opens the dashboard centred at the
-    /// top of the screen the cursor is on, as ⌃⌥L does on macOS.
+    /// The dashboard's shortcut (Ctrl+Alt+L by default): hides whatever is open, otherwise
+    /// opens the dashboard centred at the top of the screen the cursor is on, as on macOS.
     pub fn toggle_from_shortcut(&self) {
         let mut state = self.lock();
         if state.mode != Mode::Hidden {
