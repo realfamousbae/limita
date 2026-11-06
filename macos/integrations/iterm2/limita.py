@@ -89,7 +89,14 @@ DOTS = {"normal": "🟢", "warning": "🟡", "critical": "🔴"}
 
 
 def service_text(entry, now, weekly=True):
-    """"🟢 Claude 5h 52% · 7d 49% used". The dot follows the headline window, as in the app."""
+    """"🟢 Claude 5h 52% · 7d 49% used". The dot follows the headline window, as in the app.
+    A service with a balance instead of windows (DeepSeek) reads "🟢 DeepSeek ¥86.40"."""
+    balance = entry.get("balance")
+    if balance:
+        stale = " (stale)" if is_stale(entry, now) else ""
+        return f"{DOTS.get(balance.get('level'), DOTS['normal'])} {entry['name']} {balance.get('text', '—')}{stale}"
+    if entry.get("status") == "unavailable" and entry.get("id") == "deepseek":
+        return f"{entry['name']} —"
     main = headline(entry)
     if not main:
         return f"{entry['name']} 5h —"

@@ -10,10 +10,37 @@ final class LimitsStore {
     /// or on manual refresh.
     static let localInterval: TimeInterval = 60
 
-    static func liveInterval(for service: Service) -> TimeInterval {
+    /// How often a service's network API is asked unless the user chose otherwise.
+    static func defaultLiveInterval(for service: Service) -> TimeInterval {
         switch service {
         case .claude: 3 * 60
-        case .codex: 5 * 60
+        case .codex, .deepseek: 5 * 60
+        }
+    }
+
+    /// The intervals Settings offers. Nothing under a minute: local reads tick once a
+    /// minute anyway, and a busier poll only earns 429s.
+    static let liveIntervalChoices: [TimeInterval] = [1, 2, 3, 5, 10, 15, 30].map { $0 * 60 }
+
+    /// How often `service`'s network API is asked.
+    func liveInterval(for service: Service) -> TimeInterval {
+        max(liveIntervals[service] ?? Self.defaultLiveInterval(for: service), Self.localInterval)
+    }
+
+    func setLiveInterval(_ interval: TimeInterval, for service: Service) {
+        var intervals = liveIntervals
+        intervals[service] = interval == Self.defaultLiveInterval(for: service) ? nil : max(interval, Self.localInterval)
+        liveIntervals = intervals
+        settings.liveIntervals = intervals
+    }
+
+    /// Age after which a service's data reads as stale. A service with only a network
+    /// source allows two missed fetches at the chosen interval.
+    func staleAfter(for service: Service) -> TimeInterval {
+        switch service {
+        case .claude: ClaudeLimitsReader.staleAfter
+        case .codex: CodexLimitsReader.staleAfter
+        case .deepseek: max(30 * 60, 2 * liveInterval(for: service) + Self.localInterval)
         }
     }
 
@@ -33,12 +60,29 @@ final class LimitsStore {
     }
     /// Result of the last connect/disconnect, for the service it concerns.
     var setupMessage: (service: Service, text: String)?
+    /// Intervals the user changed in Settings.
+    private(set) var liveIntervals: [Service: TimeInterval]
+    /// DeepSeek balance at or below which the dot turns red and a notification fires.
+    var lowBalanceThreshold: Double? {
+        didSet {
+            guard lowBalanceThreshold != oldValue else { return }
+            settings.lowBalanceThreshold = lowBalanceThreshold
+            lowBalanceThreshold = settings.lowBalanceThreshold
+            reapplyBalanceThreshold()
+        }
+    }
+    /// Whether a low or exhausted DeepSeek balance is announced.
+    var balanceAlertsEnabled: Bool {
+        didSet { settings.balanceAlertsEnabled = balanceAlertsEnabled }
+    }
     /// Whether the menu-bar icon is shown. Not saved: every launch starts with the icon,
     /// so its menu (Connect, Quit) is always reachable after a restart.
     var showsMenuBarIcon = true {
         didSet { onMenuBarIconChange?(showsMenuBarIcon) }
     }
     @ObservationIgnored var onMenuBarIconChange: ((Bool) -> Void)?
+    /// Opens the Settings window, on a tab or where it was left. Set by the app delegate.
+    @ObservationIgnored var onOpenSettings: ((SettingsTab?) -> Void)?
     /// Whether resting the cursor at the screen edge shows the pill. While off, nothing
     /// watches the mouse. Saved, unlike the icon: the dashboard stays reachable by the
     /// menu-bar icon and the shortcut either way.
@@ -96,6 +140,13 @@ final class LimitsStore {
     @ObservationIgnored private let claudeReader: ClaudeLimitsReader
     @ObservationIgnored private let codexLive: CodexLiveClient
     @ObservationIgnored private let claudeLive: ClaudeLiveClient
+    @ObservationIgnored private let deepseekLive: DeepSeekClient
+    @ObservationIgnored private let deepseekKey: any SecretStoring
+    @ObservationIgnored private var ledger: BalanceLedger
+    /// Shows a notification: id, title, body. Injectable so tests can record them.
+    @ObservationIgnored var alert: (String, String, String) -> Void = { id, title, body in
+        SystemResetNotifier.shared.notify(id: id, title: title, body: body)
+    }
     @ObservationIgnored private let configurator: ClaudeStatusLineConfigurator
     @ObservationIgnored private let settings: ServiceSettings
     @ObservationIgnored private let log = Logger(subsystem: "com.limita.app", category: "refresh")
@@ -105,6 +156,9 @@ final class LimitsStore {
         claudeReader: ClaudeLimitsReader = ClaudeLimitsReader(),
         codexLive: CodexLiveClient = CodexLiveClient(),
         claudeLive: ClaudeLiveClient = ClaudeLiveClient(),
+        deepseekLive: DeepSeekClient? = nil,
+        deepseekKey: any SecretStoring = KeychainStore.deepseek,
+        ledger: BalanceLedger = BalanceLedger(),
         configurator: ClaudeStatusLineConfigurator = ClaudeStatusLineConfigurator(),
         settings: ServiceSettings = ServiceSettings(),
         activity: ActivityStore? = nil,
@@ -116,6 +170,12 @@ final class LimitsStore {
         self.claudeReader = claudeReader
         self.codexLive = codexLive
         self.claudeLive = claudeLive
+        // Against the fake server (`LIMITA_DEEPSEEK_API`) no key is needed.
+        self.deepseekLive = deepseekLive ?? DeepSeekClient(apiKey: {
+            try deepseekKey.read() ?? (DeepSeekClient.apiOverride == nil ? nil : "fake")
+        })
+        self.deepseekKey = deepseekKey
+        self.ledger = ledger
         self.configurator = configurator
         self.settings = settings
         self.activity = activity ?? ActivityStore()
@@ -131,6 +191,9 @@ final class LimitsStore {
         hoverEnabled = settings.hoverEnabled
         floatingEnabled = settings.floatingEnabled
         collapsedMeters = settings.collapsedMeters
+        liveIntervals = settings.liveIntervals
+        lowBalanceThreshold = settings.lowBalanceThreshold
+        balanceAlertsEnabled = settings.balanceAlertsEnabled
         self.resets.trackedServices = { [weak self] in self?.enabledServices ?? [] }
     }
 
@@ -204,54 +267,46 @@ final class LimitsStore {
         func isDue(_ service: Service) -> Bool {
             if let paused = livePausedUntil[service], now < paused { return false }
             return forceLive || lastLiveAttempt[service].map {
-                now.timeIntervalSince($0) >= Self.liveInterval(for: service) - slack
+                now.timeIntervalSince($0) >= liveInterval(for: service) - slack
             } ?? true
         }
-        let codexOn = isEnabled(.codex)
-        let claudeOn = isEnabled(.claude)
-        let codexLiveDue = codexOn && isDue(.codex)
-        let claudeLiveDue = claudeOn && isDue(.claude)
+        let services = enabledServices
+        let due = services.filter(isDue)
         isRefreshing = true
-        if codexLiveDue { lastLiveAttempt[.codex] = now }
-        if claudeLiveDue { lastLiveAttempt[.claude] = now }
+        for service in due { lastLiveAttempt[service] = now }
 
-        let codexReader = codexReader
-        let claudeReader = claudeReader
-        let codexLive = codexLive
-        let claudeLive = claudeLive
-        let configurator = configurator
+        let locals = services.compactMap { service in localSource(for: service).map { (service, $0) } }
+        let remotes = due.map { ($0, liveSource(for: $0)) }
 
         Task {
-            async let codexLocal = codexOn
-                ? Task.detached(priority: .utility) { codexReader.read() }.value
-                : nil
-            async let claudeLocal = claudeOn
-                ? Task.detached(priority: .utility) {
-                    let hooked: Bool
-                    if case .installed = try? configurator.status() { hooked = true } else { hooked = false }
-                    return claudeReader.read(isConnected: hooked)
-                }.value
-                : nil
-            async let codexRemote = codexLiveDue ? Self.fetch { try codexLive.fetch() } : nil
-            async let claudeRemote = claudeLiveDue ? Self.fetch { try await claudeLive.fetch() } : nil
-
-            let (codexState, claudeState) = await (codexLocal, claudeLocal)
-            let (codexResult, claudeResult) = await (codexRemote, claudeRemote)
+            var localStates: [Service: ServiceState] = [:]
+            var results: [Service: Result<LiveReading, Error>] = [:]
+            await withTaskGroup(of: RefreshPart.self) { group in
+                for (service, read) in locals {
+                    group.addTask { .local(service, await Task.detached(priority: .utility) { read() }.value) }
+                }
+                for (service, fetch) in remotes {
+                    group.addTask { .live(service, await Self.fetch(fetch)) }
+                }
+                for await part in group {
+                    switch part {
+                    case .local(let service, let state): localStates[service] = state
+                    case .live(let service, let result): results[service] = result
+                    }
+                }
+            }
 
             // A service disconnected while this refresh ran must stay cleared.
-            if isEnabled(.codex) {
-                apply(codexResult, to: .codex)
-                if let codexState {
-                    states[.codex] = Self.merge(codexState, live: liveSnapshots[.codex], staleAfter: CodexLimitsReader.staleAfter)
+            for service in Service.allCases where isEnabled(service) {
+                apply(results[service].map(enriched), to: service)
+                if let local = localStates[service] {
+                    states[service] = Self.merge(local, live: liveSnapshots[service], staleAfter: staleAfter(for: service))
+                } else if localSource(for: service) == nil {
+                    states[service] = liveOnlyState(service)
                 }
-                resets.observe(.codex, snapshot: states[.codex]?.snapshot, details: details[.codex])
-            }
-            if isEnabled(.claude) {
-                apply(claudeResult, to: .claude)
-                if let claudeState {
-                    states[.claude] = Self.merge(claudeState, live: liveSnapshots[.claude], staleAfter: ClaudeLimitsReader.staleAfter)
+                if service.kind == .limits {
+                    resets.observe(service, snapshot: states[service]?.snapshot, details: details[service])
                 }
-                resets.observe(.claude, snapshot: states[.claude]?.snapshot, details: details[.claude])
             }
             lastRefresh = Date()
             isRefreshing = false
@@ -262,6 +317,53 @@ final class LimitsStore {
                 refresh(live: true)
             }
         }
+    }
+
+    private enum RefreshPart: Sendable {
+        case local(Service, ServiceState)
+        case live(Service, Result<LiveReading, Error>)
+    }
+
+    /// The service's cheap local read, `nil` for one with only a network source.
+    private func localSource(for service: Service) -> (@Sendable () -> ServiceState)? {
+        switch service {
+        case .codex:
+            let reader = codexReader
+            return { reader.read() }
+        case .claude:
+            let reader = claudeReader
+            let configurator = configurator
+            return {
+                let hooked: Bool
+                if case .installed = try? configurator.status() { hooked = true } else { hooked = false }
+                return reader.read(isConnected: hooked)
+            }
+        case .deepseek:
+            return nil
+        }
+    }
+
+    private func liveSource(for service: Service) -> @Sendable () async throws -> LiveReading {
+        switch service {
+        case .codex:
+            let client = codexLive
+            return { try client.fetch() }
+        case .claude:
+            let client = claudeLive
+            return { try await client.fetch() }
+        case .deepseek:
+            let client = deepseekLive
+            return { try await client.fetch() }
+        }
+    }
+
+    /// A service without a local source shows its last network reading, or why there is none.
+    private func liveOnlyState(_ service: Service) -> ServiceState? {
+        if let snapshot = liveSnapshots[service] {
+            return .from(snapshot, staleAfter: staleAfter(for: service))
+        }
+        if let error = liveErrors[service] { return .unavailable(reason: error) }
+        return states[service]
     }
 
     /// How long to leave a service's network API alone after its `streak`-th 429 in a
@@ -287,7 +389,7 @@ final class LimitsStore {
             liveErrors[service] = nil
             rateLimitStreak[service] = nil
             livePausedUntil[service] = nil
-        case .failure(let error as ClaudeLiveClient.RateLimited):
+        case .failure(let error as any RateLimitedError):
             let streak = (rateLimitStreak[service] ?? 0) + 1
             rateLimitStreak[service] = streak
             let pause = Self.rateLimitPause(streak: streak, retryAfter: error.retryAfter)
@@ -324,6 +426,11 @@ final class LimitsStore {
     /// which wraps any existing status line; its outcome is left in `setupMessage`.
     func connect(_ service: Service) {
         guard !isEnabled(service) else { return }
+        // DeepSeek connects with a key: `connectDeepSeek(apiKey:)`, from Settings.
+        if service == .deepseek, deepseekKeyHint() == nil {
+            setupMessage = (.deepseek, DeepSeekClient.MissingKey().localizedDescription)
+            return
+        }
         if service == .claude {
             setupMessage = (.claude, installClaudeHook())
         }
@@ -332,8 +439,48 @@ final class LimitsStore {
         resets.refresh()
     }
 
+    /// Checks `apiKey` against DeepSeek and, if it works, stores it in the Keychain and
+    /// starts tracking DeepSeek (or switches to the new key). Returns why it did not work;
+    /// a rejected key is never stored.
+    func connectDeepSeek(apiKey: String) async -> String? {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return "Enter a DeepSeek API key" }
+        let reading: LiveReading
+        do {
+            reading = try await deepseekLive.fetch(key: key)
+        } catch {
+            return error.localizedDescription
+        }
+        do {
+            // Another key may be another account: its history would read as spending.
+            if (try? deepseekKey.read()) != key { ledger.clear() }
+            try deepseekKey.save(key)
+        } catch {
+            return error.localizedDescription
+        }
+        if !isEnabled(.deepseek) { setEnabled(.deepseek, true) }
+        lastLiveAttempt[.deepseek] = Date()
+        apply(enriched(.success(reading)), to: .deepseek)
+        states[.deepseek] = liveOnlyState(.deepseek)
+        writeTerminalSnapshot()
+        return nil
+    }
+
+    /// The stored DeepSeek key as "sk-…1a2b", `nil` without one. Reads the Keychain.
+    func deepseekKeyHint() -> String? {
+        guard let key = try? deepseekKey.read(), !key.isEmpty else { return nil }
+        return Self.keyHint(key)
+    }
+
+    nonisolated static func keyHint(_ key: String) -> String {
+        guard key.count > 8 else { return String(repeating: "•", count: key.count) }
+        let prefix = key.hasPrefix("sk-") ? "sk-" : ""
+        return "\(prefix)…\(key.suffix(4))"
+    }
+
     /// Stops tracking `service` and drops its data. For Claude this also removes the
-    /// status-line hook and restores the previous status line.
+    /// status-line hook and restores the previous status line; for DeepSeek it removes
+    /// the API key from the Keychain and the balance history.
     func disconnect(_ service: Service) {
         guard isEnabled(service) else { return }
         if service == .claude {
@@ -343,6 +490,14 @@ final class LimitsStore {
                 setupMessage = (.claude, "Could not restore the Claude Code status line: \(error.localizedDescription)")
             }
         }
+        if service == .deepseek {
+            do {
+                try deepseekKey.delete()
+            } catch {
+                setupMessage = (.deepseek, error.localizedDescription)
+            }
+            ledger.clear()
+        }
         setEnabled(service, false)
         states[service] = nil
         liveErrors[service] = nil
@@ -351,9 +506,61 @@ final class LimitsStore {
         writeTerminalSnapshot()
     }
 
+    // MARK: - DeepSeek balance
+
+    /// A DeepSeek reading with what the balance history says, after recording it there.
+    /// Also announces a balance that just went low or ran out.
+    private func enriched(_ result: Result<LiveReading, Error>) -> Result<LiveReading, Error> {
+        guard case .success(let reading) = result, let balance = reading.snapshot.balance else { return result }
+        let captured = reading.snapshot.capturedAt
+        let summary = ledger.record(total: balance.total, currency: balance.currency, at: captured)
+        let full = balance.with(summary, lowThreshold: lowBalanceThreshold)
+        announceBalance(full)
+        return .success(LiveReading(snapshot: LimitSnapshot(balance: full, capturedAt: captured), details: reading.details))
+    }
+
+    /// One notification per drop below the threshold and per running out; each is armed
+    /// again once the balance recovers.
+    private func announceBalance(_ balance: Balance) {
+        let service = Service.deepseek
+        if !balance.isAvailable {
+            if !ledger.alertedUnavailable, balanceAlertsEnabled {
+                alert("\(service.rawValue)-unavailable-\(Int(Date().timeIntervalSince1970))",
+                      "\(service.displayName) balance ran out",
+                      "API calls are rejected until you top up. \(balance.format(balance.total)) left.")
+            }
+            ledger.alertedUnavailable = true
+            ledger.alertedLow = true
+            return
+        }
+        ledger.alertedUnavailable = false
+        guard balance.isLow, let threshold = balance.lowThreshold else {
+            ledger.alertedLow = false
+            return
+        }
+        if !ledger.alertedLow, balanceAlertsEnabled {
+            alert("\(service.rawValue)-low-\(Int(Date().timeIntervalSince1970))",
+                  "\(service.displayName) balance is low",
+                  "\(balance.format(balance.total)) left, at or below your \(balance.format(threshold)) alert.")
+        }
+        ledger.alertedLow = true
+    }
+
+    /// Shows a changed threshold right away, without waiting for the next fetch.
+    private func reapplyBalanceThreshold() {
+        guard let snapshot = liveSnapshots[.deepseek], var balance = snapshot.balance else { return }
+        balance.lowThreshold = lowBalanceThreshold
+        liveSnapshots[.deepseek] = LimitSnapshot(balance: balance, capturedAt: snapshot.capturedAt)
+        states[.deepseek] = liveOnlyState(.deepseek)
+        if !balance.isLow { ledger.alertedLow = false }
+        writeTerminalSnapshot()
+    }
+
     /// Mirrors the dashboard to `TerminalSnapshot.fileURL` for the iTerm2 script.
     private func writeTerminalSnapshot() {
-        let snapshot = TerminalSnapshot(services: enabledServices, states: state(for:), primeTime: primeTimeServices)
+        let snapshot = TerminalSnapshot(
+            services: enabledServices, states: state(for:), primeTime: primeTimeServices, staleAfter: staleAfter(for:)
+        )
         guard snapshot != writtenSnapshot else { return }
         do {
             try snapshot.write()

@@ -50,7 +50,7 @@ final class ResetWatcher {
 
     @ObservationIgnored private let notifier: ResetNotifying
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let feedURL: (Service) -> URL
+    @ObservationIgnored private let feedURL: (Service) -> URL?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var fetching: Set<Service> = []
     @ObservationIgnored private var pausedUntil: [Service: Date] = [:]
@@ -61,7 +61,7 @@ final class ResetWatcher {
     init(
         notifier: ResetNotifying? = nil,
         defaults: UserDefaults = .standard,
-        feedURL: @escaping (Service) -> URL = { ResetFeed.url(for: $0) }
+        feedURL: @escaping (Service) -> URL? = { ResetFeed.url(for: $0) }
     ) {
         self.notifier = notifier ?? SystemResetNotifier.shared
         self.defaults = defaults
@@ -93,12 +93,12 @@ final class ResetWatcher {
     /// Asks the trackers of the tracked services, except one that asked for a pause.
     func refresh(now: Date = Date()) {
         for service in trackedServices() where !fetching.contains(service) {
+            guard let url = feedURL(service) else { continue }
             if let paused = pausedUntil[service], now < paused { continue }
             // The trackers ask for at most one request a minute.
             if let last = lastFetch[service], now.timeIntervalSince(last) < 60 { continue }
             lastFetch[service] = now
             fetching.insert(service)
-            let url = feedURL(service)
             Task {
                 defer { fetching.remove(service) }
                 do {
@@ -147,6 +147,8 @@ final class ResetWatcher {
             memory.claudeSeen = seen.union(new.map(\.id))
             // A batch of old events (e.g. the tracker backfilled) is recorded quietly.
             new.filter { $0.isShown(at: now) }.forEach { announce($0, now: now) }
+        case .deepseek:
+            return
         }
     }
 

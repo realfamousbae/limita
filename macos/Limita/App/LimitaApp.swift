@@ -14,8 +14,17 @@ struct LimitaApp: App {
     }
 
     var body: some Scene {
+        // The real Settings window is AppKit's (`SettingsWindowController`); this scene only
+        // exists because an App needs one. Its menu item, and ⌘, while Limita is active,
+        // open that window instead of a blank one.
         Settings {
             EmptyView()
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { appDelegate.openSettings(tab: nil) }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }

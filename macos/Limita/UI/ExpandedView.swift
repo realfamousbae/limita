@@ -91,8 +91,8 @@ struct ExpandedView: View {
         return "v\(version)"
     }()
 
-    /// Width the header needs with the `primeTime` badge between the titles and the
-    /// buttons, room for a spacer on either side, and with the update button when one shows.
+    /// Width the header needs with the `primeTime` badge in its middle, clear of the
+    /// titles and the buttons by two spacings, and with the update button when one shows.
     /// The panel widens to it when the columns alone are narrower.
     static func headerWidth(primeTime: PrimeTimeNotice?, updateButton: Bool = false) -> CGFloat {
         var name = textWidth("LIMITA", font: AppFont.ns(appNameSize), tracking: appNameTracking)
@@ -104,20 +104,19 @@ struct ExpandedView: View {
             textWidth(appCaption, font: AppFont.ns(DashboardStyle.captionSize), tracking: DashboardStyle.captionTracking)
         )
         let left = appGlyphSize + headerSpacing + titles
-        let buttons: CGFloat = updateButton ? 5 : 4
+        let buttons: CGFloat = updateButton ? 6 : 5
         let right = buttons * headerButtonSize + (buttons - 1) * headerSpacing
         guard let primeTime else { return 2 * headerPadding + left + headerSpacing + right }
-        // Each side of the badge: a spacer of zero or more between two header spacings.
-        return 2 * headerPadding + left + right + PrimeTimeBadge.width(primeTime) + 4 * headerSpacing
+        // Centered on the panel, so each half holds the wider of the two sides.
+        return 2 * headerPadding + 2 * max(left, right) + PrimeTimeBadge.width(primeTime) + 4 * headerSpacing
     }
 
     static func textWidth(_ text: String, font: NSFont, tracking: CGFloat) -> CGFloat {
         ceil(NSAttributedString(string: text, attributes: [.font: font, .kern: tracking]).size().width) + 2
     }
 
-    /// Titles on the left and buttons on the right. The prime-time badge follows the
-    /// titles when the columns sit side by side, and is centered between titles and
-    /// buttons over a single column.
+    /// Titles on the left and buttons on the right. The prime-time badge sits in the
+    /// middle of the panel, whatever the two sides' widths.
     private var header: some View {
         HStack(spacing: Self.headerSpacing) {
             ZStack {
@@ -146,20 +145,7 @@ struct ExpandedView: View {
                     .caption()
             }
 
-            if let notice = store.primeTimeNotice, store.enabledServices.count > 1 {
-                PrimeTimeBadge(notice: notice)
-            }
-
             Spacer(minLength: 0)
-
-            if let notice = store.primeTimeNotice, store.enabledServices.count <= 1 {
-                // Over one column the spelled-out update button would cover it.
-                PrimeTimeBadge(notice: notice)
-                    .opacity(store.updater.isAnnouncing ? 0 : 1)
-                    .animation(.easeInOut(duration: 0.25), value: store.updater.isAnnouncing)
-
-                Spacer(minLength: 0)
-            }
 
             if let release = store.updater.available {
                 UpdateButton(updater: store.updater, release: release)
@@ -175,7 +161,7 @@ struct ExpandedView: View {
                 .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
             }
             .buttonStyle(.plain)
-            .help(store.hoverEnabled ? "Turn off the hover pill (⌃⌥H)" : "Turn on the hover pill (⌃⌥H)")
+            .help(store.hoverEnabled ? "Turn off the hover pill" : "Turn on the hover pill")
             .accessibilityLabel(store.hoverEnabled ? "Turn off hover pill" : "Turn on hover pill")
 
             Button {
@@ -188,7 +174,7 @@ struct ExpandedView: View {
                 .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
             }
             .buttonStyle(.plain)
-            .help(store.floatingEnabled ? "Unpin the floating window (⌃⌥P)" : "Pin as a floating window (⌃⌥P)")
+            .help(store.floatingEnabled ? "Unpin the floating window" : "Pin as a floating window")
             .accessibilityLabel(store.floatingEnabled ? "Unpin floating window" : "Pin as floating window")
 
             Button {
@@ -202,6 +188,21 @@ struct ExpandedView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(store.showsMenuBarIcon ? "Hide menu bar icon" : "Show menu bar icon")
+
+            // Settings stay reachable here while the menu-bar icon is hidden.
+            Button {
+                store.onOpenSettings?(nil)
+            } label: {
+                ZStack {
+                    Circle().fill(Color.white.opacity(0.08))
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
+            }
+            .buttonStyle(.plain)
+            .help("Settings (⌘,)")
+            .accessibilityLabel("Settings")
 
             if !store.enabledServices.isEmpty {
                 Button {
@@ -225,6 +226,14 @@ struct ExpandedView: View {
         }
         .padding(.horizontal, Self.headerPadding)
         .padding(.vertical, 10)
+        .overlay {
+            if let notice = store.primeTimeNotice {
+                // Over one column the spelled-out update button would cover it.
+                PrimeTimeBadge(notice: notice)
+                    .opacity(store.updater.isAnnouncing && store.enabledServices.count <= 1 ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.25), value: store.updater.isAnnouncing)
+            }
+        }
     }
 
     // MARK: - Service column
@@ -259,10 +268,18 @@ struct ExpandedView: View {
 
             if let message = store.setupMessage, message.service == service {
                 SetupMessage(text: message.text) { store.setupMessage = nil }
+            } else if let snapshot = state.snapshot, let balance = snapshot.balance {
+                creditMeter(Self.balanceMeter(balance), service: service, stale: state.isStale)
+
+                detailTiles(Self.balanceRows(balance))
+
+                if let error = store.liveErrors[service] {
+                    ErrorLine(text: error)
+                }
             } else if let snapshot = state.snapshot {
                 meterRows(service: service, snapshot: snapshot, stale: state.isStale, now: now)
 
-                detailTiles(for: service)
+                detailTiles(Self.detailRows(for: service, details: store.details[service] ?? AccountDetails()))
 
                 if let event = store.resets.event(for: service, now: now) {
                     ResetLine(event: event, now: now)
@@ -499,8 +516,7 @@ struct ExpandedView: View {
     /// Tiles under the meters, two to a row on the meters' grid. A tile is hidden when
     /// the service did not report its value.
     @ViewBuilder
-    private func detailTiles(for service: Service) -> some View {
-        let rows = Self.detailRows(for: service, details: store.details[service] ?? AccountDetails())
+    private func detailTiles(_ rows: [DetailRow]) -> some View {
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 9) {
                 ForEach(Array(stride(from: 0, to: rows.count, by: 2)), id: \.self) { start in
@@ -556,6 +572,69 @@ struct ExpandedView: View {
         case .claude:
             // Claude's credits are meters; see `creditMeters`.
             break
+        case .deepseek:
+            // A balance has its own rows; see `balanceRows`.
+            break
+        }
+        return rows
+    }
+
+    /// The balance as a credit meter: the share of the last top-up that is left, the
+    /// money beside the bar, and how long it lasts under it. The bar's colour follows
+    /// the balance's level, so the user's threshold turns it red.
+    static func balanceMeter(_ balance: Balance) -> CreditMeter {
+        let fill = balance.fraction ?? 1
+        let used: Double = switch balance.level {
+        case .critical: 1
+        case .warning: 0.75
+        case .normal: min(1 - fill, 0.69)
+        }
+        let amount = balance.fullScale.map { "\(balance.format(balance.total)) OF \(balance.format($0)) LEFT" }
+            ?? "\(balance.format(balance.total)) LEFT"
+        return CreditMeter(
+            title: "BALANCE LEFT",
+            value: percent(fill),
+            amount: amount,
+            fill: fill,
+            used: used,
+            caption: balanceCaption(balance)
+        )
+    }
+
+    /// Why the bar looks the way it does, most urgent first.
+    static func balanceCaption(_ balance: Balance) -> String {
+        if !balance.isAvailable { return "CALLS REJECTED · TOP UP" }
+        if balance.isLow { return "BELOW YOUR ALERT" }
+        if let days = balance.daysLeft {
+            return days >= 365 ? "LASTS OVER A YEAR" : "LASTS ~\(daysText(days)) AT THIS PACE"
+        }
+        if balance.dailyBurn == 0 { return "NOTHING SPENT THIS WEEK" }
+        return "OF THE LAST TOP-UP"
+    }
+
+    static func daysText(_ days: Double) -> String {
+        if days < 1 {
+            let hours = max(Int((days * 24).rounded()), 1)
+            return hours == 1 ? "1 HOUR" : "\(hours) HOURS"
+        }
+        let whole = Int(days.rounded())
+        return whole == 1 ? "1 DAY" : "\(whole) DAYS"
+    }
+
+    /// Tiles under the balance: spending by Limita's history, then what the balance is made of.
+    static func balanceRows(_ balance: Balance) -> [DetailRow] {
+        var rows: [DetailRow] = [
+            DetailRow(label: "SPENT TODAY", value: balance.spentToday.map(balance.format) ?? "—"),
+            DetailRow(label: "THIS MONTH", value: balance.spentThisMonth.map(balance.format) ?? "—"),
+            DetailRow(label: "PER DAY", value: balance.dailyBurn.map { balance.format($0) } ?? "Collecting data"),
+            DetailRow(label: "ALERT BELOW", value: balance.lowThreshold.map(balance.format) ?? "Off"),
+        ]
+        if balance.granted > 0 {
+            rows.append(DetailRow(label: "TOPPED UP", value: balance.format(balance.toppedUp)))
+            rows.append(DetailRow(label: "GRANTED", value: balance.format(balance.granted)))
+        }
+        rows += balance.others.map {
+            DetailRow(label: "\($0.currency) BALANCE", value: Balance.format($0.total, currency: $0.currency))
         }
         return rows
     }
@@ -1089,7 +1168,12 @@ private struct ConnectPrompt: View {
                 .foregroundStyle(.white.opacity(0.8))
             ForEach(Service.allCases) { service in
                 Button {
-                    store.connect(service)
+                    // A key is needed first, and it is entered in Settings.
+                    if service == .deepseek {
+                        store.onOpenSettings?(.providers)
+                    } else {
+                        store.connect(service)
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         ServiceBadge(service: service, size: 26)
@@ -1235,9 +1319,12 @@ enum DashboardStyle {
     static let tileValueSize: CGFloat = 13
 
     static func accent(for service: Service) -> Color {
-        service == .codex
-            ? Color(red: 0.31, green: 0.67, blue: 1)
-            : Color(red: 1, green: 0.58, blue: 0.30)
+        switch service {
+        case .codex: Color(red: 0.31, green: 0.67, blue: 1)
+        case .claude: Color(red: 1, green: 0.58, blue: 0.30)
+        // DeepSeek's blue, lifted a little to read on black.
+        case .deepseek: Color(red: 0.42, green: 0.53, blue: 1)
+        }
     }
 
     /// The 5-hour meter of a plan without a 5-hour limit, on either service.
@@ -1245,15 +1332,17 @@ enum DashboardStyle {
 
     /// Claude's two bars share the softer weekly tone; Codex keeps a brighter 5-hour bar.
     static func fiveHourBar(for service: Service) -> Color {
-        service == .claude ? accent(for: service).opacity(0.72) : accent(for: service)
+        service == .codex ? accent(for: service) : accent(for: service).opacity(0.72)
     }
 
     /// A model's share of the weekly limit, in the weekly bar and on the model's own
     /// meter: a lighter tone of the service's colour that stands out against the bar.
     static func weeklyShare(for service: Service) -> Color {
-        service == .codex
-            ? Color(red: 0.62, green: 0.82, blue: 1)
-            : Color(red: 1, green: 0.78, blue: 0.58)
+        switch service {
+        case .codex: Color(red: 0.62, green: 0.82, blue: 1)
+        case .claude: Color(red: 1, green: 0.78, blue: 0.58)
+        case .deepseek: Color(red: 0.68, green: 0.74, blue: 1)
+        }
     }
 
     /// Orange from 70 %, red from 90 %.

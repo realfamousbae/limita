@@ -18,8 +18,9 @@ onto the taskbar to keep it visible.
 ## Using it
 
 - **Tray icon.** Left click opens the dashboard next to it; click elsewhere or press
-  **Esc** to close it. Right click opens the menu: Show Limits, Refresh, Connect or
-  Disconnect Claude Code and Codex, **Reset Notifications**, **Launch at Login**, Quit.
+  **Esc** to close it (while the dashboard has focus; not in the floating window). Right
+  click opens the menu: Show Limits, Refresh, **Floating Window**, Connect or Disconnect
+  Claude Code and Codex, **Reset Notifications**, **Launch at Login**, Quit.
 - **The dot on the icon** follows the 5-hour limit of the connected services, the most
   severe one wins: green, yellow from 70 % used (30 % left), red from 90 %; faded when
   the data is stale. The tooltip lists each service.
@@ -33,15 +34,18 @@ onto the taskbar to keep it visible.
   works in other apps, so it replaces Reformat Code in JetBrains IDEs and AltGr+L on
   layouts that type a letter with it (Polish ł).
 
-Everything else — what is shown, refresh intervals, colours, the countdown — matches the
-macOS app; see the [main README](../README.md).
+What is shown for Claude and Codex, the refresh intervals, colours and countdowns match
+the macOS app; see the [main README](../README.md). A few things are macOS only for now:
+DeepSeek as a third provider, the Settings window with rebindable shortcuts and polling
+intervals, folding meters and the iTerm2 integration.
+[`docs/platform-parity.md`](../docs/platform-parity.md) lists every difference.
 
 ## What differs from macOS
 
 | | Windows |
 |---|---|
 | Claude login | `%USERPROFILE%\.claude\.credentials.json` (Claude Code keeps it there on Windows); no Keychain prompt |
-| Limita's files | `%APPDATA%\Limita\` — `settings.json`, `claude-status.json`, `wrapped-statusline.json`, `resets.json` (the limit resets already seen) |
+| Limita's files | `%APPDATA%\Limita\` — `settings.json`, `claude-status.json`, `activity.json` (tokens per day), `wrapped-statusline.json`, `resets.json` (the limit resets already seen); the Claude hook also edits `~/.claude/settings.json` |
 | Status-line hook | `"<install dir>/limita-cli.exe" --capture-claude-status`; your own status line is kept in `wrapped-statusline.json` and run through Git Bash (or `cmd` without it) |
 | Updates | [Tauri's updater](https://v2.tauri.app/plugin/updater/) reads `latest.json` from the latest release, checks the installer's signature and runs it in passive mode, then Limita reopens |
 | Reset notifications | Windows notifications, through Tauri's notification plugin |

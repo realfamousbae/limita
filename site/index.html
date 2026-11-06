@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Limita: Claude Code and Codex limits in your menu bar</title>
-  <meta name="description" content="Limita is a tiny menu-bar app for macOS and Windows that shows your Claude Code and Codex 5-hour and weekly limits at a glance. Free and open source.">
+  <title>Limita: Claude Code and Codex limits and your DeepSeek balance in your menu bar</title>
+  <meta name="description" content="Limita is a tiny menu-bar app for macOS and Windows that shows your Claude Code and Codex 5-hour and weekly limits, and on macOS your DeepSeek API balance, at a glance. Free and open source.">
   <link rel="canonical" href="https://limita.up.railway.app/">
   <link rel="alternate" hreflang="en" href="https://limita.up.railway.app/">
   <link rel="alternate" hreflang="ru" href="https://limita.up.railway.app/ru/">
   <link rel="alternate" hreflang="x-default" href="https://limita.up.railway.app/">
   <meta name="theme-color" content="#000000">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Limita: Claude Code and Codex limits in your menu bar">
-  <meta property="og:description" content="See your 5-hour and weekly limits from the top of your Mac or the Windows tray.">
+  <meta property="og:title" content="Limita: Claude Code and Codex limits and your DeepSeek balance in your menu bar">
+  <meta property="og:description" content="See your 5-hour and weekly limits, and what is left on your DeepSeek balance, from the top of your Mac or the Windows tray.">
   <meta property="og:url" content="https://limita.up.railway.app/">
   <meta property="og:image" content="https://limita.up.railway.app/assets/og.png">
   <meta property="og:locale" content="en_US">
@@ -57,7 +57,7 @@
   <main id="main">
     <section class="hero wrap">
       <h1>Claude Code and Codex limits, one glance from the top of your Mac.</h1>
-      <p class="lede">Limita is a tiny menu-bar app that shows how much of your 5-hour and weekly limits you have, without opening a terminal. It runs on Windows too, in the tray.</p>
+      <p class="lede">Limita is a tiny menu-bar app that shows how much of your 5-hour and weekly limits you have, and how much is left on your DeepSeek balance, without opening a terminal. It runs on Windows too, in the tray.</p>
       <div class="downloads">
         <a class="download mac" data-download="mac" href="https://github.com/realfamousbae/limita/releases/latest">
           <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M11 3h2v10.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17zM5 19h14v2H5z"/></svg>
@@ -70,7 +70,7 @@
 
     <section class="section wrap" id="features" aria-labelledby="features-title">
       <h2 id="features-title">Out of the way until you need it</h2>
-      <p class="section-intro">No window to keep open and no Dock icon. Limita checks Claude every 3 minutes and Codex every 5, and shows the numbers where you already look.</p>
+      <p class="section-intro">No window to keep open and no Dock icon. Limita checks Claude every 3 minutes, Codex and DeepSeek every 5, and shows the numbers where you already look.</p>
 
       <ul class="features">
         <li class="feature">
@@ -98,7 +98,7 @@
           </div>
           <div>
             <h3>One shortcut from any app</h3>
-            <p>Press <kbd>⌃⌥L</kbd> to open the dashboard at the top of the screen, even from a full-screen terminal. Press it again to close it. On Windows it is <kbd>Ctrl+Alt+L</kbd>.</p>
+            <p>Press <kbd>⌃⌥L</kbd> to open the dashboard at the top of the screen, even from a full-screen terminal. Press it again to close it. On the Mac you can pick other keys in Settings. On Windows it is <kbd>Ctrl+Alt+L</kbd>.</p>
           </div>
         </li>
 
@@ -134,7 +134,7 @@
           </div>
           <div>
             <h3>Knows the peak hours</h3>
-            <p>During a service's peak hours its limits run out faster. The dashboard shows a burning gauge then, and names the service when only one of two is affected.</p>
+            <p>During a service's peak hours its limits run out faster. The dashboard shows a burning gauge then, and names the services in peak hours when not all of yours are.</p>
           </div>
         </li>
 
@@ -163,6 +163,41 @@
             <p>When a new version is out, a green button appears in the dashboard. Click it and Limita downloads the update, checks its signature, installs it and reopens.</p>
           </div>
         </li>
+        <li class="feature">
+          <div class="visual" aria-hidden="true">
+            <div class="limita balance-demo deepseek">
+              <div class="meter">
+                <div class="caption meter-caption nowrap meter-title">BALANCE LEFT</div>
+                <div class="meter-body">
+                  <span class="big digits">57%</span>
+                  <div class="meter-track">
+                    <div class="bar-line"><div class="bar"><span class="fill accentSoft balance-fill"></span></div><span class="caption meter-caption nowrap">¥86.40 OF ¥150.00 LEFT</span></div>
+                    <div class="caption meter-caption nowrap">LASTS ~11 DAYS AT THIS PACE</div>
+                  </div>
+                </div>
+              </div>
+              <div class="details">
+                <div class="tile"><div class="caption">SPENT TODAY</div><div class="tile-value digits">¥3.62</div></div>
+                <div class="tile"><div class="caption">PER DAY</div><div class="tile-value digits">¥7.96</div></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h3>Your DeepSeek balance</h3>
+            <p>On the Mac, connect DeepSeek with an API key and it gets a column of its own: how much of your last top-up is left, how long it lasts at your pace, and what you spent today and this month. Set an alert and Limita tells you when the balance runs low.</p>
+          </div>
+        </li>
+
+        <li class="feature">
+          <div class="visual settings-demo">
+            <img src="/assets/settings.webp" width="545" height="560" loading="lazy" alt="Limita's Settings window, Providers tab: Claude Code, Codex and DeepSeek with their polling intervals">
+          </div>
+          <div>
+            <h3>Settings in one window</h3>
+            <p>On the Mac, everything you can change is in one place: connect and disconnect services, choose how often each one is asked, pick your own shortcuts, and decide whether Limita checks for updates. The menu keeps what you use every day.</p>
+          </div>
+        </li>
+
         <li class="feature wide">
           <div class="visual resets-demo" aria-hidden="true">
             <div class="limita reset-lines">
@@ -192,12 +227,16 @@
           <h3><img src="/assets/codex.png" alt="">Codex</h3>
           <p>Limita asks the Codex CLI itself, through <code>codex app-server</code>, so your login stays inside the CLI. If that fails, it reads the latest limits from the session files in <code>~/.codex</code>.</p>
         </div>
+        <div class="source deepseek">
+          <h3><img src="/assets/deepseek.png" alt="">DeepSeek</h3>
+          <p>On the Mac, Limita keeps your API key in the Keychain and sends it only to <code>api.deepseek.com</code>, for DeepSeek's documented balance request. What you spent is worked out from how the balance changes; the history stays on your Mac.</p>
+        </div>
       </div>
 
       <ul class="promises">
         <li>No accounts, no cookies, no analytics.</li>
         <li>Prompts, transcripts, project paths and session IDs are ignored.</li>
-        <li>Besides those, Limita asks GitHub for updates, and the Mac app asks <code>claude-resets.com</code> and <code>codex-reset.com</code> about resets for connected services. None of these requests carry anything about you or your usage.</li>
+        <li>Besides those, Limita asks GitHub for updates (you can turn that off on the Mac), and the Mac app asks <code>claude-resets.com</code> and <code>codex-reset.com</code> about resets for connected services. None of these requests carry anything about you or your usage.</li>
       </ul>
     </section>
 
@@ -231,7 +270,7 @@
       <a href="https://github.com/realfamousbae/limita">Source on GitHub</a>
       <a href="https://github.com/realfamousbae/limita/blob/main/LICENSE">MIT license</a>
       <a href="/assets/OFL.txt">JetBrains Mono, SIL Open Font License</a>
-      <span>Limita is not affiliated with Anthropic or OpenAI.</span>
+      <span>Limita is not affiliated with Anthropic, OpenAI or DeepSeek.</span>
     </div>
   </footer>
 </body>

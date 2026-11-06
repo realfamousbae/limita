@@ -22,12 +22,27 @@ struct TerminalSnapshot: Encodable, Equatable {
         /// so a file left behind by a crashed app goes stale on its own.
         let staleAfter: TimeInterval
         let primeTime: Bool
+        /// A prepaid balance instead of windows (DeepSeek); absent for the others.
+        let balance: BalanceEntry?
+    }
+
+    struct BalanceEntry: Encodable, Equatable {
+        let currency: String
+        let total: Double
+        /// "¥110.00", as the dashboard shows it.
+        let text: String
+        /// "normal", "warning" or "critical".
+        let level: String
+        let isAvailable: Bool
     }
 
     var version = 1
     let services: [Entry]
 
-    init(services: [Service], states: (Service) -> ServiceState, primeTime: [Service]) {
+    init(
+        services: [Service], states: (Service) -> ServiceState, primeTime: [Service],
+        staleAfter: (Service) -> TimeInterval
+    ) {
         self.services = services.map { service in
             let state = states(service)
             let status = switch state {
@@ -47,8 +62,15 @@ struct TerminalSnapshot: Encodable, Equatable {
                 hasNoFiveHourLimit: snapshot?.hasNoFiveHourLimit ?? false,
                 longWindowDays: snapshot?.longWindowSpan ?? 7,
                 capturedAt: snapshot?.capturedAt,
-                staleAfter: service == .claude ? ClaudeLimitsReader.staleAfter : CodexLimitsReader.staleAfter,
-                primeTime: primeTime.contains(service)
+                staleAfter: staleAfter(service),
+                primeTime: primeTime.contains(service),
+                balance: snapshot?.balance.map { balance in
+                    BalanceEntry(
+                        currency: balance.currency, total: balance.total, text: balance.format(balance.total),
+                        level: balance.level.name,
+                        isAvailable: balance.isAvailable
+                    )
+                }
             )
         }
     }

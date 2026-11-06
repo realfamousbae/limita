@@ -37,7 +37,7 @@ final class ActivityStore {
     @ObservationIgnored private var lastScan: Date?
     @ObservationIgnored private var isScanning = false
 
-    init(reader: ActivityReader = ActivityReader(), defaults: UserDefaults = .standard) {
+    init(reader: ActivityReader = ActivityReader(), defaults: UserDefaults = ServiceSettings.standardDefaults) {
         self.reader = reader
         self.defaults = defaults
         isExpanded = defaults.bool(forKey: Self.expandedKey)

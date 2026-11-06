@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <b>Claude Code and Codex rate limits, one glance from the top of your Mac — or from the Windows tray.</b>
+  <b>Claude Code and Codex rate limits and your DeepSeek balance, one glance from the top of your Mac — or from the Windows tray.</b>
 </p>
 
 <p align="center">
@@ -23,28 +23,30 @@
 
 ---
 
-Limita is a tiny native menu-bar app that shows how much of your **Claude** and **Codex** 5-hour and weekly limits you have, without opening a terminal.
+Limita is a tiny native menu-bar app that shows how much of your **Claude** and **Codex** 5-hour and weekly limits you have, and on macOS how much is left on your **DeepSeek** API balance, without opening a terminal.
 
 ## Features
 
 - **Hover pill.** Rest the cursor at the top edge of any screen and a compact pill slides in with each service's 5-hour limit. Click it for the full dashboard.
 - **Stays away from the notch.** The camera housing plus 80 pt on each side is left to other apps: nothing triggers or draws there.
-- **Menu bar.** Left-click the icon for the dashboard, right-click for the menu. Clicking elsewhere closes it. The button next to **↻** in the dashboard hides or shows the icon until Limita quits; the icon is back on every launch.
-- **Keyboard shortcut.** **⌃⌥L** (**Ctrl+Alt+L** on Windows) opens the dashboard at the top of the screen from any app, a terminal included; press it again to close it.
-- **Floating window.** **⌃⌥P** (**Ctrl+Alt+P** on Windows), the pin button in the dashboard or **Floating Window** in the menu pins the dashboard as a window that stays on top, on every desktop, until you close it with ⌃⌥L, the menu-bar or tray icon, or the pin button. Drag it anywhere; it opens there again, also after a restart. It never takes keyboard focus from the app you type in.
+- **Menu bar.** Left-click the icon for the dashboard, right-click for the menu: **Show Limits**, **Refresh**, **Settings…** and **Quit**. Clicking elsewhere closes it. The button next to **⚙** in the dashboard hides or shows the icon until Limita quits; the icon is back on every launch.
+- **Settings.** On macOS everything you can change is in one window, opened with **Settings…** in the menu (⌘,) or the **⚙** button in the dashboard: **General** (hover pill, floating window, menu-bar icon, notifications), **Providers** (connect and disconnect each service, how often its API is asked, the DeepSeek key and alert), **Shortcuts** and **Updates**. On Windows these stay in the tray menu for now.
+- **Keyboard shortcuts.** **⌃⌥L** (**Ctrl+Alt+L** on Windows) opens the dashboard at the top of the screen from any app, a terminal included; press it again to close it. **⌃⌥H** turns the hover pill on or off and **⌃⌥P** pins the floating window. On macOS each one can be changed or turned off in **Settings → Shortcuts**; if another app already uses a combination, Limita says so there.
+- **Floating window.** **⌃⌥P** (**Ctrl+Alt+P** on Windows), the pin button in the dashboard or **Floating window** in Settings (the tray menu on Windows) pins the dashboard as a window that stays on top, on every desktop, until you close it with ⌃⌥L, the menu-bar or tray icon, or the pin button. Drag it anywhere; it opens there again, also after a restart. It never takes keyboard focus from the app you type in.
 - **iTerm2 status bar.** An optional plugin shows your 5-hour and weekly limits in iTerm2's status bar while Claude Code or Codex runs in the tab, and a click on them opens the dashboard. See [iTerm2](#iterm2).
-- **Only what you use.** Connect or disconnect Claude Code and Codex from the menu; disconnected services are neither shown nor queried. On first launch Limita connects whatever it finds installed.
-- **Live numbers.** Claude is queried every 3 minutes, Codex every 5 minutes, and both on **Refresh**; local sources are re-read every minute. If Claude answers "too many requests", Limita leaves it alone for 5 minutes, doubling up to half an hour (or longer if Claude asks), and says when it will try again.
+- **Only what you use.** Connect or disconnect Claude Code, Codex and DeepSeek in **Settings → Providers** (Claude Code and Codex in the tray menu on Windows); disconnected services are neither shown nor queried. On first launch Limita connects whatever it finds installed; DeepSeek needs an API key, so it is never connected by itself.
+- **Live numbers.** Claude is queried every 3 minutes, Codex and DeepSeek every 5 minutes, and all of them on **Refresh**; local sources are re-read every minute. On macOS each interval can be set from 1 to 30 minutes in **Settings → Providers**. If a service answers "too many requests", Limita leaves it alone for 5 minutes, doubling up to half an hour (or longer if it asks), and says when it will try again.
+- **DeepSeek balance.** On macOS, DeepSeek gets a column of its own: how much of your last top-up is left, as a bar with the money beside it, how long it lasts at your pace, what you spent today and this month, the average per day, and what the balance is made of (topped up and granted, other currencies). Set a **low balance alert** and the dot turns red at it, with a notification once per drop and another if DeepSeek starts rejecting calls. See [DeepSeek](#deepseek).
 - **One row per limit.** Each limit is a row: its name on top, then the percentage, as tall as the bar and the reset countdown that follow it. On plans with a separate weekly limit for one model (Fable on Claude Max), that limit gets its own row. Its share of the weekly limit shows twice: as the first, lighter part of the **7 DAYS** bar, and right of its own bar, e.g. **12% OF WEEKLY · MAX 50%**, as in Claude's settings.
 - **Fold what you don't need.** On macOS the per-model limits (Fable) and the Claude credits have a **⌄** next to their name that folds them into a small capsule, e.g. **FABLE ⌃**, on the line of the **ACTIVITY** button; click the capsule to bring the row back. Folded rows stay folded across launches.
 - **Your plan.** Each column is titled with your plan, e.g. "Claude Ultra" or "Codex Pro 200". A plan without a 5-hour limit, such as a verified Ultra or any Codex Pro, gets a purple ∞ meter instead of the percentage.
 - **Balances.** Codex limit resets and credits (credits and USD, $1 = 25 credits). Claude usage credits and cloud session credits are rows like the limits, as in Claude's settings: the percentage and the bar show what is spent, and the dollars right of the bar what is left (e.g. "$163 OF $250 LEFT"). Cloud credits are a grant that ends, so their row says when they expire, or when it will disappear once all are spent, and goes away on that date. A balance a service does not report is hidden, and so are usage credits that are turned off.
 - **Readable at a glance.** Claude shows what is **used**, Codex what is **left**, and the dashboard labels which is which. Each service's dot follows its 5-hour limit: green, yellow from 70 % used (30 % left), red from 90 %; stale data keeps its colour, dimmed. Percentages stay plain white, and the dashboard counts down to each reset to the minute. If a live update fails, the reason is shown right in the dashboard.
 - **Activity.** **ACTIVITY** at the bottom right of the dashboard drops down a graph of tokens per day for each connected service, under its column; on macOS the button stays in place and the graph opens below it. **WEEK** shows the last 7 days, **MONTH** the last 5 weeks as a calendar, **ALL** everything saved up to half a year; weeks start on Monday. Above the graph: total tokens, favorite model (e.g. "Opus 5.5", "Sol 6"), messages, peak hour, and the tokens split into input, output, cache writes and cache reads. Hover a day (or click it) to see its date and a chip with its tokens in thousands. Each request is counted once, even when resumed sessions copy it into several transcripts, so totals can be lower than Claude Code's `/stats`. Claude Code deletes transcripts after 30 days by default, so Limita keeps the daily totals it has seen in `activity.json`.
-- **Prime time.** During a service's peak hours, when usage limits run out faster, the dashboard header shows a burning-gauge badge: "CLAUDE PEAK HOURS" with one service connected, the name in bold when only one of two connected services is in peak hours, "PEAK HOURS FOR ALL PROVIDERS" when both are. With two columns the badge sits right after the title; with one it is centered. Claude: weekdays 5–11 AM Pacific time; Codex: weekdays 12:00–18:00 UTC. Both are shown in your local time.
-- **Limit resets.** Each column says when the service last reset limits for everyone, e.g. **RESET FOR EVERYONE · 5 HOURS AGO**, or **BANKED RESET · USE BY OCT 22** for a reset you apply yourself; click the line for the announcement. Limita also notices when your own weekly limit starts over early, and when Codex gives you a new limit reset to redeem. New resets come as a system notification; on macOS, click it for the dashboard. **Reset Notifications** in the menu (the tray menu on Windows) turns them off. A line stays for 48 hours, a banked reset for as long as it can be applied. The first launch only records what is there, so an old reset is never announced. Global resets come from [codex-reset.com](https://codex-reset.com) and [claude-resets.com](https://claude-resets.com), credited under each line; see [Data sources](#data-sources).
+- **Prime time.** During a service's peak hours, when usage limits run out faster, the dashboard header shows a burning-gauge badge: "CLAUDE PEAK HOURS" with one service connected, the name in bold when only one of two connected services is in peak hours, "PEAK HOURS FOR ALL PROVIDERS" when every connected service is. DeepSeek has no peak hours, so with it connected the badge names the others, e.g. "CLAUDE & CODEX PEAK HOURS". The badge sits in the middle of the header. Claude: weekdays 5–11 AM Pacific time; Codex: weekdays 12:00–18:00 UTC. Both are shown in your local time.
+- **Limit resets.** Each column says when the service last reset limits for everyone, e.g. **RESET FOR EVERYONE · 5 HOURS AGO**, or **BANKED RESET · USE BY OCT 22** for a reset you apply yourself; click the line for the announcement. Limita also notices when your own weekly limit starts over early, and when Codex gives you a new limit reset to redeem. New resets come as a system notification; on macOS, click it for the dashboard. **Limit resets** in **Settings → General** (**Reset Notifications** in the tray menu on Windows) turns them off. A line stays for 48 hours, a banked reset for as long as it can be applied. The first launch only records what is there, so an old reset is never announced. Global resets come from [codex-reset.com](https://codex-reset.com) and [claude-resets.com](https://claude-resets.com), credited under each line; see [Data sources](#data-sources).
 - **Opens where you can see it.** Starting Limita from Launchpad, Finder or the Start menu, or opening it again while it runs, shows the dashboard right away. Started at login, it waits in the menu bar or tray.
-- **Updates in one click.** When a new version is out, a green **⤓** button appears in the dashboard header next to the others; the first time you see it, it spells out the new version for a few seconds. Click it and Limita downloads the update, checks its signature, installs it and reopens. See [Updates](#updates).
+- **Updates in one click.** When a new version is out, a green **⤓** button appears in the dashboard header next to the others; the first time you see it, it spells out the new version for a few seconds. Click it and Limita downloads the update, checks its signature, installs it and reopens. On macOS, **Settings → Updates** shows the version, checks now, or stops the automatic checks. See [Updates](#updates).
 - Multiple displays and full-screen Spaces. JetBrains Mono everywhere.
 
 ## Screenshots
@@ -53,8 +55,12 @@ This is how Limita looks on your Mac.
 
 <!-- Window screenshots (⌘⇧4, Space) with the system shadow, taken at 2x. The pills sit
      on one line with no whitespace between them, their shadows keep them apart, and
-     314 + 506 = 820. Both dashboards are at the same scale: 820 px for two columns,
-     429 px for one. -->
+     314 + 506 = 820. The two- and one-column dashboards are at the same scale: 820 px
+     for two columns, 429 px for one; the three-column one is fitted to 820 px. -->
+<p align="center">
+  <img src="docs/screenshots/dashboard-all.png" alt="Dashboard with Claude, Codex and DeepSeek: limits, the DeepSeek balance with spending and a forecast, and the peak-hours badge" width="820">
+</p>
+
 <p align="center">
   <img src="docs/screenshots/pill-claude.png" alt="Hover pill with Claude" width="314"><img src="docs/screenshots/pill-both.png" alt="Hover pill with both services" width="506">
 </p>
@@ -67,6 +73,10 @@ This is how Limita looks on your Mac.
   <img src="docs/screenshots/dashboard-claude.png" alt="Dashboard with Claude only, with the activity graph" width="429">
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/settings-providers.png" alt="Settings, Providers tab: Claude Code, Codex and DeepSeek with their polling intervals, the DeepSeek key and the low-balance alert" width="429">
+</p>
+
 ## Install
 
 1. Download `Limita-<version>.dmg` from [Releases](../../releases). Take the latest release; anything from 0.13.0 on updates itself from then on, while older versions can't and are not worth installing.
@@ -75,7 +85,7 @@ This is how Limita looks on your Mac.
 
 Limita lives in the menu bar only; it has no Dock icon.
 
-On the first Claude refresh, macOS asks whether Limita may read `Claude Code-credentials` from the Keychain. Choose **Always Allow**.
+On the first Claude refresh, macOS asks whether Limita may read `Claude Code-credentials` from the Keychain. Choose **Always Allow**. The same may happen once for Limita's own DeepSeek key after an update.
 
 ### If macOS won't open Limita
 
@@ -96,7 +106,7 @@ As a last resort, you can turn off Gatekeeper, the check that blocks the app, fo
 
 ## Updates
 
-Limita checks GitHub Releases at launch and every 3 hours. While a newer version is out, a green **⤓** button shows in the dashboard header. The first time the dashboard shows it after launch, the button spells out the new version for 8 seconds ("LIMITA 0.15.0 IS OUT · CLICK TO UPDATE") and then folds back; nothing else changes until you click it.
+Limita checks GitHub Releases at launch and every 3 hours. On macOS you can turn that off, or check right away, in **Settings → Updates**. While a newer version is out, a green **⤓** button shows in the dashboard header. The first time the dashboard shows it after launch, the button spells out the new version for 8 seconds ("LIMITA 0.15.0 IS OUT · CLICK TO UPDATE") and then folds back; nothing else changes until you click it.
 
 Updates are installed only after their signature checks out:
 
@@ -105,14 +115,14 @@ Updates are installed only after their signature checks out:
 
 The private keys are not in this repository. Updates come only from this repository's releases, over HTTPS.
 
-If Limita runs from a folder it cannot write to (or straight from the DMG), the button opens the release page instead. The first version with the button is 0.13.0: from an older version, install the latest release by hand once. On macOS, every new build asks again for access to `Claude Code-credentials` in the Keychain, as a manual reinstall does; choose **Always Allow**.
+If Limita runs from a folder it cannot write to (or straight from the DMG), the button opens the release page instead. The first version with the button is 0.13.0: from an older version, install the latest release by hand once. On macOS, every new build asks again for access to `Claude Code-credentials` in the Keychain, and to Limita's own DeepSeek key if you connected DeepSeek, as a manual reinstall does; choose **Always Allow**.
 
 ## iTerm2
 
 The plugin adds a **Limita** component to iTerm2's status bar:
 
 ```text
-🟢 Claude 5h 52% · 7d 49% used  │  🟢 Codex 5h 80% · 7d 64% left
+🟢 Claude 5h 52% · 7d 49% used  │  🟢 Codex 5h 80% · 7d 64% left  │  🟢 DeepSeek ¥86.40
 ```
 
 It appears only in tabs where Claude Code or Codex is running and lists every service
@@ -151,6 +161,27 @@ With a script in AutoLaunch, iTerm2 stops opening a window at startup. To keep t
 turn on **Settings → General → Startup → Always open at least one terminal window at
 startup**.
 
+## DeepSeek
+
+DeepSeek bills per token from a prepaid balance, with no 5-hour or weekly limits, so Limita shows the balance instead. It is macOS only for now.
+
+1. Create an API key at [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys). A separate key just for Limita is a good idea: it only needs to read the balance.
+2. In Limita open **Settings → Providers**, paste the key next to **DeepSeek** and click **Connect**. Limita checks it with DeepSeek first; a key DeepSeek rejects is not saved.
+3. Optionally set a **Low balance alert**, in the balance's currency.
+
+What the column shows:
+
+- **BALANCE LEFT**: the balance as a share of what it was right after your last top-up, with the money beside the bar. Under it, how many days the balance lasts at your average pace, or **CALLS REJECTED · TOP UP** once DeepSeek stops serving requests.
+- **SPENT TODAY**, **THIS MONTH** and **PER DAY** (the average over the last week), plus **TOPPED UP** and **GRANTED** when part of the balance is a grant, and any balance in a second currency.
+
+DeepSeek's API reports only the current balance (its documented `GET /user/balance`), so spending is worked out by Limita: every time the balance drops between two readings, the drop counts as spent; a rise is a top-up. That has a few consequences:
+
+- The history starts when you connect DeepSeek and grows only while Limita runs. **PER DAY** and the forecast appear after a day of history; until then they read **Collecting data**. Spending while Limita was not running shows up at the next reading.
+- Granted money that expires also lowers the balance and counts as spent; DeepSeek does not say which is which.
+- The numbers are for the whole account, not per key, and there is no per-model or per-token breakdown.
+
+The key is kept in your login Keychain (item `com.limita.app.deepseek`) and only sent to `api.deepseek.com`. **Disconnect** removes the key and the balance history.
+
 ## Keeping Claude up to date
 
 Claude Code's login token is **short-lived**, and only Claude Code itself renews it, while it is running. Limita reads that token but never renews it, because renewing it from outside could sign Claude Code out.
@@ -174,30 +205,31 @@ If the clock runs ahead, a 5-hour window that is still open looks reset: the 5-h
 
 ## Data sources
 
-| | Claude | Codex |
-|---|---|---|
-| **Live** | `GET api.anthropic.com/api/oauth/usage` with Claude Code's OAuth token | `codex app-server` → `account/rateLimits/read` (official; auth stays in the CLI) |
-| **Fallback** | Claude Code status line, set up when you connect Claude Code | Latest `rate_limits` in `~/.codex/sessions/**/rollout-*.jsonl` |
-| **Extras** | Usage credits, cloud session credits; plan from `GET api.anthropic.com/api/oauth/profile` | Limit resets, credit balance |
-| **Resets for everyone** | `GET claude-resets.com/api/resets` | `GET codex-reset.com/api/forecast` |
+| | Claude | Codex | DeepSeek (macOS) |
+|---|---|---|---|
+| **Live** | `GET api.anthropic.com/api/oauth/usage` with Claude Code's OAuth token | `codex app-server` → `account/rateLimits/read` (official; auth stays in the CLI) | `GET api.deepseek.com/user/balance` with your API key (official) |
+| **Fallback** | Claude Code status line, set up when you connect Claude Code | Latest `rate_limits` in `~/.codex/sessions/**/rollout-*.jsonl` | The last reading, marked stale |
+| **Extras** | Usage credits, cloud session credits; plan from `GET api.anthropic.com/api/oauth/profile` | Limit resets, credit balance | Spending and forecast from Limita's own balance history |
+| **Resets for everyone** | `GET claude-resets.com/api/resets` | `GET codex-reset.com/api/forecast` | none: no limits to reset |
 
 **Reset trackers.** Resets that a service gives everyone are taken from two independent trackers, not from Anthropic or OpenAI: [claude-resets.com](https://claude-resets.com) (data under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) and [codex-reset.com](https://codex-reset.com). Thanks to both. Each line in the dashboard credits its tracker. Limita asks the tracker of each connected service at launch and every 15 minutes, with a `User-Agent` that names Limita, and backs off when a tracker asks it to. A reset Claude's tracker has not confirmed yet is shown but not announced.
 
 **Claude usage API.** The endpoint is undocumented, the same one Claude Code's `/usage` uses, and it may change without notice. Limita reads the token from Claude Code's Keychain item `Claude Code-credentials`; macOS asks once. The token is only sent to `api.anthropic.com`. Limita never stores or refreshes it; see [Keeping Claude up to date](#keeping-claude-up-to-date).
 
-**Claude status line.** **Connect Claude Code** in the menu adds Limita to `statusLine` in `~/.claude/settings.json`:
+**Claude status line.** **Connect** next to Claude Code in **Settings → Providers** (the tray menu on Windows) adds Limita to `statusLine` in `~/.claude/settings.json`:
 
 - An existing status line is wrapped, not replaced. Limita saves the limits and runs your command with the same input, so its output is unchanged.
-- **Disconnect Claude Code** restores it. A backup is kept as `settings.json.limita-backup`.
+- **Disconnect** restores it. A backup is kept as `settings.json.limita-backup`.
 - Connect from `/Applications`: a build-folder path disappears after a clean build.
 
 ## Privacy
 
 - No accounts, cookies or passwords, and no analytics.
-- Besides Anthropic, OpenAI and GitHub (for updates), Limita talks to `claude-resets.com` and `codex-reset.com` for the reset trackers, only for connected services. These requests carry nothing about you or your usage.
+- Besides Anthropic, OpenAI, DeepSeek (only once you connect it) and GitHub (for updates), Limita talks to `claude-resets.com` and `codex-reset.com` for the reset trackers, only for connected services. These requests carry nothing about you or your usage.
+- The DeepSeek API key stays in your Keychain and is only sent to `api.deepseek.com`. The balance history, `~/Library/Application Support/Limita/deepseek-balance.json`, holds dated balances and nothing else.
 - Only rate-limit numbers and balances are read. Prompts, transcripts, project paths and session IDs are ignored.
 - The Claude status-line cache (`~/Library/Application Support/Limita/claude-status.json`) holds only the two windows and a timestamp.
-- For the iTerm2 plugin, the app writes what the dashboard shows to `~/Library/Application Support/Limita/snapshot.json`: percentages, reset times and status, nothing else. The file is removed when Limita quits.
+- For the iTerm2 plugin, the app writes what the dashboard shows to `~/Library/Application Support/Limita/snapshot.json`: percentages, reset times, the DeepSeek balance and status, nothing else. The file is removed when Limita quits.
 
 ## Build from source
 
@@ -213,7 +245,7 @@ xcodebuild -project Limita.xcodeproj -scheme Limita -configuration Release build
 
 `macos/Limita.xcodeproj` is generated from `macos/project.yml`. Run `xcodegen generate` after adding or removing files.
 
-`macos/scripts/make-dmg.sh` builds a Release copy and packages it as `macos/build/Limita-<version>.dmg` with the drag-to-install window, and signs it for the updater with `macos/scripts/sign-update.sh` (the key is read from `~/.limita-signing/macos-ed25519.key` or `LIMITA_SIGNING_KEY`). To try an update locally, serve a release JSON shaped like GitHub's and start Limita with `LIMITA_UPDATE_FEED=<its URL>`; `LIMITA_UPDATE_INSTALL=1` installs it without a click. Its background is rendered from `assets/design/dmg-background-source.webp` by `macos/scripts/dmg-background.py` (needs Pillow); rerun that after changing the layout. The prime-time badge animation, `prime-time.webp` for both apps, is built from `assets/design/prime-time-source.webm` by `scripts/prime-time-sprite.sh` (needs ffmpeg and cwebp). Artwork both apps use (that animation, the status glyph, the service logos) lives once in `assets/shared/`; `scripts/sync-assets.sh` copies it to the asset catalog and the Windows folders, and `--check` verifies the copies.
+`macos/scripts/make-dmg.sh` builds a Release copy and packages it as `macos/build/Limita-<version>.dmg` with the drag-to-install window, and signs it for the updater with `macos/scripts/sign-update.sh` (the key is read from `~/.limita-signing/macos-ed25519.key` or `LIMITA_SIGNING_KEY`). To try plans you do not have, `scripts/fake-api.py` serves made-up Claude, Codex and DeepSeek answers (its header says how to start Limita against it; DeepSeek then needs no key). To try an update locally, serve a release JSON shaped like GitHub's and start Limita with `LIMITA_UPDATE_FEED=<its URL>`; `LIMITA_UPDATE_INSTALL=1` installs it without a click. Its background is rendered from `assets/design/dmg-background-source.webp` by `macos/scripts/dmg-background.py` (needs Pillow); rerun that after changing the layout. The prime-time badge animation, `prime-time.webp` for both apps, is built from `assets/design/prime-time-source.webm` by `scripts/prime-time-sprite.sh` (needs ffmpeg and cwebp). Artwork both apps use (that animation, the status glyph, the service logos) lives once in `assets/shared/`; `scripts/sync-assets.sh` copies it to the asset catalog and the Windows folders, and `--check` verifies the copies.
 
 Live-update failures are logged: `log show --predicate 'subsystem == "com.limita.app"' --last 1h`.
 
@@ -247,7 +279,8 @@ release.
 2. Run it; it installs for your user, no administrator rights needed. The installer is not
    signed yet: on the SmartScreen warning choose **More info → Run anyway**.
 
-The Windows app is built with Tauri and Rust in [`windows/`](windows/README.md), which
+DeepSeek and the Settings window are macOS only for now; on Windows the settings stay in
+the tray menu. The Windows app is built with Tauri and Rust in [`windows/`](windows/README.md), which
 covers the differences from macOS, troubleshooting and building from source;
 [`docs/platform-parity.md`](docs/platform-parity.md) tracks every difference between the two apps.
 
@@ -255,4 +288,4 @@ covers the differences from macOS, troubleshooting and building from source;
 
 MIT, see [LICENSE](LICENSE). The bundled JetBrains Mono Nerd Font is under the SIL Open Font License 1.1, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Limita is not affiliated with OpenAI or Anthropic.
+Limita is not affiliated with OpenAI, Anthropic or DeepSeek. Their logos only name the service whose numbers are shown; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

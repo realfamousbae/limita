@@ -879,12 +879,6 @@ final class LimitaTests: XCTestCase {
     }
 
     @MainActor
-    func testMenuTitles() {
-        XCTAssertEqual(AppDelegate.menuTitle(for: .claude, connected: true), "Disconnect Claude Code")
-        XCTAssertEqual(AppDelegate.menuTitle(for: .codex, connected: false), "Connect Codex")
-    }
-
-    @MainActor
     func testPanelSizesFollowConnectedServices() {
         XCTAssertEqual(BezelPanelController.expandedSize(services: 2).width, 2 * BezelPanelController.expandedSize(services: 1).width)
         XCTAssertLessThan(BezelPanelController.pillSize(services: 1).width, BezelPanelController.pillSize(services: 2).width)
@@ -1055,7 +1049,10 @@ final class LimitaTests: XCTestCase {
             .claude: .fresh(LimitSnapshot(fiveHour: window, sevenDay: nil, capturedAt: now)),
             .codex: .unavailable(reason: "Codex has not run yet"),
         ]
-        let snapshot = TerminalSnapshot(services: [.claude, .codex], states: { states[$0]! }, primeTime: [.claude])
+        let snapshot = TerminalSnapshot(
+            services: [.claude, .codex], states: { states[$0]! }, primeTime: [.claude],
+            staleAfter: { $0 == .claude ? ClaudeLimitsReader.staleAfter : CodexLimitsReader.staleAfter }
+        )
         let url = try temporaryDirectory().appendingPathComponent("snapshot.json")
         try snapshot.write(to: url)
 

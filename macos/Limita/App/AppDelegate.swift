@@ -1,19 +1,14 @@
 import AppKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = LimitsStore()
     private var panelController: BezelPanelController?
     private var statusItem: NSStatusItem?
-    private var dashboardHotKey: GlobalHotKey?
-    private var hoverHotKey: GlobalHotKey?
-    private var floatingHotKey: GlobalHotKey?
-    private var hoverMenuItem: NSMenuItem?
-    private var floatingMenuItem: NSMenuItem?
-    private var resetNotificationsMenuItem: NSMenuItem?
+    private let hotKeys = HotKeyCenter()
+    private var settingsController: SettingsWindowController?
+    private var showLimitsMenuItem: NSMenuItem?
     private let menu = NSMenu()
-    /// One Connect/Disconnect row per service, in display order.
-    private var serviceMenuItems: [Service: NSMenuItem] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -27,32 +22,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.resets.start()
 
         panelController = BezelPanelController(store: store)
-        dashboardHotKey = GlobalHotKey(
-            keyCode: GlobalHotKey.dashboard.keyCode,
-            modifiers: GlobalHotKey.dashboard.carbonModifiers
-        ) { [weak self] in
-            self?.panelController?.toggleFromShortcut()
+        settingsController = SettingsWindowController(store: store, hotKeys: hotKeys)
+        store.onOpenSettings = { [weak self] tab in
+            self?.openSettings(tab: tab)
         }
         store.onHoverEnabledChange = { [weak self] enabled in
             self?.panelController?.setHoverEnabled(enabled)
         }
-        hoverHotKey = GlobalHotKey(
-            id: 2,
-            keyCode: GlobalHotKey.hoverToggle.keyCode,
-            modifiers: GlobalHotKey.hoverToggle.carbonModifiers
-        ) { [weak self] in
-            self?.store.hoverEnabled.toggle()
-        }
         store.onFloatingChange = { [weak self] enabled in
             self?.panelController?.setFloating(enabled)
         }
-        floatingHotKey = GlobalHotKey(
-            id: 3,
-            keyCode: GlobalHotKey.floatingToggle.keyCode,
-            modifiers: GlobalHotKey.floatingToggle.carbonModifiers
-        ) { [weak self] in
-            self?.store.floatingEnabled.toggle()
+        hotKeys.onChange = { [weak self] in
+            self?.updateShowLimitsHint()
         }
+        hotKeys.start([
+            .dashboard: { [weak self] in self?.panelController?.toggleFromShortcut() },
+            .hoverPill: { [weak self] in self?.store.hoverEnabled.toggle() },
+            .floatingWindow: { [weak self] in self?.store.floatingEnabled.toggle() },
+        ])
         setupStatusItem()
 
         // Opened by hand (Launchpad, Finder, Spotlight, or after an update): show the
@@ -82,10 +69,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return false
     }
 
-    /// `limita://dashboard`, opened by the iTerm2 status-bar component.
+    /// `limita://dashboard`, opened by the iTerm2 status-bar component, and
+    /// `limita://settings` or `limita://settings/providers` for a Settings tab.
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard urls.contains(where: { $0.scheme == "limita" && $0.host == "dashboard" }) else { return }
-        panelController?.showAtTopOfCursorScreen()
+        for url in urls where url.scheme == "limita" {
+            switch url.host {
+            case "dashboard":
+                panelController?.showAtTopOfCursorScreen()
+            case "settings":
+                openSettings(tab: SettingsTab(rawValue: url.lastPathComponent))
+            default:
+                continue
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -114,37 +110,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.statusItem?.isVisible = visible
         }
 
-        menu.delegate = self
+        // Everything else lives in Settings; the menu keeps what is used every day.
         menu.font = AppFont.ns(13)
-        let show = menu.addItem(withTitle: "Show Limits", action: #selector(showLimits), keyEquivalent: "")
-        if dashboardHotKey != nil {
-            // Only a hint here: the shortcut itself works from any app.
-            show.keyEquivalent = GlobalHotKey.dashboardKeyEquivalent
-            show.keyEquivalentModifierMask = GlobalHotKey.dashboardModifiers
-        }
+        showLimitsMenuItem = menu.addItem(withTitle: "Show Limits", action: #selector(showLimits), keyEquivalent: "")
+        updateShowLimitsHint()
         menu.addItem(withTitle: "Refresh", action: #selector(refreshData), keyEquivalent: "r")
-        let hover = menu.addItem(withTitle: "Hover Pill", action: #selector(toggleHover), keyEquivalent: "")
-        if hoverHotKey != nil {
-            hover.keyEquivalent = GlobalHotKey.hoverToggleKeyEquivalent
-            hover.keyEquivalentModifierMask = GlobalHotKey.dashboardModifiers
-        }
-        hoverMenuItem = hover
-        let floating = menu.addItem(withTitle: "Floating Window", action: #selector(toggleFloating), keyEquivalent: "")
-        if floatingHotKey != nil {
-            floating.keyEquivalent = GlobalHotKey.floatingToggleKeyEquivalent
-            floating.keyEquivalentModifierMask = GlobalHotKey.dashboardModifiers
-        }
-        floatingMenuItem = floating
-        resetNotificationsMenuItem = menu.addItem(
-            withTitle: "Reset Notifications", action: #selector(toggleResetNotifications), keyEquivalent: ""
-        )
         menu.addItem(.separator())
-        for service in Service.allCases {
-            let item = NSMenuItem(title: "", action: #selector(toggleService(_:)), keyEquivalent: "")
-            item.representedObject = service.rawValue
-            serviceMenuItems[service] = item
-            menu.addItem(item)
-        }
+        menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Limita", action: #selector(quitApp), keyEquivalent: "q")
         for item in menu.items where item.action != nil {
@@ -170,17 +142,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        hoverMenuItem?.state = store.hoverEnabled ? .on : .off
-        floatingMenuItem?.state = store.floatingEnabled ? .on : .off
-        resetNotificationsMenuItem?.state = store.resets.notificationsEnabled ? .on : .off
-        for (service, item) in serviceMenuItems {
-            item.title = Self.menuTitle(for: service, connected: store.isEnabled(service))
+    /// Only a hint: the shortcut itself works from any app, and may be changed or off.
+    private func updateShowLimitsHint() {
+        guard let item = showLimitsMenuItem else { return }
+        if hotKeys.isActive(.dashboard), let binding = hotKeys.binding(for: .dashboard),
+           let key = binding.keyEquivalent {
+            item.keyEquivalent = key
+            item.keyEquivalentModifierMask = binding.modifierFlags
+        } else {
+            item.keyEquivalent = ""
+            item.keyEquivalentModifierMask = []
         }
-    }
-
-    static func menuTitle(for service: Service, connected: Bool) -> String {
-        "\(connected ? "Disconnect" : "Connect") \(service.productName)"
     }
 
     // MARK: - Actions
@@ -196,39 +168,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.refresh(live: true)
     }
 
-    @objc private func toggleHover() {
-        store.hoverEnabled.toggle()
+    @objc private func showSettings() {
+        openSettings(tab: nil)
     }
 
-    @objc private func toggleFloating() {
-        store.floatingEnabled.toggle()
-    }
-
-    @objc private func toggleResetNotifications() {
-        store.resets.notificationsEnabled.toggle()
-    }
-
-    @objc private func toggleService(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let service = Service(rawValue: raw) else { return }
-        if store.isEnabled(service) {
-            store.disconnect(service)
-        } else {
-            store.connect(service)
-        }
-        presentSetupMessage()
-    }
-
-    /// From the menu there is no panel to show the outcome in, so use an alert.
-    private func presentSetupMessage() {
-        guard let message = store.setupMessage else { return }
-        store.setupMessage = nil
-        // An accessory app's alert opens behind other windows unless we activate first.
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = message.service.productName
-        alert.informativeText = message.text
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+    func openSettings(tab: SettingsTab?) {
+        // The dashboard would cover the window unless it floats where the user put it.
+        if !store.floatingEnabled { panelController?.hide() }
+        settingsController?.show(tab: tab)
     }
 
     @objc private func quitApp() {

@@ -198,7 +198,7 @@
     if (peaking.length === services.length) {
       lines.append(el("div", "", "PEAK HOURS FOR ALL PROVIDERS"));
     } else {
-      lines.append(el("div", "", el("strong", "", peaking[0].id.toUpperCase()), " PEAK HOURS"));
+      lines.append(el("div", "", el("strong", "", peaking.map((s) => s.id.toUpperCase()).join(" & ")), " PEAK HOURS"));
     }
     lines.append(el("div", "", "USAGE LIMITS RUN OUT FASTER"));
     return el("div", "prime-time", el("span", "burning-gauge"), lines);

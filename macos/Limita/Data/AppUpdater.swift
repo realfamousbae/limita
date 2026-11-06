@@ -49,6 +49,24 @@ final class AppUpdater {
     private(set) var phase: Phase = .idle
     /// The update button is spelled out ("Limita 0.15.0 is out") for a few seconds.
     private(set) var isAnnouncing = false
+    /// A check is under way, for the Check Now button.
+    private(set) var isChecking = false
+    /// When the feed last answered, and why the last check failed, for Settings.
+    private(set) var lastChecked: Date?
+    private(set) var lastError: String?
+    /// Whether GitHub is asked every `checkInterval`. On unless the user turned it off;
+    /// Check Now in Settings works either way.
+    var autoCheck: Bool {
+        didSet {
+            guard autoCheck != oldValue else { return }
+            defaults.set(autoCheck, forKey: Self.autoCheckKey)
+            if autoCheck { start() } else { stop() }
+        }
+    }
+    static let autoCheckKey = "autoUpdateCheck"
+    @ObservationIgnored private let defaults: UserDefaults
+    /// The running version, "0.24.0"; empty without a bundle.
+    var version: String { currentVersion }
     /// The version the button was last spelled out for; once per version and launch.
     @ObservationIgnored private var announcedVersion: String?
     @ObservationIgnored private var announceEnd: Task<Void, Never>?
@@ -60,15 +78,20 @@ final class AppUpdater {
 
     init(
         currentVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
-        feedURL: URL = ProcessInfo.processInfo.environment["LIMITA_UPDATE_FEED"].flatMap(URL.init(string:)) ?? AppUpdater.feed
+        feedURL: URL = ProcessInfo.processInfo.environment["LIMITA_UPDATE_FEED"].flatMap(URL.init(string:)) ?? AppUpdater.feed,
+        defaults: UserDefaults = ServiceSettings.standardDefaults
     ) {
         self.currentVersion = currentVersion
         self.feedURL = feedURL
+        self.defaults = defaults
+        autoCheck = defaults.object(forKey: Self.autoCheckKey) as? Bool ?? true
     }
 
-    /// Checks now and then every `checkInterval`.
+    /// Checks now and then every `checkInterval`, unless automatic checks are off.
     func start() {
         timer?.invalidate()
+        timer = nil
+        guard autoCheck else { return }
         let timer = Timer(timeInterval: Self.checkInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.check() }
         }
@@ -78,14 +101,23 @@ final class AppUpdater {
         check()
     }
 
+    private func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
     func check() {
         // `swift test` and other bundles without a version have nothing to compare.
-        guard !currentVersion.isEmpty, phase != .installing else { return }
+        guard !currentVersion.isEmpty, phase != .installing, !isChecking else { return }
         let feedURL = feedURL
+        isChecking = true
         Task {
+            defer { isChecking = false }
             do {
                 let release = try await Self.latestRelease(from: feedURL)
                 let newer = release.flatMap { Self.isVersion($0.version, newerThan: currentVersion) ? $0 : nil }
+                lastChecked = Date()
+                lastError = nil
                 if newer != available {
                     available = newer
                     phase = .idle
@@ -93,6 +125,7 @@ final class AppUpdater {
                 if newer != nil, ProcessInfo.processInfo.environment["LIMITA_UPDATE_INSTALL"] == "1" { install() }
             } catch {
                 // Offline or rate-limited: try again at the next check, quietly.
+                lastError = error.localizedDescription
                 log.info("Update check failed: \(error.localizedDescription, privacy: .public)")
             }
         }

@@ -124,9 +124,14 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
     /// field still read as weekly.
     let longWindowDays: Int?
 
+    /// A prepaid balance instead of windows: services billed per token (DeepSeek) have
+    /// no rate-limit windows at all. `nil` for the others.
+    let balance: Balance?
+
     init(
         fiveHour: LimitWindow?, sevenDay: LimitWindow?, capturedAt: Date,
-        hasNoFiveHourLimit: Bool = false, scoped: [ScopedWindow] = [], longWindowDays: Int? = nil
+        hasNoFiveHourLimit: Bool = false, scoped: [ScopedWindow] = [], longWindowDays: Int? = nil,
+        balance: Balance? = nil
     ) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
@@ -134,6 +139,12 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
         self.hasNoFiveHourLimit = hasNoFiveHourLimit && fiveHour == nil && sevenDay != nil
         self.scoped = scoped
         self.longWindowDays = longWindowDays == 7 ? nil : longWindowDays
+        self.balance = balance
+    }
+
+    /// A balance-only snapshot, as DeepSeek reports it.
+    init(balance: Balance, capturedAt: Date) {
+        self.init(fiveHour: nil, sevenDay: nil, capturedAt: capturedAt, balance: balance)
     }
 
     /// Days in the long window: 7 for a week, 30 on Codex Free.
@@ -156,7 +167,8 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
             fiveHour: fiveHour, sevenDay: sevenDay, capturedAt: capturedAt,
             hasNoFiveHourLimit: hasNoFiveHourLimit || other.hasNoFiveHourLimit,
             scoped: scoped.isEmpty ? other.scoped : scoped,
-            longWindowDays: longWindowDays ?? other.longWindowDays
+            longWindowDays: longWindowDays ?? other.longWindowDays,
+            balance: balance ?? other.balance
         )
     }
 
@@ -166,7 +178,7 @@ struct LimitSnapshot: Codable, Sendable, Equatable {
     }
 
     var isEmpty: Bool {
-        fiveHour == nil && sevenDay == nil
+        fiveHour == nil && sevenDay == nil && balance == nil
     }
 
     /// The window the pill and the traffic light follow: the 5-hour one, or the long
@@ -184,6 +196,15 @@ enum LimitLevel: Sendable, Equatable {
     case normal
     case warning
     case critical
+
+    /// "normal", "warning" or "critical", for files other tools read.
+    var name: String {
+        switch self {
+        case .normal: "normal"
+        case .warning: "warning"
+        case .critical: "critical"
+        }
+    }
 
     init(usedPercent: Double) {
         if usedPercent >= 90 {
@@ -223,9 +244,10 @@ enum ServiceState: Sendable, Equatable {
         return false
     }
 
-    /// Traffic-light level of the headline window; `nil` without data.
+    /// Traffic-light level of the headline window, or of the balance; `nil` without data.
     func level(at now: Date = Date()) -> LimitLevel? {
-        snapshot?.headline.map { LimitLevel(usedPercent: $0.window.displayPercent(at: now)) }
+        if let balance = snapshot?.balance { return balance.level }
+        return snapshot?.headline.map { LimitLevel(usedPercent: $0.window.displayPercent(at: now)) }
     }
 
     /// Builds a state from a snapshot, deciding freshness by age.
@@ -236,25 +258,42 @@ enum ServiceState: Sendable, Equatable {
     }
 }
 
-/// Declaration order is display order: Claude first, then Codex, everywhere.
+/// Declaration order is display order: Claude, Codex, then DeepSeek, everywhere.
 enum Service: String, CaseIterable, Identifiable, Sendable {
     case claude
     case codex
+    case deepseek
+
+    /// What a service reports: rate-limit windows that reset (Claude, Codex), or a
+    /// prepaid balance spent per token (DeepSeek, connected with an API key).
+    enum Kind: Sendable {
+        case limits
+        case balance
+    }
 
     var id: String { rawValue }
+
+    var kind: Kind {
+        switch self {
+        case .claude, .codex: .limits
+        case .deepseek: .balance
+        }
+    }
 
     var displayName: String {
         switch self {
         case .codex: "Codex"
         case .claude: "Claude"
+        case .deepseek: "DeepSeek"
         }
     }
 
-    /// Name of the product the user connects, as shown in the menu.
+    /// Name of the product the user connects, as shown in Settings.
     var productName: String {
         switch self {
         case .codex: "Codex"
         case .claude: "Claude Code"
+        case .deepseek: "DeepSeek"
         }
     }
 
@@ -273,7 +312,84 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .codex: "CodexLogo"
         case .claude: "ClaudeLogo"
+        case .deepseek: "DeepSeekLogo"
         }
+    }
+}
+
+/// A prepaid API balance and what Limita worked out from its own history of readings:
+/// DeepSeek reports only the balance, so spending and the forecast are Limita's.
+struct Balance: Codable, Sendable, Equatable {
+    /// A balance in a currency other than the main one.
+    struct Amount: Codable, Sendable, Equatable {
+        let currency: String
+        let total: Double
+    }
+
+    /// "CNY" or "USD".
+    let currency: String
+    /// Everything that can be spent: `granted + toppedUp`.
+    let total: Double
+    /// Granted (bonus) money that has not expired.
+    let granted: Double
+    /// Money the user paid in.
+    let toppedUp: Double
+    /// Whether the balance still covers API calls; DeepSeek rejects them once it is out.
+    let isAvailable: Bool
+    var others: [Amount] = []
+
+    /// Spent since local midnight and since the 1st of the month, by Limita's history.
+    var spentToday: Double?
+    var spentThisMonth: Double?
+    /// Average spend per day over the last week; `nil` until a day of history exists.
+    var dailyBurn: Double?
+    /// The bar's full width: the balance right after the last top-up.
+    var fullScale: Double?
+    /// Below this the balance counts as low: the dot turns red and a notification fires.
+    var lowThreshold: Double?
+
+    /// How full the bar is, 0...1; `nil` without a full scale.
+    var fraction: Double? {
+        guard let fullScale, fullScale > 0 else { return nil }
+        return min(max(total / fullScale, 0), 1)
+    }
+
+    /// Days the balance lasts at the current pace.
+    var daysLeft: Double? {
+        guard let dailyBurn, dailyBurn > 0 else { return nil }
+        return max(total, 0) / dailyBurn
+    }
+
+    /// Whether the balance is at or below the user's threshold.
+    var isLow: Bool {
+        guard let lowThreshold, lowThreshold > 0 else { return false }
+        return total <= lowThreshold
+    }
+
+    /// Red when calls are rejected or the balance is at the threshold, yellow within
+    /// twice the threshold. Without a threshold, by how much of the last top-up is left.
+    var level: LimitLevel {
+        if !isAvailable || total <= 0 { return .critical }
+        if let lowThreshold, lowThreshold > 0 {
+            if total <= lowThreshold { return .critical }
+            return total <= 2 * lowThreshold ? .warning : .normal
+        }
+        guard let fraction else { return .normal }
+        return LimitLevel(usedPercent: (1 - fraction) * 100)
+    }
+
+    /// "¥110.00", "$4.20", or "EUR 3.00" for a currency without a symbol here.
+    static func format(_ amount: Double, currency: String) -> String {
+        let number = amount.formatted(.number.precision(.fractionLength(2)).locale(.english))
+        switch currency.uppercased() {
+        case "CNY", "RMB": return "¥" + number
+        case "USD": return "$" + number
+        default: return "\(currency) " + number
+        }
+    }
+
+    func format(_ amount: Double) -> String {
+        Self.format(amount, currency: currency)
     }
 }
 

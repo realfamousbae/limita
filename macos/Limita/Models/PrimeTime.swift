@@ -57,6 +57,9 @@ extension Service {
                 start: 12 * 60,
                 end: 18 * 60
             )
+        // Billed per token, without limits that could run out faster.
+        case .deepseek:
+            nil
         }
     }
 
@@ -75,24 +78,23 @@ struct PrimeTimeNotice: Equatable {
 
     static let detailText = "USAGE LIMITS RUN OUT FASTER"
 
-    /// `nil` when no connected service is in peak hours. One service names itself, in
-    /// bold if another service is connected; every connected service in peak hours at
-    /// once reads as all providers.
+    /// `nil` when no connected service is in peak hours. Services in peak hours name
+    /// themselves, in bold if another connected service is not; every connected service
+    /// in peak hours at once reads as all providers. DeepSeek has no peak hours, so with
+    /// it connected Claude and Codex are named: "CLAUDE & CODEX PEAK HOURS".
     init?(active: [Service], connected: [Service]) {
         guard !active.isEmpty else { return nil }
         detail = Self.detailText
-        if active.count == 1, let service = active.first {
-            let name = service.displayName.uppercased()
-            if connected.count > 1 {
-                strong = name
-                title = " PEAK HOURS"
-            } else {
-                strong = nil
-                title = "\(name) PEAK HOURS"
-            }
-        } else {
+        let names = active.map { $0.displayName.uppercased() }.joined(separator: " & ")
+        if Set(connected).isSubset(of: active) && active.count > 1 {
             strong = nil
             title = "PEAK HOURS FOR ALL PROVIDERS"
+        } else if connected.count > active.count {
+            strong = names
+            title = " PEAK HOURS"
+        } else {
+            strong = nil
+            title = "\(names) PEAK HOURS"
         }
     }
 }

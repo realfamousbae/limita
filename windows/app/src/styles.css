@@ -161,11 +161,11 @@ button {
   overflow: hidden;
 }
 
-/* `space-between` gives the prime-time badge the same gap to the titles and to the
-   buttons; `gap` is the least of it. */
+/* Two equal outer columns keep the prime-time badge in the middle of the panel,
+   whatever the widths of the titles and the buttons; `gap` is the least space beside it. */
 header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
   align-items: center;
   gap: 18px;
   padding: 10px 18px;
@@ -235,12 +235,6 @@ header {
   background: rgba(255, 115, 46, 0.1);
   border: 1px solid rgba(255, 115, 46, 0.35);
   white-space: nowrap;
-}
-
-/* Over side-by-side columns: right after the titles, with the titles' own gap; the
-   auto margin takes the free space that would otherwise go on its left. */
-.prime-time.beside-titles {
-  margin: 0 auto 0 -9px;
 }
 
 .prime-lines {

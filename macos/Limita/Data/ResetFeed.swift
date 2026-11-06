@@ -17,10 +17,12 @@ enum ResetFeed {
     static let codexURL = URL(string: "https://codex-reset.com/api/forecast")!
     static let claudeURL = URL(string: "https://claude-resets.com/api/resets")!
 
-    static func url(for service: Service, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+    /// `nil` for a service without a tracker: DeepSeek has no limits to reset.
+    static func url(for service: Service, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
         switch service {
         case .codex: environment["LIMITA_RESET_FEED_CODEX"].flatMap(URL.init(string:)) ?? codexURL
         case .claude: environment["LIMITA_RESET_FEED_CLAUDE"].flatMap(URL.init(string:)) ?? claudeURL
+        case .deepseek: nil
         }
     }
 
@@ -68,6 +70,7 @@ enum ResetFeed {
         switch service {
         case .codex: return codexForecast(from: data).map { [$0] } ?? []
         case .claude: return claudeResets(from: data)
+        case .deepseek: return []
         }
     }
 

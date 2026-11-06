@@ -152,7 +152,13 @@ final class ActivityReader: @unchecked Sendable {
         let clock = LocalClock(timeZone: timeZone)
         var history = loadHistory()
         for service in services {
-            let scanned = service == .claude ? scanClaude(clock) : scanCodex(clock)
+            let scanned: Days
+            switch service {
+            case .claude: scanned = scanClaude(clock)
+            case .codex: scanned = scanCodex(clock)
+            // No local logs: DeepSeek is called by whatever tool holds the key.
+            case .deepseek: continue
+            }
             history[service.rawValue] = Self.merge(history[service.rawValue] ?? [:], scanned)
         }
         saveHistory(history)
