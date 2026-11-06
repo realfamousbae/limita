@@ -72,11 +72,14 @@ fn dump() -> i32 {
     println!();
 
     // All services, and settings and seen resets in throwaway files so the app's are
-    // untouched: a reset seen here must still be announced by the app.
+    // untouched: a reset seen here must still be announced by the app. The DeepSeek
+    // balance is read with the stored key, but its history stays in memory, so a dump
+    // never adds a reading to the app's.
     let mut sources = Sources::standard(None);
     let temp = |name: &str| std::env::temp_dir().join(format!("limita-dump-{name}-{}.json", std::process::id()));
     sources.settings.file = temp("settings");
     sources.resets_file = temp("resets");
+    sources.ledger_file = None;
     let files = [sources.settings.file.clone(), sources.resets_file.clone()];
     let store = Store::new(sources, || Service::ALL.into(), || {});
     if let Some(worker) = store.refresh(true) {

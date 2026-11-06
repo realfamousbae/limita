@@ -1,11 +1,15 @@
 //! What the tray, the pill and the dashboard show, computed for a given `now`. The
 //! webview only renders this; all wording and thresholds live here, where they are
 //! tested. Port of the logic in `ExpandedView.swift` and `MiniPillView.swift`.
+//!
+//! DeepSeek has a balance instead of windows: its column is one meter (the share of the
+//! last top-up that is left) and tiles with what Limita's history says it spent.
 
 use serde::Serialize;
 
 use crate::model::{
-    duration_text, longest_reset_text, AccountDetails, LimitLevel, LimitSnapshot, LimitWindow, Service, ServiceState, UsageCredits,
+    duration_text, longest_reset_text, AccountDetails, Balance, LimitLevel, LimitSnapshot, LimitWindow, Service, ServiceKind,
+    ServiceState, UsageCredits,
 };
 use crate::prime_time::PrimeTimeNotice;
 use crate::store::Snapshot;
@@ -102,9 +106,12 @@ pub struct DetailRow {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConnectOption {
     pub id: Service,
     pub label: String,
+    /// Connected in Settings, where the API key is entered (DeepSeek).
+    pub in_settings: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -135,7 +142,11 @@ pub fn panel(snapshot: &Snapshot, now: Timestamp) -> PanelView {
     let connect = if snapshot.enabled.is_empty() {
         Service::ALL
             .into_iter()
-            .map(|id| ConnectOption { id, label: format!("Connect {}", id.product_name()) })
+            .map(|id| ConnectOption {
+                id,
+                label: format!("Connect {}", id.product_name()),
+                in_settings: id.kind() == ServiceKind::Balance,
+            })
             .collect()
     } else {
         Vec::new()
@@ -205,6 +216,13 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
         view.message = Some(live_error.or(state.unavailable_reason().map(str::to_string)).unwrap_or("No data".into()));
         return view;
     };
+    view.updated = Some(format!("UPDATED {}", updated_text(data.captured_at, now).to_uppercase()));
+    view.error = live_error;
+    if let Some(balance) = &data.balance {
+        view.meters = vec![balance_meter(balance)];
+        view.details = balance_rows(balance);
+        return view;
+    }
     let five_hour = if data.has_no_five_hour_limit {
         MeterView {
             title: "5 HOURS".into(),
@@ -245,9 +263,79 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
         credit: event.source.credit().map(String::from),
         has_link: event.url.is_some(),
     });
-    view.updated = Some(format!("UPDATED {}", updated_text(data.captured_at, now).to_uppercase()));
-    view.error = live_error;
     view
+}
+
+/// The balance as a credit meter: the share of the last top-up that is left, the money
+/// beside the bar, and how long it lasts under it. The bar's colour follows the balance's
+/// level, so the user's threshold turns it red.
+pub fn balance_meter(balance: &Balance) -> MeterView {
+    let fill = balance.fraction().unwrap_or(1.0);
+    let used = match balance.level() {
+        LimitLevel::Critical => 1.0,
+        LimitLevel::Warning => 0.75,
+        LimitLevel::Normal => (1.0 - fill).min(0.69),
+    };
+    let amount = match balance.full_scale {
+        Some(full) => format!("{} OF {} LEFT", balance.format_amount(balance.total), balance.format_amount(full)),
+        None => format!("{} LEFT", balance.format_amount(balance.total)),
+    };
+    MeterView {
+        title: "BALANCE LEFT".into(),
+        value: format!("{:.0}%", fill * 100.0),
+        amount: Some(amount),
+        fill,
+        tone: pressure_tone(used, BarTone::AccentSoft),
+        highlight: None,
+        caption: balance_caption(balance),
+    }
+}
+
+/// Why the bar looks the way it does, most urgent first.
+pub fn balance_caption(balance: &Balance) -> String {
+    if !balance.is_available {
+        return "CALLS REJECTED · TOP UP".into();
+    }
+    if balance.is_low() {
+        return "BELOW YOUR ALERT".into();
+    }
+    if let Some(days) = balance.days_left() {
+        return if days >= 365.0 { "LASTS OVER A YEAR".into() } else { format!("LASTS ~{} AT THIS PACE", days_text(days)) };
+    }
+    if balance.daily_burn == Some(0.0) {
+        return "NOTHING SPENT THIS WEEK".into();
+    }
+    "OF THE LAST TOP-UP".into()
+}
+
+/// "6 HOURS", "1 DAY", "12 DAYS".
+pub fn days_text(days: f64) -> String {
+    if days < 1.0 {
+        let hours = ((days * 24.0).round() as i64).max(1);
+        return if hours == 1 { "1 HOUR".into() } else { format!("{hours} HOURS") };
+    }
+    let whole = days.round() as i64;
+    if whole == 1 { "1 DAY".into() } else { format!("{whole} DAYS") }
+}
+
+/// Tiles under the balance: spending by Limita's history, then what the balance is made of.
+pub fn balance_rows(balance: &Balance) -> Vec<DetailRow> {
+    let row = |label: &str, value: String| DetailRow { label: label.into(), value };
+    let money = |amount: Option<f64>, otherwise: &str| amount.map_or(otherwise.to_string(), |a| balance.format_amount(a));
+    let mut rows = vec![
+        row("SPENT TODAY", money(balance.spent_today, "—")),
+        row("THIS MONTH", money(balance.spent_this_month, "—")),
+        row("PER DAY", money(balance.daily_burn, "Collecting data")),
+        row("ALERT BELOW", money(balance.low_threshold, "Off")),
+    ];
+    if balance.granted > 0.0 {
+        rows.push(row("TOPPED UP", balance.format_amount(balance.topped_up)));
+        rows.push(row("GRANTED", balance.format_amount(balance.granted)));
+    }
+    rows.extend(
+        balance.others.iter().map(|other| row(&format!("{} BALANCE", other.currency), Balance::format(other.total, &other.currency))),
+    );
+    rows
 }
 
 /// "12% OF WEEKLY · MAX 50%".
@@ -357,8 +445,12 @@ pub fn updated_text(captured_at: Timestamp, now: Timestamp) -> String {
     }
 }
 
-/// "5h 12% used", "7d 66% left", or "5h —" while the 5-hour window is unknown.
+/// "5h 12% used", "7d 66% left", or "5h —" while the 5-hour window is unknown. A
+/// balance is shown as the money left, "¥86.40", or "—" without one.
 pub fn pill_label(service: Service, state: &ServiceState, now: Timestamp) -> String {
+    if service.kind() == ServiceKind::Balance {
+        return state.snapshot().and_then(|s| s.balance.as_ref()).map_or("—".into(), |b| b.format_amount(b.total));
+    }
     match state.snapshot().and_then(|s| s.headline()) {
         Some((label, window)) => format!("{label} {} {}", window.shown_text(service, now), service.percent_meaning()),
         None => "5h —".into(),
@@ -383,6 +475,8 @@ pub fn detail_rows(service: Service, details: &AccountDetails) -> Vec<DetailRow>
         }
         // Claude's credits are meters; see `credit_meters`.
         Service::Claude => {}
+        // A balance has its own rows; see `balance_rows`.
+        Service::DeepSeek => {}
     }
     rows
 }
@@ -682,10 +776,98 @@ mod tests {
     }
 
     #[test]
-    fn nothing_connected_offers_both_services() {
+    fn nothing_connected_offers_every_service() {
         let view = panel(&Snapshot::default(), at(1.0));
         let labels: Vec<_> = view.connect.iter().map(|c| c.label.as_str()).collect();
-        assert_eq!(labels, ["Connect Claude Code", "Connect Codex"]);
+        assert_eq!(labels, ["Connect Claude Code", "Connect Codex", "Connect DeepSeek"]);
+        let in_settings: Vec<_> = view.connect.iter().map(|c| c.in_settings).collect();
+        assert_eq!(in_settings, [false, false, true], "DeepSeek needs its key, entered in Settings");
         assert_eq!(tray(&Snapshot::default(), at(1.0)).level, None);
+    }
+
+    #[test]
+    fn balance_formatting() {
+        assert_eq!(Balance::format(110.0, "CNY"), "¥110.00");
+        assert_eq!(Balance::format(4.2, "USD"), "$4.20");
+        assert_eq!(Balance::format(1234.5, "USD"), "$1,234.50");
+        assert_eq!(Balance::format(3.0, "EUR"), "EUR 3.00");
+    }
+
+    #[test]
+    fn balance_level_follows_the_threshold_or_the_last_top_up() {
+        let mut balance = Balance::new("CNY", 8.0, 0.0, 8.0, true);
+        assert_eq!(balance.level(), LimitLevel::Normal, "nothing to compare with");
+        balance.full_scale = Some(100.0);
+        assert_eq!(balance.level(), LimitLevel::Critical, "8 % of the last top-up left");
+        balance.full_scale = Some(20.0);
+        assert_eq!(balance.level(), LimitLevel::Normal, "40 % left");
+        balance.low_threshold = Some(5.0);
+        assert_eq!(balance.level(), LimitLevel::Warning, "within twice the threshold");
+        balance.low_threshold = Some(8.0);
+        assert_eq!(balance.level(), LimitLevel::Critical, "at the threshold");
+        assert!(balance.is_low());
+        balance.low_threshold = Some(1.0);
+        assert_eq!(balance.level(), LimitLevel::Normal);
+        let rejected = Balance::new("CNY", 50.0, 0.0, 50.0, false);
+        assert_eq!(rejected.level(), LimitLevel::Critical, "calls are rejected");
+    }
+
+    #[test]
+    fn balance_state_drives_the_dot_the_pill_and_the_tooltip() {
+        let now = at(1_800_000_000.0);
+        let mut balance = Balance::new("CNY", 86.4, 10.0, 76.4, true);
+        balance.full_scale = Some(100.0);
+        let state = ServiceState::Fresh(LimitSnapshot::with_balance(balance, now));
+        assert_eq!(state.level(now), Some(LimitLevel::Normal));
+        assert!(!state.snapshot().unwrap().is_empty());
+        assert_eq!(pill_label(Service::DeepSeek, &state, now), "¥86.40");
+        assert_eq!(pill_label(Service::DeepSeek, &ServiceState::Unavailable("x".into()), now), "—");
+
+        let mut snapshot = Snapshot { enabled: vec![Service::Codex, Service::DeepSeek], ..Default::default() };
+        snapshot.states.insert(Service::DeepSeek, state);
+        let summary = tray(&snapshot, now);
+        assert_eq!(summary.tooltip, "Limita\nCodex 5h —\nDeepSeek ¥86.40");
+        assert_eq!(summary.level, Some(LimitLevel::Normal));
+        let view = panel(&snapshot, now);
+        let deepseek = &view.services[1];
+        assert_eq!(deepseek.name, "DeepSeek");
+        assert_eq!(deepseek.status, "LIVE DATA");
+        assert_eq!(deepseek.meters.len(), 1);
+        assert_eq!(deepseek.reset, None);
+        assert_eq!(deepseek.updated.as_deref(), Some("UPDATED JUST NOW"));
+        assert_eq!(view.pill[1].label, "¥86.40");
+    }
+
+    #[test]
+    fn balance_meter_and_tiles() {
+        let mut balance = Balance::new("CNY", 30.0, 5.0, 25.0, true);
+        balance.full_scale = Some(120.0);
+        balance.daily_burn = Some(3.0);
+        balance.spent_today = Some(1.5);
+        balance.spent_this_month = Some(40.0);
+        let meter = balance_meter(&balance);
+        assert_eq!(meter.value, "25%");
+        assert_eq!(meter.amount.as_deref(), Some("¥30.00 OF ¥120.00 LEFT"));
+        assert_eq!(meter.caption, "LASTS ~10 DAYS AT THIS PACE");
+        assert_eq!(meter.tone, BarTone::Warning, "three quarters of the last top-up spent");
+
+        let rows = balance_rows(&balance);
+        let labels: Vec<_> = rows.iter().map(|r| r.label.as_str()).collect();
+        assert_eq!(labels, ["SPENT TODAY", "THIS MONTH", "PER DAY", "ALERT BELOW", "TOPPED UP", "GRANTED"]);
+        assert_eq!(rows[0].value, "¥1.50");
+        assert_eq!(rows[3].value, "Off");
+
+        balance.daily_burn = None;
+        assert_eq!(balance_rows(&balance)[2].value, "Collecting data");
+        balance.low_threshold = Some(50.0);
+        assert_eq!(balance_meter(&balance).caption, "BELOW YOUR ALERT");
+        let rejected = Balance::new("CNY", 0.0, 0.0, 0.0, false);
+        assert_eq!(balance_meter(&rejected).caption, "CALLS REJECTED · TOP UP");
+        assert_eq!(days_text(0.25), "6 HOURS");
+        assert_eq!(balance_meter(&Balance::new("USD", 4.0, 0.0, 4.0, true)).amount.as_deref(), Some("$4.00 LEFT"));
+
+        let mut multi = Balance::new("USD", 12.5, 0.0, 12.5, true);
+        multi.others = vec![crate::model::BalanceAmount { currency: "CNY".into(), total: 3.0 }];
+        assert_eq!(balance_rows(&multi).last().map(|r| (r.label.as_str(), r.value.as_str())), Some(("CNY BALANCE", "¥3.00")));
     }
 }

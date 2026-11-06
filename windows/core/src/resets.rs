@@ -195,13 +195,15 @@ pub fn latest(events: &[ResetEvent], service: Service, now: Timestamp) -> Option
 // MARK: - Feeds
 
 /// The tracker for `service`; `LIMITA_RESET_FEED_CODEX` / `LIMITA_RESET_FEED_CLAUDE`
-/// point it elsewhere (a `file://` URL works) to test against a local copy.
-pub fn feed_url(service: Service, env: impl Fn(&str) -> Option<String>) -> String {
+/// point it elsewhere (a `file://` URL works) to test against a local copy. `None` for a
+/// service without a tracker: DeepSeek has no limits to reset.
+pub fn feed_url(service: Service, env: impl Fn(&str) -> Option<String>) -> Option<String> {
     let (key, default) = match service {
         Service::Codex => ("LIMITA_RESET_FEED_CODEX", CODEX_URL),
         Service::Claude => ("LIMITA_RESET_FEED_CLAUDE", CLAUDE_URL),
+        Service::DeepSeek => return None,
     };
-    env(key).filter(|url| !url.is_empty()).unwrap_or_else(|| default.into())
+    Some(env(key).filter(|url| !url.is_empty()).unwrap_or_else(|| default.into()))
 }
 
 /// "Limita/0.19.0 (+https://github.com/realfamousbae/limita)".
@@ -253,6 +255,7 @@ pub fn parse(data: &[u8], service: Service) -> Result<Vec<ResetEvent>, String> {
     Ok(match service {
         Service::Codex => codex_forecast(data).into_iter().collect(),
         Service::Claude => claude_resets(data),
+        Service::DeepSeek => Vec::new(),
     })
 }
 
@@ -349,7 +352,10 @@ pub type Notify = Arc<dyn Fn(&ResetEvent) + Send + Sync>;
 
 /// The real trackers.
 pub fn standard_fetch() -> ResetFetch {
-    Arc::new(|service, now| fetch(service, &feed_url(service, |key| std::env::var(key).ok()), now))
+    Arc::new(|service, now| match feed_url(service, |key| std::env::var(key).ok()) {
+        Some(url) => fetch(service, &url, now),
+        None => Ok(Vec::new()),
+    })
 }
 
 pub fn standard_file() -> PathBuf {
@@ -424,7 +430,8 @@ impl ResetWatcher {
                 .iter()
                 .copied()
                 .filter(|service| {
-                    !state.fetching.contains(service)
+                    feed_url(*service, |_| None).is_some()
+                        && !state.fetching.contains(service)
                         && state.paused_until.get(service).is_none_or(|until| now >= *until)
                         // The trackers ask for at most one request a minute.
                         && state.last_fetch.get(service).is_none_or(|last| seconds_between(*last, now) >= 60.0)
@@ -569,6 +576,7 @@ fn ingest(state: &mut State, events: Vec<ResetEvent>, service: Service, now: Tim
             state.memory.codex_last_reset = Some(latest.date);
             vec![latest]
         }
+        Service::DeepSeek => Vec::new(),
         Service::Claude => {
             let confirmed: Vec<ResetEvent> = events.into_iter().filter(|event| !event.provisional).collect();
             let Some(seen) = state.memory.claude_seen.clone() else {
@@ -847,6 +855,7 @@ mod tests {
                 match service {
                     Service::Codex => Err(FeedError::RateLimited(None)),
                     Service::Claude => Ok(Vec::new()),
+                    Service::DeepSeek => panic!("DeepSeek has no tracker to ask"),
                 }
             }),
             Arc::new(|| {}),
@@ -865,8 +874,12 @@ mod tests {
 
     #[test]
     fn feed_urls_can_be_overridden() {
-        assert_eq!(feed_url(Service::Codex, |_| None), CODEX_URL);
-        assert_eq!(feed_url(Service::Claude, |key| (key == "LIMITA_RESET_FEED_CLAUDE").then(|| "file:///tmp/r.json".into())), "file:///tmp/r.json");
+        assert_eq!(feed_url(Service::Codex, |_| None).as_deref(), Some(CODEX_URL));
+        assert_eq!(
+            feed_url(Service::Claude, |key| (key == "LIMITA_RESET_FEED_CLAUDE").then(|| "file:///tmp/r.json".into())).as_deref(),
+            Some("file:///tmp/r.json")
+        );
+        assert_eq!(feed_url(Service::DeepSeek, |_| Some("https://x".into())), None, "DeepSeek has no limits to reset");
         assert!(user_agent().starts_with("Limita/") && user_agent().ends_with("(+https://github.com/realfamousbae/limita)"));
     }
 }

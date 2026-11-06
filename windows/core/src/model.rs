@@ -131,7 +131,8 @@ impl ScopedWindow {
     }
 }
 
-/// The pair of windows a service reports, plus when we read them.
+/// The pair of windows a service reports, plus when we read them. A service billed per
+/// token (DeepSeek) has a `balance` instead.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LimitSnapshot {
     pub five_hour: Option<LimitWindow>,
@@ -147,6 +148,9 @@ pub struct LimitSnapshot {
     pub scoped: Vec<ScopedWindow>,
     /// How many days the long window (`seven_day`) spans: 7, or 30 on Codex Free.
     pub long_window_days: u32,
+    /// A prepaid balance instead of windows: services billed per token (DeepSeek) have no
+    /// rate-limit windows at all. `None` for the others.
+    pub balance: Option<Balance>,
 }
 
 impl LimitSnapshot {
@@ -167,7 +171,13 @@ impl LimitSnapshot {
             has_no_five_hour_limit: has_no_five_hour_limit && five_hour.is_none() && seven_day.is_some(),
             scoped: Vec::new(),
             long_window_days: 7,
+            balance: None,
         }
+    }
+
+    /// A balance-only snapshot, as DeepSeek reports it.
+    pub fn with_balance(balance: Balance, captured_at: Timestamp) -> Self {
+        Self { balance: Some(balance), ..Self::new(None, None, captured_at) }
     }
 
     /// The same snapshot with a long window of `days` days instead of a week.
@@ -198,9 +208,13 @@ impl LimitSnapshot {
         let scoped = if self.scoped.is_empty() { other.scoped } else { self.scoped };
         let flag = self.has_no_five_hour_limit || other.has_no_five_hour_limit;
         let days = if self.long_window_days == 7 { other.long_window_days } else { self.long_window_days };
-        Self::with_flag(self.five_hour, self.seven_day, self.captured_at, flag)
-            .with_scoped(scoped)
-            .with_long_window_days(days)
+        let balance = self.balance.or(other.balance);
+        Self {
+            balance,
+            ..Self::with_flag(self.five_hour, self.seven_day, self.captured_at, flag)
+                .with_scoped(scoped)
+                .with_long_window_days(days)
+        }
     }
 
     /// Every reset time the snapshot reports, for the countdown ticks.
@@ -214,7 +228,7 @@ impl LimitSnapshot {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.five_hour.is_none() && self.seven_day.is_none()
+        self.five_hour.is_none() && self.seven_day.is_none() && self.balance.is_none()
     }
 
     /// The window the pill and the traffic light follow: the 5-hour one, or the long
@@ -283,11 +297,13 @@ impl ServiceState {
         matches!(self, Self::Stale(_))
     }
 
-    /// Traffic-light level of the headline window; `None` without data.
+    /// Traffic-light level of the headline window, or of the balance; `None` without data.
     pub fn level(&self, now: Timestamp) -> Option<LimitLevel> {
-        self.snapshot()?
-            .headline()
-            .map(|(_, window)| LimitLevel::from_used(window.display_percent(now)))
+        let snapshot = self.snapshot()?;
+        if let Some(balance) = &snapshot.balance {
+            return Some(balance.level());
+        }
+        snapshot.headline().map(|(_, window)| LimitLevel::from_used(window.display_percent(now)))
     }
 
     /// Builds a state from a snapshot, deciding freshness by age.
@@ -300,21 +316,31 @@ impl ServiceState {
     }
 }
 
-/// Declaration order is display order: Claude first, then Codex, everywhere.
+/// Declaration order is display order: Claude, Codex, then DeepSeek, everywhere.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Service {
     Claude,
     Codex,
+    DeepSeek,
+}
+
+/// What a service reports: rate-limit windows that reset (Claude, Codex), or a prepaid
+/// balance spent per token (DeepSeek, connected with an API key).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ServiceKind {
+    Limits,
+    Balance,
 }
 
 impl Service {
-    pub const ALL: [Service; 2] = [Service::Claude, Service::Codex];
+    pub const ALL: [Service; 3] = [Service::Claude, Service::Codex, Service::DeepSeek];
 
     pub fn id(self) -> &'static str {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
+            Self::DeepSeek => "deepseek",
         }
     }
 
@@ -322,18 +348,27 @@ impl Service {
         Self::ALL.into_iter().find(|service| service.id() == id)
     }
 
+    pub fn kind(self) -> ServiceKind {
+        match self {
+            Self::Claude | Self::Codex => ServiceKind::Limits,
+            Self::DeepSeek => ServiceKind::Balance,
+        }
+    }
+
     pub fn display_name(self) -> &'static str {
         match self {
             Self::Claude => "Claude",
             Self::Codex => "Codex",
+            Self::DeepSeek => "DeepSeek",
         }
     }
 
-    /// Name of the product the user connects, as shown in the menu.
+    /// Name of the product the user connects, as shown in Settings.
     pub fn product_name(self) -> &'static str {
         match self {
             Self::Claude => "Claude Code",
             Self::Codex => "Codex",
+            Self::DeepSeek => "DeepSeek",
         }
     }
 
@@ -345,6 +380,112 @@ impl Service {
     /// Short word for what the percentage means.
     pub fn percent_meaning(self) -> &'static str {
         if self.shows_remaining() { "left" } else { "used" }
+    }
+}
+
+/// A balance in a currency other than the main one.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct BalanceAmount {
+    pub currency: String,
+    pub total: f64,
+}
+
+/// A prepaid API balance and what Limita worked out from its own history of readings:
+/// DeepSeek reports only the balance, so spending and the forecast are Limita's (see
+/// `balance_ledger`). Port of `Balance` in `LimitData.swift`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Balance {
+    /// "CNY" or "USD".
+    pub currency: String,
+    /// Everything that can be spent: `granted + topped_up`.
+    pub total: f64,
+    /// Granted (bonus) money that has not expired.
+    pub granted: f64,
+    /// Money the user paid in.
+    pub topped_up: f64,
+    /// Whether the balance still covers API calls; DeepSeek rejects them once it is out.
+    pub is_available: bool,
+    pub others: Vec<BalanceAmount>,
+    /// Spent since local midnight and since the 1st of the month, by Limita's history.
+    pub spent_today: Option<f64>,
+    pub spent_this_month: Option<f64>,
+    /// Average spend per day over the last week; `None` until a day of history exists.
+    pub daily_burn: Option<f64>,
+    /// The bar's full width: the balance right after the last top-up.
+    pub full_scale: Option<f64>,
+    /// At or below this the balance counts as low: the dot turns red and a notification fires.
+    pub low_threshold: Option<f64>,
+}
+
+impl Balance {
+    /// A balance as DeepSeek reports it, before the history adds anything.
+    pub fn new(currency: &str, total: f64, granted: f64, topped_up: f64, is_available: bool) -> Self {
+        Self {
+            currency: currency.into(),
+            total,
+            granted,
+            topped_up,
+            is_available,
+            others: Vec::new(),
+            spent_today: None,
+            spent_this_month: None,
+            daily_burn: None,
+            full_scale: None,
+            low_threshold: None,
+        }
+    }
+
+    /// How full the bar is, 0...1; `None` without a full scale.
+    pub fn fraction(&self) -> Option<f64> {
+        let full = self.full_scale.filter(|full| *full > 0.0)?;
+        Some((self.total / full).clamp(0.0, 1.0))
+    }
+
+    /// Days the balance lasts at the current pace.
+    pub fn days_left(&self) -> Option<f64> {
+        let burn = self.daily_burn.filter(|burn| *burn > 0.0)?;
+        Some(self.total.max(0.0) / burn)
+    }
+
+    /// Whether the balance is at or below the user's threshold.
+    pub fn is_low(&self) -> bool {
+        self.low_threshold.is_some_and(|threshold| threshold > 0.0 && self.total <= threshold)
+    }
+
+    /// Red when calls are rejected or the balance is at the threshold, yellow within twice
+    /// the threshold. Without a threshold, by how much of the last top-up is left.
+    pub fn level(&self) -> LimitLevel {
+        if !self.is_available || self.total <= 0.0 {
+            return LimitLevel::Critical;
+        }
+        if let Some(threshold) = self.low_threshold.filter(|threshold| *threshold > 0.0) {
+            return if self.total <= threshold {
+                LimitLevel::Critical
+            } else if self.total <= 2.0 * threshold {
+                LimitLevel::Warning
+            } else {
+                LimitLevel::Normal
+            };
+        }
+        match self.fraction() {
+            Some(fraction) => LimitLevel::from_used((1.0 - fraction) * 100.0),
+            None => LimitLevel::Normal,
+        }
+    }
+
+    /// "¥110.00", "$4.20", or "EUR 3.00" for a currency without a symbol here.
+    pub fn format(amount: f64, currency: &str) -> String {
+        let number = crate::view::number(amount, 2, 2);
+        match currency.to_uppercase().as_str() {
+            "CNY" | "RMB" => format!("¥{number}"),
+            "USD" => format!("${number}"),
+            _ => format!("{currency} {number}"),
+        }
+    }
+
+    /// `amount` in this balance's currency.
+    pub fn format_amount(&self, amount: f64) -> String {
+        Self::format(amount, &self.currency)
     }
 }
 
