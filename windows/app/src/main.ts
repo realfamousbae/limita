@@ -139,9 +139,8 @@ function dashboard(current: PanelView): HTMLElement {
 
   const glyph = el("span", "app-glyph");
   // Titles left, buttons right; the prime-time badge, when shown, in the middle of the panel.
+  // Where the spelled-out update button would reach it, it steps aside (see `hideCoveredBadge`).
   const badge = current.primeTime ? primeTimeBadge(current.primeTime) : el("div");
-  // Over one column the spelled-out update button would cover it.
-  if (current.services.length <= 1 && announcing) badge.classList.add("covered");
   const header = el(
     "header",
     "",
@@ -287,6 +286,19 @@ function activityColumn(grid: ActivityGrid): HTMLElement {
   return node;
 }
 
+/** The spelled-out update button grows left over the header from the ⤓ button; the badge
+ *  in the middle hides while the two would touch, whatever the number of columns. Measured
+ *  without transforms, so the capsule's grow-in animation does not hide an overlap. */
+function hideCoveredBadge() {
+  const capsule = app.querySelector<HTMLElement>(".update-announce");
+  const slot = app.querySelector<HTMLElement>(".update-slot");
+  const badge = app.querySelector<HTMLElement>(".prime-time");
+  if (!capsule || !slot || !badge) return;
+  // `right: -4px` in styles.css: the capsule's round end sits 4 px right of the button.
+  const capsuleLeft = slot.getBoundingClientRect().right + 4 - capsule.offsetWidth;
+  if (capsuleLeft < badge.getBoundingClientRect().right + 9) badge.classList.add("covered");
+}
+
 /** Puts each hover chip back over its day. Runs after the dashboard is in the document. */
 function restoreActivity() {
   for (const node of Array.from(app.querySelectorAll(".column.activity"))) node.dispatchEvent(new Event("restore"));
@@ -413,7 +425,10 @@ function render(modeChanged = false) {
     return;
   }
   app.replaceChildren(mode === "pill" ? pill(view) : dashboard(view));
-  if (mode === "dashboard") restoreActivity();
+  if (mode === "dashboard") {
+    hideCoveredBadge();
+    restoreActivity();
+  }
   // Measured right away: a hidden window gets no animation frames, and it stays hidden
   // until Rust knows the size.
   const box = app.firstElementChild?.getBoundingClientRect();

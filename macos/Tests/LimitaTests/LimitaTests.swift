@@ -1218,6 +1218,20 @@ final class LimitaTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(withUpdate.width, ExpandedView.headerWidth(primeTime: nil, updateButton: true).rounded(.up))
     }
 
+    @MainActor
+    func testTheUpdateAnnouncementHidesThePeakHoursBadgeOnlyWhereItReachesIt() {
+        let notice = PrimeTimeNotice(active: [.claude, .codex], connected: [.claude, .codex])!
+        let narrow = BezelPanelController.expandedSize(services: 2, primeTime: notice, updateButton: true).width
+        XCTAssertTrue(
+            ExpandedView.announcementCoversBadge(notice, version: "0.24.1", headerWidth: narrow, buttonsAfterUpdate: 5),
+            "two columns leave too little room right of the centred badge"
+        )
+        XCTAssertFalse(
+            ExpandedView.announcementCoversBadge(notice, version: "0.24.1", headerWidth: 2000, buttonsAfterUpdate: 5),
+            "a wide header has room for both"
+        )
+    }
+
     func testModelNames() {
         XCTAssertEqual(ActivitySummary.modelName("claude-opus-5-5"), "Opus 5.5")
         XCTAssertEqual(ActivitySummary.modelName("claude-3-5-haiku-20241022"), "Haiku 3.5")

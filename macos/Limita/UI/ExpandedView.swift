@@ -228,12 +228,41 @@ struct ExpandedView: View {
         .padding(.vertical, 10)
         .overlay {
             if let notice = store.primeTimeNotice {
-                // Over one column the spelled-out update button would cover it.
-                PrimeTimeBadge(notice: notice)
-                    .opacity(store.updater.isAnnouncing && store.enabledServices.count <= 1 ? 0 : 1)
-                    .animation(.easeInOut(duration: 0.25), value: store.updater.isAnnouncing)
+                GeometryReader { geometry in
+                    // The spelled-out update button grows left over the header; where it
+                    // would reach the badge, the badge steps aside until it folds back.
+                    let covered = store.updater.isAnnouncing && store.updater.available.map {
+                        Self.announcementCoversBadge(
+                            notice, version: $0.version, headerWidth: geometry.size.width,
+                            buttonsAfterUpdate: store.enabledServices.isEmpty ? 4 : 5
+                        )
+                    } == true
+                    PrimeTimeBadge(notice: notice)
+                        .opacity(covered ? 0 : 1)
+                        .animation(.easeInOut(duration: 0.25), value: covered)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
             }
         }
+    }
+
+    /// Whether the spelled-out update button ("LIMITA x.y.z IS OUT · CLICK TO UPDATE"),
+    /// which grows left from the ⤓ button, would reach the badge centred in a header
+    /// `headerWidth` wide. `buttonsAfterUpdate` are the round buttons right of ⤓.
+    static func announcementCoversBadge(
+        _ notice: PrimeTimeNotice, version: String, headerWidth: CGFloat, buttonsAfterUpdate: Int
+    ) -> Bool {
+        let font = AppFont.ns(DashboardStyle.captionSize)
+        let text = max(
+            textWidth("LIMITA \(version) IS OUT", font: font, tracking: DashboardStyle.captionTracking),
+            textWidth("CLICK TO UPDATE", font: font, tracking: DashboardStyle.captionTracking)
+        )
+        // Its paddings, the gap and the glyph, as in `UpdateButton.announcement`.
+        let capsule = 14 + text + 10 + headerButtonSize + 4
+        // The capsule's round end sits 4 pt right of the ⤓ button.
+        let right = headerWidth - headerPadding - CGFloat(buttonsAfterUpdate) * (headerButtonSize + headerSpacing) + 4
+        let badgeRight = (headerWidth + PrimeTimeBadge.width(notice)) / 2
+        return right - capsule < badgeRight + headerSpacing
     }
 
     // MARK: - Service column
