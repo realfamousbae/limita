@@ -29,13 +29,18 @@ final class SystemResetNotifier: NSObject, ResetNotifying, UNUserNotificationCen
     }
 
     func notify(_ event: ResetEvent) {
+        // The event's id, so the same reset never shows twice.
+        notify(id: event.id, title: event.notificationTitle, body: event.notificationBody)
+    }
+
+    /// Any other announcement, such as a low DeepSeek balance.
+    func notify(id: String, title: String, body: String) {
         guard let center else { return }
         let content = UNMutableNotificationContent()
-        content.title = event.notificationTitle
-        content.body = event.notificationBody
+        content.title = title
+        content.body = body
         content.sound = .default
-        // The event's id, so the same reset never shows twice.
-        let request = UNNotificationRequest(identifier: event.id, content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { return }
             center.add(request)

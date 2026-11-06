@@ -57,6 +57,9 @@ extension Service {
                 start: 12 * 60,
                 end: 18 * 60
             )
+        // Billed per token, without limits that could run out faster.
+        case .deepseek:
+            nil
         }
     }
 

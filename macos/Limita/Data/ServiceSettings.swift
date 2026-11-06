@@ -10,6 +10,9 @@ struct ServiceSettings: @unchecked Sendable {
     static let collapsedKey = "collapsedMeters"
     static let floatingKey = "floatingWindowEnabled"
     static let floatingOriginKey = "floatingWindowOrigin"
+    static let liveIntervalsKey = "liveIntervals"
+    static let lowBalanceKey = "deepseekLowBalance"
+    static let balanceAlertsKey = "deepseekBalanceAlerts"
 
     let defaults: UserDefaults
 
@@ -17,7 +20,7 @@ struct ServiceSettings: @unchecked Sendable {
     /// saw and would take the real numbers for a reset at the next launch.
     static let standardDefaults: UserDefaults = {
         let environment = ProcessInfo.processInfo.environment
-        let isFake = environment["LIMITA_CLAUDE_API"] != nil || environment["LIMITA_CODEX_CLI"] != nil
+        let isFake = ["LIMITA_CLAUDE_API", "LIMITA_CODEX_CLI", "LIMITA_DEEPSEEK_API"].contains { environment[$0] != nil }
         return isFake ? UserDefaults(suiteName: "com.limita.fake")! : .standard
     }()
 
@@ -69,12 +72,44 @@ struct ServiceSettings: @unchecked Sendable {
         nonmutating set { defaults.set(newValue.sorted(), forKey: Self.collapsedKey) }
     }
 
+    /// How often each service's network API is asked, in seconds, where the user changed it.
+    var liveIntervals: [Service: TimeInterval] {
+        get {
+            let raw = defaults.dictionary(forKey: Self.liveIntervalsKey) as? [String: Double] ?? [:]
+            return Dictionary(uniqueKeysWithValues: raw.compactMap { key, value in
+                Service(rawValue: key).map { ($0, value) }
+            })
+        }
+        nonmutating set {
+            defaults.set(Dictionary(uniqueKeysWithValues: newValue.map { ($0.key.rawValue, $0.value) }), forKey: Self.liveIntervalsKey)
+        }
+    }
+
+    /// The DeepSeek balance below which it counts as low; `nil` while not set.
+    var lowBalanceThreshold: Double? {
+        get { (defaults.object(forKey: Self.lowBalanceKey) as? Double).flatMap { $0 > 0 ? $0 : nil } }
+        nonmutating set {
+            if let value = newValue, value > 0 {
+                defaults.set(value, forKey: Self.lowBalanceKey)
+            } else {
+                defaults.removeObject(forKey: Self.lowBalanceKey)
+            }
+        }
+    }
+
+    /// Whether a low or exhausted DeepSeek balance is announced. On unless turned off.
+    var balanceAlertsEnabled: Bool {
+        get { defaults.object(forKey: Self.balanceAlertsKey) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Self.balanceAlertsKey) }
+    }
+
     func save(_ services: Set<Service>) {
         defaults.set(Service.allCases.filter(services.contains).map(\.rawValue), forKey: Self.enabledKey)
     }
 
     /// A service counts as installed when its CLI or its config folder exists. Nothing
     /// here touches the Keychain, so first launch never shows a permission prompt.
+    /// DeepSeek is never detected: it needs an API key, entered in Settings.
     static func detectInstalled(
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         findCLI: (String) -> URL? = CLILocator.find

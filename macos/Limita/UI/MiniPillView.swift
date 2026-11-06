@@ -51,6 +51,10 @@ struct MiniPillView: View {
     }
 
     static func label(for service: Service, state: ServiceState, now: Date) -> String {
+        if service.kind == .balance {
+            guard let balance = state.snapshot?.balance else { return "—" }
+            return balance.format(balance.total)
+        }
         guard let (label, window) = state.snapshot?.headline else { return "5h —" }
         return "\(label) \(window.shownText(for: service, at: now)) \(service.percentMeaning)"
     }

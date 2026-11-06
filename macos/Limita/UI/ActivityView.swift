@@ -125,7 +125,12 @@ private struct ActivityColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let grid {
+            if service.kind == .balance {
+                // No local logs to count tokens in; the spending is in the column above.
+                Text("No local activity for \(service.displayName)")
+                    .font(.app(DashboardStyle.valueSize))
+                    .foregroundStyle(DashboardStyle.caption)
+            } else if let grid {
                 SummaryTiles(summary: grid.summary)
                 ActivityGraph(grid: grid, service: service, hovered: $hovered)
                 HStack(spacing: 8) {

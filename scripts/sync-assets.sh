@@ -21,6 +21,8 @@ PAIRS=(
     "logos/claude.png|$WEB/logos/claude.png"
     "logos/codex.png|$CATALOG/CodexLogo.imageset/codex-logo@3x.png"
     "logos/codex.png|$WEB/logos/codex.png"
+    "logos/deepseek.png|$CATALOG/DeepSeekLogo.imageset/deepseek-logo@3x.png"
+    "logos/deepseek.png|$WEB/logos/deepseek.png"
 )
 
 check=false
