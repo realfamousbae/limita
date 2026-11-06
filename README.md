@@ -248,7 +248,8 @@ release.
    signed yet: on the SmartScreen warning choose **More info → Run anyway**.
 
 The Windows app is built with Tauri and Rust in [`windows/`](windows/README.md), which
-covers the differences from macOS, troubleshooting and building from source.
+covers the differences from macOS, troubleshooting and building from source;
+[`docs/platform-parity.md`](docs/platform-parity.md) tracks every difference between the two apps.
 
 ## License
 
