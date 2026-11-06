@@ -172,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openSettings(tab: nil)
     }
 
-    private func openSettings(tab: SettingsTab?) {
+    func openSettings(tab: SettingsTab?) {
         // The dashboard would cover the window unless it floats where the user put it.
         if !store.floatingEnabled { panelController?.hide() }
         settingsController?.show(tab: tab)

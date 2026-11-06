@@ -177,6 +177,23 @@ final class DeepSeekTests: XCTestCase {
         XCTAssertEqual(compacted.map(\.total), [95, 50, 49], "the hour's last sample, nothing older than 90 days")
     }
 
+    // MARK: - Keychain
+
+    /// The real Keychain, with an item of its own that the test removes. The same process
+    /// creates and reads it, so macOS asks nothing.
+    func testKeychainStoreSavesReplacesAndDeletes() throws {
+        let store = KeychainStore(service: "com.limita.tests.\(UUID().uuidString)")
+        addTeardownBlock { try? store.delete() }
+        XCTAssertNil(try store.read())
+        try store.save("sk-first")
+        XCTAssertEqual(try store.read(), "sk-first")
+        try store.save("sk-second")
+        XCTAssertEqual(try store.read(), "sk-second", "a second save replaces the item")
+        try store.delete()
+        XCTAssertNil(try store.read())
+        XCTAssertNoThrow(try store.delete(), "deleting nothing is fine")
+    }
+
     // MARK: - Store
 
     private final class MemorySecret: SecretStoring, @unchecked Sendable {
