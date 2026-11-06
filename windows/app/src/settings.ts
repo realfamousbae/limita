@@ -61,7 +61,8 @@ interface SettingsState {
 
 const root = document.getElementById("settings")!;
 let state: SettingsState | null = null;
-let tab: Tab = tabFrom(location.hash) ?? "general";
+/** Rust names the tab to open on (`settings_window.rs`, `open`). */
+let tab: Tab = tabFrom((window as { __LIMITA_SETTINGS_TAB__?: string }).__LIMITA_SETTINGS_TAB__ ?? location.hash) ?? "general";
 
 // What the user is in the middle of, kept across re-renders.
 let keyDraft = "";

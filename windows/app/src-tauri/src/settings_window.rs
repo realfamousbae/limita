@@ -41,11 +41,10 @@ pub fn open(app: &AppHandle, tab: Option<&str>) {
         }
         return;
     }
-    let url = match tab {
-        Some(tab) => format!("settings.html#{tab}"),
-        None => "settings.html".to_string(),
-    };
-    let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(url.into()))
+    // The page opens on this tab; `tab` is one of `TABS`, so it is safe to put in a script.
+    let first_tab = format!("window.__LIMITA_SETTINGS_TAB__ = \"{}\";", tab.unwrap_or("general"));
+    let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("settings.html".into()))
+        .initialization_script(&first_tab)
         .title("Limita Settings")
         .inner_size(600.0, 620.0)
         .min_inner_size(520.0, 420.0)
