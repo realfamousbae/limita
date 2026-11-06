@@ -516,6 +516,121 @@ pub fn number(value: f64, min_fraction: usize, max_fraction: usize) -> String {
     if fraction.is_empty() { format!("{sign}{grouped}") } else { format!("{sign}{grouped}.{fraction}") }
 }
 
+/// One provider in Settings → Providers.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderRow {
+    pub id: Service,
+    pub name: String,
+    pub enabled: bool,
+    /// How the service is doing, or how connecting it works while it is not connected.
+    pub status: String,
+    /// The status is the last fetch's error.
+    pub failed: bool,
+    /// Outcome of connecting, until dismissed.
+    pub setup_message: Option<String>,
+    /// How often the network API is asked; only while connected.
+    pub interval: Option<IntervalPicker>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntervalPicker {
+    pub label: String,
+    pub hint: String,
+    pub selected: f64,
+    pub choices: Vec<IntervalChoice>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct IntervalChoice {
+    pub seconds: f64,
+    pub label: String,
+}
+
+/// Every provider, connected or not, for Settings. `interval` is the store's.
+pub fn provider_rows(snapshot: &Snapshot, now: Timestamp, interval: impl Fn(Service) -> f64) -> Vec<ProviderRow> {
+    Service::ALL
+        .into_iter()
+        .map(|service| {
+            let enabled = snapshot.enabled.contains(&service);
+            let error = snapshot.live_errors.get(&service).filter(|_| enabled);
+            let status = if !enabled {
+                match service {
+                    Service::Claude => "Not connected. Connecting adds Limita to Claude Code's status line.",
+                    Service::Codex => "Not connected. Limits come from Codex's session logs and its app server.",
+                    Service::DeepSeek => "Not connected. Needs an API key from platform.deepseek.com.",
+                }
+                .to_string()
+            } else if let Some(error) = error {
+                error.clone()
+            } else {
+                let state = snapshot.state(service);
+                match state.snapshot() {
+                    Some(data) => format!("Connected · updated {}", updated_text(data.captured_at, now)),
+                    None => state.unavailable_reason().unwrap_or("Connected").to_string(),
+                }
+            };
+            ProviderRow {
+                id: service,
+                name: service.product_name().into(),
+                enabled,
+                status,
+                failed: error.is_some(),
+                setup_message: snapshot.setup_message.as_ref().filter(|(s, _)| *s == service).map(|(_, text)| text.clone()),
+                interval: enabled.then(|| interval_picker(service, interval(service))),
+            }
+        })
+        .collect()
+}
+
+fn interval_picker(service: Service, selected: f64) -> IntervalPicker {
+    let mut choices: Vec<f64> = crate::store::LIVE_INTERVAL_CHOICES.to_vec();
+    // An interval set by hand in settings.json stays selectable.
+    if !choices.iter().any(|choice| (choice - selected).abs() < 0.5) {
+        choices.push(selected);
+        choices.sort_by(f64::total_cmp);
+    }
+    IntervalPicker {
+        label: format!("Ask the {} API", service.display_name()),
+        hint: match service.kind() {
+            ServiceKind::Balance => "The balance and its history come from these requests.",
+            ServiceKind::Limits => "Local data is read every minute either way; a busier poll risks rate limits.",
+        }
+        .into(),
+        selected,
+        choices: choices.into_iter().map(|seconds| IntervalChoice { seconds, label: interval_label(service, seconds) }).collect(),
+    }
+}
+
+/// "Every minute", "Every 5 minutes (default)".
+pub fn interval_label(service: Service, seconds: f64) -> String {
+    let minutes = (seconds / 60.0).round() as i64;
+    let label = if minutes == 1 { "Every minute".to_string() } else { format!("Every {minutes} minutes") };
+    if (seconds - crate::store::default_live_interval(service)).abs() < 0.5 {
+        format!("{label} (default)")
+    } else {
+        label
+    }
+}
+
+/// What Settings → Updates says about the last check.
+pub fn update_status(checking: bool, error: Option<&str>, available: bool, last_checked: Option<Timestamp>, now: Timestamp) -> String {
+    if checking {
+        return "Checking…".into();
+    }
+    if let Some(error) = error {
+        return format!("Last check failed: {error}");
+    }
+    if available {
+        return "An update is available".into();
+    }
+    match last_checked {
+        Some(checked) => format!("Up to date · checked {}", updated_text(checked, now)),
+        None => "Not checked yet".into(),
+    }
+}
+
 pub fn tray(snapshot: &Snapshot, now: Timestamp) -> TraySummary {
     let states: Vec<_> = snapshot.enabled.iter().map(|&s| (s, snapshot.state(s))).collect();
     let level = states.iter().filter_map(|(_, state)| state.level(now)).max_by_key(|level| match level {
@@ -783,6 +898,43 @@ mod tests {
         let in_settings: Vec<_> = view.connect.iter().map(|c| c.in_settings).collect();
         assert_eq!(in_settings, [false, false, true], "DeepSeek needs its key, entered in Settings");
         assert_eq!(tray(&Snapshot::default(), at(1.0)).level, None);
+    }
+
+    #[test]
+    fn providers_in_settings() {
+        let now = at(1_800_000_000.0);
+        let mut snapshot = Snapshot { enabled: vec![Service::Codex, Service::DeepSeek], ..Default::default() };
+        snapshot.states.insert(
+            Service::Codex,
+            ServiceState::Fresh(LimitSnapshot::new(Some(LimitWindow::new(1.0, None)), None, now - chrono::Duration::minutes(2))),
+        );
+        snapshot.live_errors.insert(Service::DeepSeek, "Add your DeepSeek API key in Settings".into());
+        let rows = provider_rows(&snapshot, now, |service| if service == Service::Codex { 600.0 } else { 300.0 });
+        assert_eq!(rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["Claude Code", "Codex", "DeepSeek"]);
+        assert_eq!(rows[0].status, "Not connected. Connecting adds Limita to Claude Code's status line.");
+        assert_eq!(rows[0].interval, None, "only connected services are polled");
+        assert_eq!(rows[1].status, "Connected · updated 2 minutes ago");
+        let codex = rows[1].interval.as_ref().unwrap();
+        assert_eq!(codex.selected, 600.0);
+        assert_eq!(codex.label, "Ask the Codex API");
+        let labels: Vec<_> = codex.choices.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(labels[0], "Every minute");
+        assert_eq!(labels[3], "Every 5 minutes (default)");
+        assert!(rows[2].failed);
+        assert_eq!(rows[2].status, "Add your DeepSeek API key in Settings");
+        assert_eq!(rows[2].interval.as_ref().unwrap().hint, "The balance and its history come from these requests.");
+        let odd = provider_rows(&snapshot, now, |_| 240.0);
+        assert!(odd[1].interval.as_ref().unwrap().choices.iter().any(|c| c.label == "Every 4 minutes"), "a hand-set interval stays");
+    }
+
+    #[test]
+    fn update_status_wording() {
+        let now = at(1_800_000_000.0);
+        assert_eq!(update_status(true, Some("x"), true, None, now), "Checking…");
+        assert_eq!(update_status(false, Some("offline"), false, None, now), "Last check failed: offline");
+        assert_eq!(update_status(false, None, true, None, now), "An update is available");
+        assert_eq!(update_status(false, None, false, Some(now - chrono::Duration::hours(3)), now), "Up to date · checked 3 hours ago");
+        assert_eq!(update_status(false, None, false, None, now), "Not checked yet");
     }
 
     #[test]

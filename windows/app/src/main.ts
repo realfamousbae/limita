@@ -88,13 +88,19 @@ function dashboard(current: PanelView): HTMLElement {
     loadActivity();
   });
 
+  // No shortcut in the tooltips: shortcuts can be changed or turned off in Settings.
   const hover = el("button", `round${hoverPill ? "" : " crossed"}`, icon("cursor"));
-  hover.title = hoverPill ? "Turn off the hover pill (Ctrl+Alt+H)" : "Turn on the hover pill (Ctrl+Alt+H)";
+  hover.title = hoverPill ? "Turn off the hover pill" : "Turn on the hover pill";
   hover.addEventListener("click", () => invoke("toggle_hover_pill"));
 
   const pin = el("button", `round${floating ? "" : " crossed"}`, icon("pin"));
-  pin.title = floating ? "Unpin the floating window (Ctrl+Alt+P)" : "Pin as a floating window (Ctrl+Alt+P)";
+  pin.title = floating ? "Unpin the floating window" : "Pin as a floating window";
   pin.addEventListener("click", () => invoke("toggle_floating"));
+
+  const settings = el("button", "round", icon("gear"));
+  settings.title = "Settings";
+  settings.setAttribute("aria-label", "Settings");
+  settings.addEventListener("click", () => invoke("open_settings"));
 
   // Only while a newer version is out: an arrow down to a line, in the healthy green.
   let install: HTMLElement | null = null;
@@ -141,7 +147,7 @@ function dashboard(current: PanelView): HTMLElement {
     "",
     el("div", "header-side", glyph, el("div", "titles", el("div", "name-row", el("span", "app-name", "LIMITA"), version && el("span", "version", `v${version}`)), el("div", "caption", "AI USAGE MONITOR"))),
     badge,
-    el("div", "header-side end", install, hover, pin, current.services.length > 0 && refresh),
+    el("div", "header-side end", install, hover, pin, settings, current.services.length > 0 && refresh),
   );
 
   const body =
@@ -219,6 +225,10 @@ function activityToggle(): HTMLElement {
  * tokens in a chip over it. */
 function activityColumn(grid: ActivityGrid): HTMLElement {
   const node = el("section", `column activity ${grid.id}`);
+  if (grid.message) {
+    node.append(el("p", "activity-message", grid.message));
+    return node;
+  }
   const chip = el("span", "activity-chip");
   const date = el("div", "caption nowrap activity-date");
   const columns = grid.cells[0]?.length ?? 0;
@@ -312,7 +322,10 @@ function connectPrompt(current: PanelView): HTMLElement {
     el("p", "value muted", "Connect a service to see its limits."),
     ...current.connect.map((option) => {
       const button = el("button", "connect-button", badge(option.id, "small"), el("span", "", option.label), el("span", "spacer"), icon("plus", "muted"));
-      button.addEventListener("click", () => invoke("connect", { service: option.id }));
+      // A key is needed first, and it is entered in Settings.
+      button.addEventListener("click", () =>
+        option.inSettings ? invoke("open_settings", { tab: "providers" }) : invoke("connect", { service: option.id }),
+      );
       return button;
     }),
   );
