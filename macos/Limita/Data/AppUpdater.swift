@@ -12,6 +12,11 @@ import os
 /// against `publicKey`, takes `Limita.app` out of the DMG, and hands over to a small
 /// script that swaps it in once Limita has quit and opens the new copy.
 ///
+/// The latest release is found on github.com itself, by following the redirect of
+/// `/releases/latest` to its tag, not through GitHub's API: the API allows 60 requests
+/// an hour per IP address without a login, which a VPN or an office network shares, and
+/// then answers 403. Windows does the same with `latest.json`.
+///
 /// Set `LIMITA_UPDATE_FEED` to a URL with the same JSON as GitHub's latest-release
 /// endpoint to test against a local release, and `LIMITA_UPDATE_INSTALL=1` to install
 /// what it offers without a click.
@@ -37,6 +42,8 @@ final class AppUpdater {
     }
 
     nonisolated static let feed = URL(string: "https://api.github.com/repos/realfamousbae/limita/releases/latest")!
+    /// Redirects to the newest release that is neither a draft nor a prerelease.
+    nonisolated static let latestPage = URL(string: "https://github.com/realfamousbae/limita/releases/latest")!
     /// The half of the signing key the app checks updates with. The private half is
     /// never in the repository.
     nonisolated static let publicKey = "lH3iQ4KUqcNSzc79iUXNf4fMvdzdordW6zjgHhf2Wq8="
@@ -72,13 +79,14 @@ final class AppUpdater {
     @ObservationIgnored private var announceEnd: Task<Void, Never>?
 
     @ObservationIgnored private let currentVersion: String
-    @ObservationIgnored private let feedURL: URL
+    /// A JSON feed shaped like GitHub's API answer, for tests; `nil` asks github.com.
+    @ObservationIgnored private let feedURL: URL?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let log = Logger(subsystem: "com.limita.app", category: "update")
 
     init(
         currentVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
-        feedURL: URL = ProcessInfo.processInfo.environment["LIMITA_UPDATE_FEED"].flatMap(URL.init(string:)) ?? AppUpdater.feed,
+        feedURL: URL? = ProcessInfo.processInfo.environment["LIMITA_UPDATE_FEED"].flatMap(URL.init(string:)),
         defaults: UserDefaults = ServiceSettings.standardDefaults
     ) {
         self.currentVersion = currentVersion
@@ -114,7 +122,12 @@ final class AppUpdater {
         Task {
             defer { isChecking = false }
             do {
-                let release = try await Self.latestRelease(from: feedURL)
+                let release: Release?
+                if let feedURL {
+                    release = try await Self.latestRelease(from: feedURL)
+                } else {
+                    release = try await Self.latestReleaseFromWeb()
+                }
                 let newer = release.flatMap { Self.isVersion($0.version, newerThan: currentVersion) ? $0 : nil }
                 lastChecked = Date()
                 lastError = nil
@@ -189,8 +202,55 @@ final class AppUpdater {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 200
         // No release yet is not an error.
         if status == 404 { return nil }
-        guard (200..<300).contains(status) else { throw UpdateError(message: "GitHub answered \(status)") }
+        guard (200..<300).contains(status) else { throw statusError(status) }
         return try release(fromFeed: data)
+    }
+
+    /// The newest release from github.com's own pages, which have no hourly cap for
+    /// anonymous visitors like the API does. `/releases/latest` redirects to the tag's
+    /// page; the DMG and its signature have fixed names under `/releases/download/<tag>/`.
+    /// A release without the signature (a Windows-only one, or one still being uploaded)
+    /// is not offered.
+    nonisolated static func latestReleaseFromWeb(
+        latest: URL = latestPage,
+        head: @Sendable (URL) async throws -> HTTPURLResponse = AppUpdater.head
+    ) async throws -> Release? {
+        let response = try await head(latest)
+        // No release yet is not an error.
+        if response.statusCode == 404 { return nil }
+        guard (200..<300).contains(response.statusCode) else { throw statusError(response.statusCode) }
+        guard let page = response.url, let tag = tag(fromReleasePage: page) else { return nil }
+        let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+        let folder = latest.deletingLastPathComponent().appendingPathComponent("download").appendingPathComponent(tag)
+        let dmg = folder.appendingPathComponent("Limita-\(version).dmg")
+        let signature = folder.appendingPathComponent("Limita-\(version).dmg.sig")
+        let signed = try await head(signature)
+        guard signed.statusCode == 200 else { return nil }
+        return Release(version: version, dmg: dmg, signature: signature, page: page)
+    }
+
+    /// "v0.24.0" from `https://github.com/<owner>/<repo>/releases/tag/v0.24.0`.
+    nonisolated static func tag(fromReleasePage url: URL) -> String? {
+        let parts = url.pathComponents
+        guard parts.count >= 2, parts[parts.count - 2] == "tag", let tag = parts.last, !tag.isEmpty else { return nil }
+        return tag.removingPercentEncoding ?? tag
+    }
+
+    /// A HEAD request that follows redirects; the response's `url` is where it ended.
+    nonisolated static func head(_ url: URL) async throws -> HTTPURLResponse {
+        var request = URLRequest(url: url, timeoutInterval: 20)
+        request.httpMethod = "HEAD"
+        request.setValue(ResetFeed.userAgent, forHTTPHeaderField: "User-Agent")
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw UpdateError(message: "GitHub sent no HTTP answer") }
+        return http
+    }
+
+    /// GitHub's 403 and 429 mean "too many requests from this address".
+    nonisolated static func statusError(_ status: Int) -> UpdateError {
+        status == 403 || status == 429
+            ? UpdateError(message: "GitHub is limiting requests from this network (\(status)); Limita tries again later")
+            : UpdateError(message: "GitHub answered \(status)")
     }
 
     nonisolated static func release(fromFeed data: Data) throws -> Release? {

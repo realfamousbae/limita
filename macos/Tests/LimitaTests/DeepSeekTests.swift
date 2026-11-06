@@ -177,6 +177,52 @@ final class DeepSeekTests: XCTestCase {
         XCTAssertEqual(compacted.map(\.total), [95, 50, 49], "the hour's last sample, nothing older than 90 days")
     }
 
+    // MARK: - Update check without GitHub's API
+
+    private func response(_ url: String, _ status: Int) -> HTTPURLResponse {
+        HTTPURLResponse(url: URL(string: url)!, statusCode: status, httpVersion: nil, headerFields: nil)!
+    }
+
+    func testTheLatestReleaseIsFoundFromTheRedirect() async throws {
+        let release = try await AppUpdater.latestReleaseFromWeb(head: { url in
+            if url == AppUpdater.latestPage {
+                return self.response("https://github.com/realfamousbae/limita/releases/tag/v0.24.0", 200)
+            }
+            XCTAssertEqual(url.absoluteString,
+                           "https://github.com/realfamousbae/limita/releases/download/v0.24.0/Limita-0.24.0.dmg.sig")
+            return self.response(url.absoluteString, 200)
+        })
+        XCTAssertEqual(release?.version, "0.24.0")
+        XCTAssertEqual(release?.dmg.absoluteString,
+                       "https://github.com/realfamousbae/limita/releases/download/v0.24.0/Limita-0.24.0.dmg")
+        XCTAssertEqual(release?.page.absoluteString, "https://github.com/realfamousbae/limita/releases/tag/v0.24.0")
+    }
+
+    func testAReleaseWithoutTheSignatureOrWithoutReleasesIsNotOffered() async throws {
+        let unsigned = try await AppUpdater.latestReleaseFromWeb(head: { url in
+            url == AppUpdater.latestPage
+                ? self.response("https://github.com/realfamousbae/limita/releases/tag/v0.25.0", 200)
+                : self.response(url.absoluteString, 404)
+        })
+        XCTAssertNil(unsigned)
+        let none = try await AppUpdater.latestReleaseFromWeb(head: { _ in
+            self.response("https://github.com/realfamousbae/limita/releases", 200)
+        })
+        XCTAssertNil(none, "no releases: the redirect does not reach a tag")
+    }
+
+    func testARateLimitSaysSo() async {
+        do {
+            _ = try await AppUpdater.latestReleaseFromWeb(head: { url in self.response(url.absoluteString, 429) })
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error.localizedDescription,
+                           "GitHub is limiting requests from this network (429); Limita tries again later")
+        }
+        XCTAssertEqual(AppUpdater.tag(fromReleasePage: URL(string: "https://github.com/o/r/releases/tag/v1.2.3")!), "v1.2.3")
+        XCTAssertNil(AppUpdater.tag(fromReleasePage: URL(string: "https://github.com/o/r/releases")!))
+    }
+
     // MARK: - Keychain
 
     /// The real Keychain, with an item of its own that the test removes. The same process

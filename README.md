@@ -113,7 +113,7 @@ Updates are installed only after their signature checks out:
 - **macOS.** Each release's DMG is signed with an Ed25519 key that only the maintainer holds, and the signature is published next to it as `Limita-<version>.dmg.sig`. Limita downloads both, checks the signature against the public key built into the app, and checks that the DMG holds Limita itself (bundle id and version) before touching anything. Only then is the old copy in Applications set aside, the new one copied in and opened. If copying fails, the old copy is put back. A tampered or unsigned download is refused and the installed copy stays as it is.
 - **Windows.** The installer is signed for [Tauri's updater](https://v2.tauri.app/plugin/updater/), and `latest.json` on the release carries its signature. The app checks it against the public key built into the app before running the installer, which then reopens Limita.
 
-The private keys are not in this repository. Updates come only from this repository's releases, over HTTPS.
+The private keys are not in this repository. Updates come only from this repository's releases, over HTTPS. Since 0.24.1 the Mac app reads them from github.com itself rather than GitHub's API, which allows only 60 requests an hour per address without a login and so could answer "403" on a shared network or VPN.
 
 If Limita runs from a folder it cannot write to (or straight from the DMG), the button opens the release page instead. The first version with the button is 0.13.0: from an older version, install the latest release by hand once. On macOS, every new build asks again for access to `Claude Code-credentials` in the Keychain, and to Limita's own DeepSeek key if you connected DeepSeek, as a manual reinstall does; choose **Always Allow**.
 
