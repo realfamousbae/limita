@@ -353,6 +353,16 @@ final class DeepSeekTests: XCTestCase {
         XCTAssertEqual(Service.allCases, [.claude, .codex, .deepseek], "display order")
     }
 
+    func testPeakHoursNameTheServicesWhenDeepSeekIsConnected() {
+        let both = PrimeTimeNotice(active: [.claude, .codex], connected: [.claude, .codex, .deepseek])
+        XCTAssertEqual(both?.strong, "CLAUDE & CODEX")
+        XCTAssertEqual(both?.firstLine, "CLAUDE & CODEX PEAK HOURS")
+        XCTAssertEqual(PrimeTimeNotice(active: [.claude, .codex], connected: [.claude, .codex])?.firstLine,
+                       "PEAK HOURS FOR ALL PROVIDERS")
+        XCTAssertEqual(PrimeTimeNotice(active: [.codex], connected: [.codex, .deepseek])?.strong, "CODEX")
+        XCTAssertEqual(PrimeTimeNotice(active: [.codex], connected: [.codex])?.firstLine, "CODEX PEAK HOURS")
+    }
+
     func testTerminalSnapshotCarriesTheBalance() throws {
         let now = Date(timeIntervalSince1970: 1_893_456_000)
         var balance = Balance(currency: "CNY", total: 4.5, granted: 0, toppedUp: 4.5, isAvailable: true)

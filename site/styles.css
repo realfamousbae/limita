@@ -18,6 +18,7 @@
   --edge: rgba(255, 255, 255, 0.14);
   --claude: #ff944d;
   --codex: #4fabff;
+  --deepseek: #6b87ff;
   --healthy: #52eb94;
   --peak: #ff732e;
   --gutter: 16px;
@@ -638,6 +639,7 @@ kbd {
 
 .source.claude { border-color: var(--claude); }
 .source.codex { border-color: var(--codex); }
+.source.deepseek { border-color: var(--deepseek); }
 
 .source h3 { display: flex; align-items: center; gap: 10px; }
 
@@ -859,9 +861,11 @@ code {
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.9);
 }
 
+/* Two equal outer columns keep the prime-time badge in the middle of the panel,
+   whatever the widths of the titles and the buttons, as in the apps. */
 .limita .dash-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
   align-items: center;
   gap: 18px;
   padding: 10px 18px;
@@ -904,7 +908,6 @@ code {
   white-space: nowrap;
 }
 
-.limita .dash-header .prime-time { margin: 0 auto 0 -9px; }
 
 .limita .prime-lines {
   display: flex;
@@ -1074,6 +1077,27 @@ code {
 .limita .codex .fill.accentSoft { background: var(--codex-soft); }
 .limita .claude .fill.share { background: var(--claude-share); }
 .limita .codex .fill.share { background: var(--codex-share); }
+.limita .deepseek .fill.accentSoft { background: rgba(107, 135, 255, 0.72); }
+
+/* DeepSeek's balance on its own, in the features: the meter and two tiles. */
+.balance-demo {
+  --meter: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 420px;
+  zoom: 1.15;
+}
+
+.balance-demo .balance-fill { width: 57%; }
+
+/* The Settings window, as a picture. */
+.settings-demo img {
+  width: 240px;
+  height: auto;
+  max-width: 100%;
+}
 
 .limita .details {
   display: grid;
@@ -1189,7 +1213,7 @@ code {
   .limita .columns { flex-direction: column; }
   .limita .column { width: auto; }
   .limita .divider.vertical { width: auto; height: 1px; margin: 0 18px; }
-  .limita .dash-header { flex-wrap: wrap; }
+  .limita .dash-header { display: flex; flex-wrap: wrap; justify-content: space-between; }
   .limita .dash-header .prime-time { order: 3; margin: 0; width: 100%; }
   .limita .activity-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
