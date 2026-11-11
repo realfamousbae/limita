@@ -757,6 +757,7 @@ button.reset-title:hover .caption,
 }
 
 .column.activity {
+  min-width: 0;
   position: relative;
   padding-top: 12px;
   padding-bottom: 4px;
@@ -775,7 +776,7 @@ button.reset-title:hover .caption,
 
 .activity-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 9px 22px;
 }
 
@@ -786,6 +787,8 @@ button.reset-title:hover .caption,
 }
 
 .activity-graph {
+  width: 100%;
+  min-width: 0;
   display: grid;
   grid-template-rows: 14px;
   grid-auto-rows: auto;
@@ -817,7 +820,7 @@ button.reset-title:hover .caption,
 .activity-graph .cell { width: 100%; }
 .activity-graph.row .cell { height: 30px; }
 .activity-graph.calendar .cell { height: 26px; }
-.activity-graph.weeks .cell { height: 19px; }
+.activity-graph.weeks .cell { width: 19px; height: 19px; }
 
 .cell {
   display: block;

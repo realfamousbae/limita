@@ -21,7 +21,7 @@ struct ActivitySection: View {
                     Rectangle().fill(Color.white.opacity(0.08))
                         .frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 12)
                 }
-                ActivityColumn(service: service, grid: store.activity.grids[service], loaded: store.activity.isLoaded)
+                ActivityColumn(service: service, grid: store.activity.grids[service], loaded: store.activity.isLoaded, activity: store.activity)
                     .padding(.horizontal, ExpandedView.columnPadding)
                     .padding(.top, 12)
                     .padding(.bottom, 14)
@@ -120,6 +120,7 @@ private struct ActivityColumn: View {
     let service: Service
     let grid: ActivityGrid?
     let loaded: Bool
+    let activity: ActivityStore
 
     @State private var hovered: ActivityGrid.Day?
 
@@ -132,7 +133,7 @@ private struct ActivityColumn: View {
                     .foregroundStyle(DashboardStyle.caption)
             } else if let grid {
                 SummaryTiles(summary: grid.summary)
-                ActivityGraph(grid: grid, service: service, hovered: $hovered)
+                ActivityGraph(grid: grid, service: service, hovered: $hovered, activity: activity)
                 HStack(spacing: 8) {
                     Text(hovered.map(Self.dateText) ?? "")
                         .caption()
@@ -156,7 +157,7 @@ private struct ActivityColumn: View {
     }
 }
 
-/// Tiles in the style of the balances, four to a row: the totals, then tokens by kind.
+/// Three evenly spaced tiles per row: the totals, then tokens by kind.
 private struct SummaryTiles: View {
     let summary: ActivitySummary
 
@@ -168,13 +169,11 @@ private struct SummaryTiles: View {
             HStack(alignment: .top, spacing: Self.tileSpacing) {
                 tile("TOTAL TOKENS", TokenFormat.count(summary.tokens))
                 tile("FAVORITE MODEL", summary.favoriteModel ?? "—")
-                tile("MESSAGES", TokenFormat.count(summary.messages))
                 tile("PEAK HOUR", summary.peakHourText)
             }
             HStack(alignment: .top, spacing: Self.tileSpacing) {
                 tile("INPUT", TokenFormat.count(summary.usage.input))
                 tile("OUTPUT", TokenFormat.count(summary.usage.output))
-                tile("CACHE WRITE", TokenFormat.count(summary.usage.cacheWrite))
                 tile("CACHE READ", TokenFormat.count(summary.usage.cacheRead))
             }
         }
@@ -198,11 +197,12 @@ private struct SummaryTiles: View {
 }
 
 /// The cells, drawn in one `Canvas` so hovering redraws one view, not hundreds. Cells
-/// grow to fill the column, up to a size per layout; nothing scrolls or is cut off.
+/// use fixed square cells for weeks; the number of weeks follows the column width.
 private struct ActivityGraph: View {
     let grid: ActivityGrid
     let service: Service
     @Binding var hovered: ActivityGrid.Day?
+    let activity: ActivityStore
 
     /// The column's width once laid out; until then a guess from the dashboard's width.
     @State private var width: CGFloat = BezelPanelController.columnWidth - 2 * ExpandedView.columnPadding
@@ -215,16 +215,16 @@ private struct ActivityGraph: View {
 
     private var gap: CGFloat { grid.layout == .weeks ? 3 : 4 }
     private var leading: CGFloat { grid.rowLabels.contains { $0 != nil } ? Self.rowLabelWidth : 0 }
-    /// Cells stretch across the available width; row heights stay compact.
+    /// Weekly cells are square and retain their size as the column changes width.
     private var stepX: CGFloat {
         let fit = ((width - leading + gap) / CGFloat(max(grid.columns, 1))).rounded(.down)
-        return max(6, fit)
+        return grid.layout == .weeks ? 22 : max(6, fit)
     }
     private var stepY: CGFloat {
         switch grid.layout {
         case .row: 34
         case .calendar: 30
-        case .weeks: min(22, stepX)
+        case .weeks: 22
         }
     }
     private var cellWidth: CGFloat { stepX - gap }
@@ -244,9 +244,15 @@ private struct ActivityGraph: View {
         .frame(height: height)
         .background(GeometryReader { geometry in
             Color.clear
-                .onAppear { width = geometry.size.width }
-                .onChange(of: geometry.size.width) { width = geometry.size.width }
+                .onAppear { updateWidth(geometry.size.width) }
+                .onChange(of: geometry.size.width) { updateWidth(geometry.size.width) }
         })
+    }
+
+    private func updateWidth(_ value: CGFloat) {
+        width = value
+        activity.setGraphWidth(value, for: service)
+        hovered = nil
     }
 
     private var cells: some View {

@@ -1146,6 +1146,18 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(old.summary.tokens, 0, "days before the first week are not counted")
     }
 
+    func testActivityAllUsesVisibleWeekCount() {
+        let days = ["2026-08-31": DayStats(tokens: 12), "2026-10-19": DayStats(tokens: 7)]
+        let narrow = ActivityGrid(days: days, period: .all, today: monday, calendar: moscow, visibleWeeks: 4)
+        let wide = ActivityGrid(days: days, period: .all, today: monday, calendar: moscow, visibleWeeks: 12)
+        XCTAssertEqual(narrow.columns, 4)
+        XCTAssertEqual(wide.columns, 12)
+        XCTAssertEqual(narrow.cells[0].last!?.key, "2026-10-19")
+        XCTAssertEqual(wide.cells[0].last!?.key, "2026-10-19")
+        XCTAssertEqual(narrow.summary.tokens, 7)
+        XCTAssertEqual(wide.summary.tokens, 19)
+    }
+
     func testActivitySummaryCountsThePeriod() {
         var sunday = DayStats(tokens: 300)
         sunday.input = 10

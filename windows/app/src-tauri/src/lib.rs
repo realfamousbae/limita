@@ -286,7 +286,7 @@ struct ActivityPanel {
     grids: Vec<activity::ActivityGrid>,
 }
 
-fn activity_panel(store: &Store, reader: &ActivityReader) -> ActivityPanel {
+fn activity_panel(store: &Store, reader: &ActivityReader, weeks: Option<usize>) -> ActivityPanel {
     let settings = ServiceSettings::default();
     let expanded = settings.activity_expanded();
     let period = settings.activity_period();
@@ -297,7 +297,7 @@ fn activity_panel(store: &Store, reader: &ActivityReader) -> ActivityPanel {
         enabled
             .iter()
             .map(|&service| match (service.kind(), days.get(&service)) {
-                (ServiceKind::Limits, Some(days)) => activity::grid(service, days, period, today),
+                (ServiceKind::Limits, Some(days)) => activity::grid_with_weeks(service, days, period, today, weeks),
                 // No local logs to count tokens in; the spending is in the column above.
                 _ => activity::no_activity(service),
             })
@@ -310,13 +310,18 @@ fn activity_panel(store: &Store, reader: &ActivityReader) -> ActivityPanel {
 
 #[tauri::command(async)]
 fn activity(store: State<'_, Store>, reader: State<'_, Arc<ActivityReader>>) -> ActivityPanel {
-    activity_panel(&store, &reader)
+    activity_panel(&store, &reader, None)
+}
+
+#[tauri::command(async)]
+fn activity_for_weeks(weeks: usize, store: State<'_, Store>, reader: State<'_, Arc<ActivityReader>>) -> ActivityPanel {
+    activity_panel(&store, &reader, Some(weeks))
 }
 
 #[tauri::command(async)]
 fn set_activity_expanded(expanded: bool, store: State<'_, Store>, reader: State<'_, Arc<ActivityReader>>) -> ActivityPanel {
     ServiceSettings::default().set_activity_expanded(expanded);
-    activity_panel(&store, &reader)
+    activity_panel(&store, &reader, None)
 }
 
 #[tauri::command(async)]
@@ -324,7 +329,7 @@ fn set_activity_period(period: String, store: State<'_, Store>, reader: State<'_
     if let Some(period) = activity::Period::from_id(&period) {
         ServiceSettings::default().set_activity_period(period);
     }
-    activity_panel(&store, &reader)
+    activity_panel(&store, &reader, None)
 }
 
 /// `limita-cli` next to the app; Claude Code runs it as its status line.
@@ -403,6 +408,7 @@ pub fn run() {
             activity,
             set_activity_expanded,
             set_activity_period,
+            activity_for_weeks,
             open_reset,
             install_update
         ])

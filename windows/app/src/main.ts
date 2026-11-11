@@ -20,6 +20,9 @@ const ANNOUNCE_MS = 8000;
 let announced: { version: string; at: number } | null = null;
 let reported = "";
 let activity: ActivityPanel = { expanded: false, period: "all", grids: [] };
+let shownWeeks = 0;
+let requestedWeeks = 0;
+let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 /** The day under the cursor, kept across re-renders. */
 let hovered: { service: ServiceView["id"]; day: ActivityDay } | null = null;
 
@@ -184,6 +187,7 @@ const PERIODS: { id: Period; title: string }[] = [
 ];
 
 async function loadActivity() {
+  shownWeeks = 0;
   activity = await invoke<ActivityPanel>("activity");
   render();
 }
@@ -195,6 +199,8 @@ function periodSwitch(): HTMLElement {
     button.addEventListener("click", async () => {
       if (id === activity.period) return;
       hovered = null;
+      shownWeeks = 0;
+      requestedWeeks = 0;
       activity = await invoke<ActivityPanel>("set_activity_period", { period: id });
       render();
     });
@@ -213,6 +219,8 @@ function activityToggle(): HTMLElement {
       activity = { ...activity, expanded, grids: [] };
       render();
     }
+    shownWeeks = 0;
+    requestedWeeks = 0;
     activity = await invoke<ActivityPanel>("set_activity_expanded", { expanded });
     render();
   });
@@ -234,7 +242,7 @@ function activityColumn(grid: ActivityGrid): HTMLElement {
   const labelled = grid.rowLabels.some((label) => label !== null);
 
   const graph = el("div", `activity-graph ${grid.layout}`);
-  graph.style.gridTemplateColumns = `${labelled ? "26px " : ""}repeat(${columns}, minmax(0, 1fr))`;
+  graph.style.gridTemplateColumns = `${labelled ? "26px " : ""}repeat(${columns}, ${grid.layout === "weeks" ? "19px" : "minmax(0, 1fr)"})`;
 
   const show = (day: ActivityDay | null, cell: HTMLElement | null) => {
     graph.querySelector(".cell.hovered")?.classList.remove("hovered");
@@ -428,6 +436,7 @@ function render(modeChanged = false) {
   if (mode === "dashboard") {
     hideCoveredBadge();
     restoreActivity();
+    scheduleActivityWidth();
   }
   // Measured right away: a hidden window gets no animation frames, and it stays hidden
   // until Rust knows the size.
@@ -438,6 +447,34 @@ function render(modeChanged = false) {
   reported = size;
   invoke("panel_resized", { width: box.width, height: box.height });
 }
+
+function scheduleActivityWidth() {
+  clearTimeout(resizeTimer);
+  if (!activity.expanded || activity.period !== "all") {
+    shownWeeks = 0;
+    requestedWeeks = 0;
+    return;
+  }
+  resizeTimer = setTimeout(async () => {
+    const graph = app.querySelector<HTMLElement>(".activity-graph.weeks");
+    if (!graph) return;
+    const weeks = Math.max(1, Math.min(520, Math.floor((graph.clientWidth - 26) / 22)));
+    if (weeks === shownWeeks || weeks === requestedWeeks) return;
+    requestedWeeks = weeks;
+    try {
+      const result = await invoke<ActivityPanel>("activity_for_weeks", { weeks });
+      if (requestedWeeks !== weeks || !activity.expanded || activity.period !== "all") return;
+      activity = result;
+      shownWeeks = weeks;
+      requestedWeeks = 0;
+      render();
+    } catch (error) {
+      requestedWeeks = 0;
+      console.error("Could not resize activity graph", error);
+    }
+  }, 100);
+}
+window.addEventListener("resize", scheduleActivityWidth);
 
 /** Both meters share the width of the longest countdown, so it always fits on one line. */
 function sizeMeters(longest: string) {

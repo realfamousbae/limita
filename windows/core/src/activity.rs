@@ -601,7 +601,7 @@ pub struct ActivityGrid {
     pub column_labels: Vec<Option<String>>,
     /// Left of each row: Mon, Wed and Fri in the weeks layout.
     pub row_labels: Vec<Option<String>>,
-    /// Four to a row: the totals, then tokens by kind.
+    /// Three to a row: the totals, then tokens by kind.
     pub summary: Vec<Tile>,
     /// Shown instead of the graph, for a service without local logs.
     pub message: Option<String>,
@@ -622,6 +622,10 @@ pub fn no_activity(service: Service) -> ActivityGrid {
 }
 
 pub fn grid(service: Service, days: &Days, period: Period, today: NaiveDate) -> ActivityGrid {
+    grid_with_weeks(service, days, period, today, None)
+}
+
+pub fn grid_with_weeks(service: Service, days: &Days, period: Period, today: NaiveDate, visible_weeks: Option<usize>) -> ActivityGrid {
     let this_monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
     let past = |date: NaiveDate| (date <= today).then_some(date);
     let (layout, dates): (Layout, Vec<Vec<Option<NaiveDate>>>) = match period {
@@ -640,7 +644,8 @@ pub fn grid(service: Service, days: &Days, period: Period, today: NaiveDate) -> 
                 .min()
                 .unwrap_or(today);
             let span = (this_monday - first).num_days().max(0) as usize;
-            let weeks = (span.div_ceil(7) + 1).clamp(MIN_WEEKS, MAX_WEEKS) as i64;
+            let weeks = visible_weeks.map(|n| n.clamp(1, 520))
+                .unwrap_or_else(|| (span.div_ceil(7) + 1).clamp(MIN_WEEKS, MAX_WEEKS)) as i64;
             let dates = (0..7)
                 .map(|d| (0..weeks).map(|week| past(this_monday + Duration::days((week - weeks + 1) * 7 + d))).collect())
                 .collect();
@@ -735,11 +740,9 @@ fn summary(days: &[&DayStats]) -> Vec<Tile> {
     vec![
         tile("TOTAL TOKENS", grouped(sum(|d| d.tokens))),
         tile("FAVORITE MODEL", favorite.unwrap_or_else(|| "—".into())),
-        tile("MESSAGES", grouped(sum(|d| d.messages))),
         tile("PEAK HOUR", peak.unwrap_or_else(|| "—".into())),
         tile("INPUT", grouped(sum(|d| d.input))),
         tile("OUTPUT", grouped(sum(|d| d.output))),
-        tile("CACHE WRITE", grouped(sum(|d| d.cache_write))),
         tile("CACHE READ", grouped(sum(|d| d.cache_read))),
     ]
 }
@@ -901,6 +904,18 @@ mod tests {
     }
 
     #[test]
+    fn all_uses_visible_week_count() {
+        let days: Days = [("2026-08-31".into(), day(12)), ("2026-10-19".into(), day(7))].into();
+        let narrow = grid_with_weeks(Service::Claude, &days, Period::All, today(), Some(4));
+        let wide = grid_with_weeks(Service::Claude, &days, Period::All, today(), Some(12));
+        assert_eq!((narrow.cells[0].len(), wide.cells[0].len()), (4, 12));
+        assert_eq!(narrow.cells[0].last().unwrap().as_ref().unwrap().key, "2026-10-19");
+        assert_eq!(wide.cells[0].last().unwrap().as_ref().unwrap().key, "2026-10-19");
+        assert_eq!(narrow.summary[0].value, "7");
+        assert_eq!(wide.summary[0].value, "19");
+    }
+
+    #[test]
     fn summary_counts_the_period() {
         let mut sunday = DayStats { tokens: 300, input: 10, output: 40, cache_write: 50, cache_read: 200, messages: 4, ..DayStats::default() };
         sunday.models = [("claude-opus-5-5".to_string(), 250), ("claude-sonnet-5-5".to_string(), 50)].into();
@@ -918,11 +933,9 @@ mod tests {
             [
                 ("TOTAL TOKENS", "400"),
                 ("FAVORITE MODEL", "Opus 5.5"),
-                ("MESSAGES", "6"),
                 ("PEAK HOUR", "15:00"),
                 ("INPUT", "10"),
                 ("OUTPUT", "40"),
-                ("CACHE WRITE", "50"),
                 ("CACHE READ", "300"),
             ]
         );

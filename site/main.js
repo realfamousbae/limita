@@ -140,7 +140,7 @@
       details: [],
       pill: "5h 15% used",
       week: [2, 3, 1, 4, 3, 0, 2],
-      summary: [["TOTAL TOKENS", "41.6M"], ["FAVORITE MODEL", "Opus 5.5"], ["MESSAGES", "1,284"], ["PEAK HOUR", "15:00"]],
+      summary: [["TOTAL TOKENS", "41.6M"], ["FAVORITE MODEL", "Opus 5.5"], ["PEAK HOUR", "15:00"]],
     },
     {
       id: "codex",
@@ -153,7 +153,7 @@
       reset: { ago: 5 * HOUR, credit: "DATA: CODEX-RESET.COM", site: "https://codex-reset.com" },
       pill: "5h 94% left",
       week: [1, 0, 2, 1, 3, 1, 0],
-      summary: [["TOTAL TOKENS", "12.7M"], ["FAVORITE MODEL", "Sol 6"], ["MESSAGES", "312"], ["PEAK HOUR", "11:00"]],
+      summary: [["TOTAL TOKENS", "12.7M"], ["FAVORITE MODEL", "Sol 6"], ["PEAK HOUR", "11:00"]],
     },
   ];
 

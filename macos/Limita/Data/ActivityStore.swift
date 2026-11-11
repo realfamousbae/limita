@@ -36,6 +36,16 @@ final class ActivityStore {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var lastScan: Date?
     @ObservationIgnored private var isScanning = false
+    @ObservationIgnored private var widths: [Service: Int] = [:]
+
+    func setGraphWidth(_ width: CGFloat, for service: Service) {
+        let weeks = max(1, min(520, Int(((max(0, width - 26) + 3) / 22).rounded(.down))))
+        guard widths[service] != weeks else { return }
+        widths[service] = weeks
+        if period == .all, let serviceDays = days[service] {
+            grids[service] = ActivityGrid(days: serviceDays, period: period, visibleWeeks: weeks)
+        }
+    }
 
     init(reader: ActivityReader = ActivityReader(), defaults: UserDefaults = ServiceSettings.standardDefaults) {
         self.reader = reader
@@ -62,6 +72,8 @@ final class ActivityStore {
 
     private func rebuild() {
         let period = period
-        grids = days.mapValues { ActivityGrid(days: $0, period: period) }
+        grids = Dictionary(uniqueKeysWithValues: days.map { service, serviceDays in
+            (service, ActivityGrid(days: serviceDays, period: period, visibleWeeks: widths[service]))
+        })
     }
 }

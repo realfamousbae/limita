@@ -67,7 +67,7 @@ struct ActivityGrid: Equatable {
     var rows: Int { cells.count }
     var columns: Int { cells.first?.count ?? 0 }
 
-    init(days: [DayKey: DayStats], period: ActivityPeriod, today: Date = Date(), calendar: Calendar = .activity) {
+    init(days: [DayKey: DayStats], period: ActivityPeriod, today: Date = Date(), calendar: Calendar = .activity, visibleWeeks: Int? = nil) {
         let formatter = DayKeys.formatter(timeZone: calendar.timeZone)
         let today = calendar.startOfDay(for: today)
         func shift(_ date: Date, _ days: Int) -> Date {
@@ -94,7 +94,7 @@ struct ActivityGrid: Equatable {
             layout = .weeks
             let first = days.filter { $0.value.isActive }.keys.min().flatMap { formatter.date(from: $0) } ?? today
             let span = calendar.dateComponents([.day], from: calendar.startOfDay(for: first), to: thisMonday).day ?? 0
-            let weeks = min(max((span + 6) / 7 + 1, Self.minWeeks), Self.maxWeeks)
+            let weeks = visibleWeeks.map { min(max($0, 1), 520) } ?? min(max((span + 6) / 7 + 1, Self.minWeeks), Self.maxWeeks)
             dates = (0..<7).map { day in
                 (0..<weeks).map { week in
                     let date = shift(thisMonday, (week - weeks + 1) * 7 + day)

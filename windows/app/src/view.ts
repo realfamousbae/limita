@@ -79,7 +79,7 @@ export interface ActivityGrid {
   cells: (ActivityDay | null)[][];
   columnLabels: (string | null)[];
   rowLabels: (string | null)[];
-  /** Four to a row: the totals, then tokens by kind. */
+  /** Three to a row: the totals, then tokens by kind. */
   summary: { label: string; value: string }[];
   /** Shown instead of the graph, for a service without local logs (DeepSeek). */
   message: string | null;
