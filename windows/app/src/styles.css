@@ -817,7 +817,7 @@ button.reset-title:hover .caption,
 .activity-graph .cell { width: 100%; }
 .activity-graph.row .cell { height: 30px; }
 .activity-graph.calendar .cell { height: 26px; }
-.activity-graph.weeks .cell { aspect-ratio: 1; height: auto; }
+.activity-graph.weeks .cell { height: 19px; }
 
 .cell {
   display: block;

@@ -215,17 +215,16 @@ private struct ActivityGraph: View {
 
     private var gap: CGFloat { grid.layout == .weeks ? 3 : 4 }
     private var leading: CGFloat { grid.rowLabels.contains { $0 != nil } ? Self.rowLabelWidth : 0 }
-    /// Week and month cells stretch across the column at a fixed height; the half-year
-    /// grid keeps square cells as big as fit, up to 22 points apart.
+    /// Cells stretch across the available width; row heights stay compact.
     private var stepX: CGFloat {
         let fit = ((width - leading + gap) / CGFloat(max(grid.columns, 1))).rounded(.down)
-        return grid.layout == .weeks ? max(6, min(22, fit)) : max(6, fit)
+        return max(6, fit)
     }
     private var stepY: CGFloat {
         switch grid.layout {
         case .row: 34
         case .calendar: 30
-        case .weeks: stepX
+        case .weeks: min(22, stepX)
         }
     }
     private var cellWidth: CGFloat { stepX - gap }

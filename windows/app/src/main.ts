@@ -234,7 +234,7 @@ function activityColumn(grid: ActivityGrid): HTMLElement {
   const labelled = grid.rowLabels.some((label) => label !== null);
 
   const graph = el("div", `activity-graph ${grid.layout}`);
-  graph.style.gridTemplateColumns = `${labelled ? "26px " : ""}repeat(${columns}, ${grid.layout === "weeks" ? "minmax(0, 19px)" : "minmax(0, 1fr)"})`;
+  graph.style.gridTemplateColumns = `${labelled ? "26px " : ""}repeat(${columns}, minmax(0, 1fr))`;
 
   const show = (day: ActivityDay | null, cell: HTMLElement | null) => {
     graph.querySelector(".cell.hovered")?.classList.remove("hovered");

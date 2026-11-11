@@ -159,14 +159,23 @@ final class ActivityReader: @unchecked Sendable {
             // No local logs: DeepSeek is called by whatever tool holds the key.
             case .deepseek: continue
             }
-            history[service.rawValue] = Self.merge(history[service.rawValue] ?? [:], scanned)
+            history[service.rawValue] = Self.merge(history[service.rawValue] ?? [:], scanned, codex: service == .codex)
         }
         saveHistory(history)
         return Dictionary(uniqueKeysWithValues: services.map { ($0, history[$0.rawValue] ?? [:]) })
     }
 
-    static func merge(_ saved: Days, _ scanned: Days) -> Days {
-        saved.merging(scanned) { $0.merged(with: $1) }
+    static func merge(_ saved: Days, _ scanned: Days, codex: Bool = false) -> Days {
+        saved.merging(scanned) { old, day in
+            var result = old.merged(with: day)
+            if codex && day.tokens >= old.tokens && day.cacheWrite > old.cacheWrite {
+                result.input = day.input
+                result.output = day.output
+                result.cacheRead = day.cacheRead
+                result.cacheWrite = day.cacheWrite
+            }
+            return result
+        }
     }
 
     // MARK: - History file
@@ -272,12 +281,14 @@ final class ActivityReader: @unchecked Sendable {
 
     /// One rollout is one session. Tokens are the growth of its running total by the day
     /// of each `token_count` event; repeated events with the same total add nothing.
-    /// Codex counts cached input inside its input and writes no cache of its own, so
-    /// cached input is a cache read and the rest is input.
+    /// Cached reads and writes are included in Codex input, so separate them here.
     static func codexDays(in data: Data, clock: LocalClock) -> Days {
         var days: Days = [:]
         var previous = TokenUsage()
         var model: String?
+        var modernMessages: [(ActivityEvent, String?)] = []
+        var legacyMessages: [(ActivityEvent, String?)] = []
+        var itemIDs = Set<String>()
         forEachLine(in: data, containing: #""payload""#) { object in
             guard let payload = object["payload"] as? [String: Any] else { return }
             let type = object["type"] as? String
@@ -294,13 +305,29 @@ final class ActivityReader: @unchecked Sendable {
             switch payload["type"] as? String {
             case "user_message", "agent_message":
                 event.isMessage = true
+                let role = (payload["type"] as? String) == "user_message" ? "user" : "agent"
+                let text = payload["message"] as? String
+                legacyMessages.append((event, text.map { role + "|" + $0 }))
+                return
+            case "item_completed":
+                guard let item = payload["item"] as? [String: Any],
+                      let kind = item["type"] as? String,
+                      kind == "UserMessage" || kind == "AgentMessage" else { return }
+                if let id = item["id"] as? String, !itemIDs.insert(id).inserted { return }
+                event.isMessage = true
+                let role = kind == "UserMessage" ? "user" : "agent"
+                let parts = item["content"] as? [[String: Any]] ?? []
+                let text = parts.compactMap { $0["text"] as? String }.joined()
+                modernMessages.append((event, text.isEmpty ? nil : role + "|" + text))
+                return
             case "token_count":
                 guard let info = payload["info"] as? [String: Any],
                       let usage = info["total_token_usage"] as? [String: Any]
                 else { return }
                 func count(_ key: String) -> Int { (usage[key] as? NSNumber)?.intValue ?? 0 }
                 let cached = count("cached_input_tokens")
-                let total = TokenUsage(input: max(0, count("input_tokens") - cached), output: count("output_tokens"), cacheRead: cached)
+                let written = count("cache_write_input_tokens")
+                let total = TokenUsage(input: max(0, count("input_tokens") - cached - written), output: count("output_tokens"), cacheWrite: written, cacheRead: cached)
                 // A smaller total means the count started over.
                 event.usage = total.total >= previous.total ? total.minus(previous) : total
                 previous = total
@@ -309,6 +336,20 @@ final class ActivityReader: @unchecked Sendable {
                 return
             }
             days[day, default: DayStats()].add(event)
+        }
+        // Match duplicate old/new representations by role and text, preserving repeated
+        // identical messages by matching occurrences one for one.
+        var modernCounts: [String: Int] = [:]
+        for (event, key) in modernMessages {
+            days[event.day, default: DayStats()].add(event)
+            if let key { modernCounts[key, default: 0] += 1 }
+        }
+        for (event, key) in legacyMessages {
+            if let key, let count = modernCounts[key], count > 0 {
+                modernCounts[key] = count - 1
+            } else {
+                days[event.day, default: DayStats()].add(event)
+            }
         }
         return days
     }

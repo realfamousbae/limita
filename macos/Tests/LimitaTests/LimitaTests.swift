@@ -1335,6 +1335,35 @@ final class LimitaTests: XCTestCase {
         XCTAssertEqual(days["2026-10-16"]?.models, ["gpt-5.5-codex": 120])
     }
 
+    func testCodexCompletedMessagesAndCacheWrites() {
+        let log = [
+            #"{"timestamp":"2026-10-16T21:10:00Z","type":"event_msg","payload":{"type":"user_message","message":"hello"}}"#,
+            #"{"timestamp":"2026-10-16T21:10:01Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"hello"}]}}}"#,
+            #"{"timestamp":"2026-10-16T21:11:00Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","content":[{"type":"Text","text":"answer"}]}}}"#,
+            #"{"timestamp":"2026-10-16T21:11:01Z","type":"event_msg","payload":{"type":"agent_message","message":"answer"}}"#,
+            #"{"timestamp":"2026-10-16T21:12:00Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","content":[{"type":"Text","text":"answer"}]}}}"#,
+            #"{"timestamp":"2026-10-16T21:13:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":30,"cache_write_input_tokens":20,"output_tokens":10}}}}"#,
+            #"{"timestamp":"2026-10-16T21:14:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":30,"cache_write_input_tokens":20,"output_tokens":10}}}}"#,
+            #"{"timestamp":"2026-10-16T21:15:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":50,"cache_write_input_tokens":40,"output_tokens":20}}}}"#,
+        ].joined(separator: "\n")
+        let days = ActivityReader.codexDays(in: Data(log.utf8), clock: LocalClock(timeZone: TimeZone(secondsFromGMT: 3 * 3600)!))
+        let day = days["2026-10-17"]!
+        XCTAssertEqual(day.messages, 2)
+        XCTAssertEqual(day.hours[0], 2)
+        XCTAssertEqual(day.tokens, 220)
+        XCTAssertEqual(day.input, 110)
+        XCTAssertEqual(day.cacheRead, 50)
+        XCTAssertEqual(day.cacheWrite, 40)
+        XCTAssertEqual(day.output, 20)
+        XCTAssertEqual(ActivitySummary(days: days, keys: ["2026-10-17"]).peakHour, 0)
+        XCTAssertEqual(ActivityReader.merge(days, days)["2026-10-17"]?.cacheWrite, 40)
+        var old = day
+        old.input += old.cacheWrite
+        old.cacheWrite = 0
+        let restored = ActivityReader.merge(["2026-10-17": old], days, codex: true)["2026-10-17"]!
+        XCTAssertEqual(restored.input + restored.output + restored.cacheRead + restored.cacheWrite, restored.tokens)
+    }
+
     // MARK: - Limit resets
 
     func testCodexForecastReadsTheLastResetAndItsPost() throws {

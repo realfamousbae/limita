@@ -9,9 +9,8 @@
 //!   `message.id` + `requestId` and a prompt once by its `uuid`, whatever file it is in.
 //! - Codex: `token_count` events in `~/.codex/sessions/**/rollout-*.jsonl` carry the
 //!   session's running total; a day gets the growth of that total during it. Codex
-//!   counts cached input inside its input and writes no cache of its own, so cached
-//!   input is a cache read and the rest is input. Messages are `user_message` and
-//!   `agent_message` events, the model comes from `turn_context`.
+//!   includes cached reads and writes in input. Messages use legacy events or completed
+//!   items, and the model comes from `turn_context`.
 //!
 //! Claude Code deletes old transcripts (30 days by default), so the days are kept in
 //! `activity.json` and only ever raised, never lowered because their files are gone.
@@ -248,7 +247,20 @@ impl ActivityReader {
                 // No local logs: DeepSeek is called by whatever tool holds the key.
                 Service::DeepSeek => continue,
             };
-            merge(history.entry(service.id().to_string()).or_default(), &scanned);
+            let saved = history.entry(service.id().to_string()).or_default();
+            if service == Service::Codex {
+                for (key, day) in &scanned {
+                    if let Some(old) = saved.get_mut(key) {
+                        if day.tokens >= old.tokens && day.cache_write > old.cache_write {
+                            old.input = day.input;
+                            old.output = day.output;
+                            old.cache_read = day.cache_read;
+                            old.cache_write = day.cache_write;
+                        }
+                    }
+                }
+            }
+            merge(saved, &scanned);
         }
         self.save_history(&history);
         services
@@ -382,6 +394,9 @@ pub fn codex_days<Tz: TimeZone>(data: &[u8], tz: &Tz) -> Days {
     let mut days = Days::new();
     let mut previous = TokenUsage::default();
     let mut model: Option<String> = None;
+    let mut modern_messages: Vec<(Event, Option<String>)> = Vec::new();
+    let mut legacy_messages: Vec<(Event, Option<String>)> = Vec::new();
+    let mut item_ids = std::collections::HashSet::new();
     for_each_line(data, b"\"payload\"", |object| {
         let payload = &object["payload"];
         match object["type"].as_str() {
@@ -397,7 +412,30 @@ pub fn codex_days<Tz: TimeZone>(data: &[u8], tz: &Tz) -> Days {
         let Some((day, hour)) = object["timestamp"].as_str().and_then(|t| day_and_hour(t, tz)) else { return };
         let mut event = Event { day, hour, model: model.clone(), usage: TokenUsage::default(), is_message: false };
         match payload["type"].as_str() {
-            Some("user_message") | Some("agent_message") => event.is_message = true,
+            Some(kind @ ("user_message" | "agent_message")) => {
+                event.is_message = true;
+                let role = if kind == "user_message" { "user" } else { "agent" };
+                let key = payload["message"].as_str().map(|text| format!("{role}|{text}"));
+                legacy_messages.push((event, key));
+                return;
+            }
+            Some("item_completed") => {
+                let item = &payload["item"];
+                let role = match item["type"].as_str() {
+                    Some("UserMessage") => "user",
+                    Some("AgentMessage") => "agent",
+                    _ => return,
+                };
+                if let Some(id) = item["id"].as_str() {
+                    if !item_ids.insert(id.to_string()) { return; }
+                }
+                event.is_message = true;
+                let text: String = item["content"].as_array().into_iter().flatten()
+                    .filter_map(|part| part["text"].as_str()).collect();
+                let key = (!text.is_empty()).then(|| format!("{role}|{text}"));
+                modern_messages.push((event, key));
+                return;
+            }
             Some("token_count") => {
                 let usage = &payload["info"]["total_token_usage"];
                 if !usage.is_object() {
@@ -405,10 +443,11 @@ pub fn codex_days<Tz: TimeZone>(data: &[u8], tz: &Tz) -> Days {
                 }
                 let count = |key: &str| usage[key].as_u64().unwrap_or(0);
                 let cached = count("cached_input_tokens");
+                let written = count("cache_write_input_tokens");
                 let total = TokenUsage {
-                    input: count("input_tokens").saturating_sub(cached),
+                    input: count("input_tokens").saturating_sub(cached).saturating_sub(written),
                     output: count("output_tokens"),
-                    cache_write: 0,
+                    cache_write: written,
                     cache_read: cached,
                 };
                 // A smaller total means the count started over.
@@ -422,6 +461,17 @@ pub fn codex_days<Tz: TimeZone>(data: &[u8], tz: &Tz) -> Days {
         }
         days.entry(event.day.clone()).or_default().add(&event);
     });
+    // Match old and new representations one occurrence at a time.
+    let mut modern_counts: HashMap<String, usize> = HashMap::new();
+    for (event, key) in modern_messages {
+        days.entry(event.day.clone()).or_default().add(&event);
+        if let Some(key) = key { *modern_counts.entry(key).or_default() += 1; }
+    }
+    for (event, key) in legacy_messages {
+        let duplicate = key.and_then(|key| modern_counts.get_mut(&key))
+            .is_some_and(|count| { if *count > 0 { *count -= 1; true } else { false } });
+        if !duplicate { days.entry(event.day.clone()).or_default().add(&event); }
+    }
     days
 }
 
@@ -979,4 +1029,23 @@ mod tests {
         let second = &days["2026-10-17"];
         assert_eq!((second.tokens, second.input, second.cache_read, second.output), (130, 50, 50, 30));
     }
+    #[test]
+    fn codex_completed_messages_and_cache_writes() {
+        let log = [
+            r#"{"timestamp":"2026-10-16T21:10:00Z","type":"event_msg","payload":{"type":"user_message","message":"hello"}}"#,
+            r#"{"timestamp":"2026-10-16T21:10:01Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"hello"}]}}}"#,
+            r#"{"timestamp":"2026-10-16T21:11:00Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","content":[{"type":"Text","text":"answer"}]}}}"#,
+            r#"{"timestamp":"2026-10-16T21:11:01Z","type":"event_msg","payload":{"type":"agent_message","message":"answer"}}"#,
+            r#"{"timestamp":"2026-10-16T21:12:00Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","id":"a1","content":[{"type":"Text","text":"answer"}]}}}"#,
+            r#"{"timestamp":"2026-10-16T21:13:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":30,"cache_write_input_tokens":20,"output_tokens":10}}}}"#,
+            r#"{"timestamp":"2026-10-16T21:14:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":30,"cache_write_input_tokens":20,"output_tokens":10}}}}"#,
+            r#"{"timestamp":"2026-10-16T21:15:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":50,"cache_write_input_tokens":40,"output_tokens":20}}}}"#,
+        ].join("\n");
+        let days = codex_days(log.as_bytes(), &chrono::FixedOffset::east_opt(3 * 3600).unwrap());
+        let day = &days["2026-10-17"];
+        assert_eq!((day.messages, day.hours[0]), (2, 2));
+        assert_eq!((day.tokens, day.input, day.cache_read, day.cache_write, day.output), (220, 110, 50, 40, 20));
+        assert_eq!(day.merged(day).cache_write, 40);
+    }
+
 }
