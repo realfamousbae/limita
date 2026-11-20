@@ -765,6 +765,31 @@ final class LimitaTests: XCTestCase {
         XCTAssertTrue(layout.isTrigger(CGPoint(x: 2472, y: 1079)))
     }
 
+    func testKeyboardDashboardStaysCenteredBelowTheNotchWhenResized() {
+        let layout = PanelLayout(
+            screenFrame: CGRect(x: -1512, y: 100, width: 1512, height: 982),
+            menuBarHeight: 37,
+            notchSpan: -852 ... -660
+        )
+
+        for size in [CGSize(width: 478, height: 270), CGSize(width: 956, height: 650)] {
+            let frame = layout.frame(size: size)
+            XCTAssertEqual(frame.midX, -756)
+            XCTAssertEqual(frame.maxY, 1039)
+            XCTAssertEqual(frame.size, size)
+        }
+    }
+
+    func testFloatingDashboardCentersInTheVisibleAreaOfItsMonitor() {
+        let visible = CGRect(x: -1900, y: 220, width: 1860, height: 1010)
+        let size = CGSize(width: 478, height: 650)
+        let frame = PanelLayout.centeredFloatingFrame(size: size, visibleFrame: visible)
+
+        XCTAssertEqual(frame.midX, visible.midX)
+        XCTAssertEqual(frame.midY, visible.midY)
+        XCTAssertEqual(frame.size, size)
+    }
+
     func testPinnedFrameKeepsTheTopLeftCornerOnItsScreen() {
         let laptop = CGRect(x: 0, y: 0, width: 1512, height: 944)
         let external = CGRect(x: 1512, y: 0, width: 1920, height: 1055)

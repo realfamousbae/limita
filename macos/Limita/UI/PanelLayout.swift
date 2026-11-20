@@ -2,8 +2,8 @@ import AppKit
 
 /// Pure geometry for placing the pill and the expanded panel on one screen.
 ///
-/// Everything happens along the top edge of the screen except the camera housing:
-/// another app owns the notch area, so Limita neither triggers there nor draws there.
+/// Hover and menu-bar placement keep clear of the camera housing. A dashboard opened
+/// with the keyboard can sit directly below it, centred on the screen.
 struct PanelLayout: Equatable {
     /// How far from the top edge the cursor must be to count as "at the edge".
     static let triggerHeight: CGFloat = 3
@@ -42,14 +42,14 @@ struct PanelLayout: Equatable {
         return !(excludedSpan?.contains(point.x) ?? false)
     }
 
-    /// A frame of `size` hanging below the menu bar, centred on `anchorX` as far as the
-    /// screen edges and the excluded span allow.
-    func frame(size: CGSize, anchorX: CGFloat) -> CGRect {
+    /// A frame below the menu bar. A supplied anchor avoids the notch; without an
+    /// anchor the panel is centred on the screen.
+    func frame(size: CGSize, anchorX: CGFloat? = nil) -> CGRect {
         let minX = screenFrame.minX + Self.screenInset
         let maxX = screenFrame.maxX - Self.screenInset - size.width
-        var x = clamp(anchorX - size.width / 2, minX, maxX)
+        var x = clamp((anchorX ?? screenFrame.midX) - size.width / 2, minX, maxX)
 
-        if let span = excludedSpan, x < span.upperBound, x + size.width > span.lowerBound {
+        if let anchorX, let span = excludedSpan, x < span.upperBound, x + size.width > span.lowerBound {
             let leftX = span.lowerBound - size.width
             let rightX = span.upperBound
             let leftFits = leftX >= minX
@@ -65,6 +65,12 @@ struct PanelLayout: Equatable {
 
         let y = screenFrame.maxY - menuBarHeight - Self.gapBelowMenuBar - size.height
         return CGRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    /// Centre a floating window in this screen's work area, keeping its size.
+    static func centeredFloatingFrame(size: CGSize, visibleFrame: CGRect) -> CGRect {
+        let topLeft = CGPoint(x: visibleFrame.midX - size.width / 2, y: visibleFrame.midY + size.height / 2)
+        return pinnedFrame(size: size, topLeft: topLeft, visibleFrames: [visibleFrame])
     }
 
     /// The floating dashboard: a frame of `size` with its top-left corner at `topLeft`,

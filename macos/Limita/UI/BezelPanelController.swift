@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 enum PanelState: Equatable {
@@ -25,7 +26,6 @@ final class PanelModel {
 /// - Floating (⌃⌥P): the dashboard is pinned where the user drags it, on every Space, and
 ///   stays open until the shortcut, the menu-bar icon or the toggle closes it.
 ///
-/// The notch area is left alone on purpose — see `PanelLayout`.
 @MainActor
 final class BezelPanelController {
     /// Width of one service column in the dashboard: both meters, the gap between them
@@ -65,7 +65,7 @@ final class BezelPanelController {
 
     private let store: LimitsStore
     private let model = PanelModel()
-    private let panel: NSPanel
+    private let panel: DashboardPanel
     /// Watches mouse movement; installed only while the hover pill is on.
     private var moveMonitors: [Any] = []
     /// Closes the panel on a click elsewhere; installed only while the panel is open.
@@ -78,7 +78,8 @@ final class BezelPanelController {
 
     /// Where the panel currently lives.
     private var layout: PanelLayout?
-    private var anchorX: CGFloat = 0
+    /// A nil anchor centres the ordinary dashboard on the screen.
+    private var anchorX: CGFloat?
     /// Opened from the pill: follows the cursor. Opened from the menu bar: stays until
     /// a click outside.
     private var hoverDriven = false
@@ -92,7 +93,7 @@ final class BezelPanelController {
 
     init(store: LimitsStore) {
         self.store = store
-        panel = NSPanel(
+        panel = DashboardPanel(
             contentRect: CGRect(origin: .zero, size: Self.expandedSize(services: 2)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -107,6 +108,7 @@ final class BezelPanelController {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.isMovable = false
+        panel.onCenter = { [weak self] in self?.centerFloatingPanel() }
         // Shown on demand, so it moves to whichever Space is active when ordered front,
         // including full-screen Spaces. `.canJoinAllSpaces` left it stuck on one desktop.
         panel.collectionBehavior = [.moveToActiveSpace, .ignoresCycle, .fullScreenAuxiliary]
@@ -257,10 +259,19 @@ final class BezelPanelController {
     /// The user dragged the floating dashboard: remember where it is now.
     private func panelMoved() {
         guard !isPlacing, isFloatingShown else { return }
+        rememberFloatingPosition()
+    }
+
+    private func rememberFloatingPosition() {
         let topLeft = CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
-        guard topLeft != pinnedTopLeft else { return }
         pinnedTopLeft = topLeft
-        store.floatingOrigin = topLeft
+        if store.floatingOrigin != topLeft { store.floatingOrigin = topLeft }
+    }
+
+    private func centerFloatingPanel() {
+        guard isFloatingShown, let screen = panel.screen else { return }
+        place(PanelLayout.centeredFloatingFrame(size: panel.frame.size, visibleFrame: screen.visibleFrame), display: true)
+        rememberFloatingPosition()
     }
 
     // MARK: - Floating
@@ -288,6 +299,7 @@ final class BezelPanelController {
     /// The floating dashboard can be dragged by its background and is on every Space; the
     /// ordinary one is fixed and moves to whichever Space is active when ordered front.
     private func applyFloatingBehaviour() {
+        panel.allowsKeyboardFocus = floating
         panel.isMovable = floating
         panel.isMovableByWindowBackground = floating
         panel.collectionBehavior = floating
@@ -331,16 +343,16 @@ final class BezelPanelController {
             hide()
             return
         }
-        showAtTopOfCursorScreen()
+        showAtTopOfCursorScreen(avoidsNotch: false)
     }
 
     /// Opens the dashboard centred at the top of the screen the cursor is on. Never
     /// toggles: the click that asks for it has already closed an open one.
-    func showAtTopOfCursorScreen() {
+    func showAtTopOfCursorScreen(avoidsNotch: Bool = true) {
         if floating { return showFloating() }
         guard let screen = screenContaining(NSEvent.mouseLocation) ?? NSScreen.main else { return }
         layout = PanelLayout(screen: screen)
-        anchorX = screen.frame.midX
+        anchorX = avoidsNotch ? screen.frame.midX : nil
         hoverDriven = false
         transition(to: .expanded)
     }
@@ -521,6 +533,37 @@ final class BezelPanelController {
 
     private func screenContaining(_ point: CGPoint) -> NSScreen? {
         NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) }
+    }
+}
+
+/// Opening the panel leaves the keyboard with the current app. A click on the floating
+/// dashboard makes it the target of window commands until focus moves elsewhere.
+private final class DashboardPanel: NSPanel {
+    var allowsKeyboardFocus = false
+    var onCenter: (() -> Void)?
+
+    override var canBecomeKey: Bool { allowsKeyboardFocus }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, allowsKeyboardFocus, !isKeyWindow {
+            NSApp.activate()
+            makeKey()
+        }
+        if handleCenterShortcut(event) { return }
+        super.sendEvent(event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        handleCenterShortcut(event) || super.performKeyEquivalent(with: event)
+    }
+
+    private func handleCenterShortcut(_ event: NSEvent) -> Bool {
+        guard allowsKeyboardFocus, isKeyWindow, event.type == .keyDown,
+              event.keyCode == UInt16(kVK_ANSI_C),
+              event.modifierFlags.intersection([.function, .control, .command, .option, .shift]) == [.function, .control]
+        else { return false }
+        if !event.isARepeat { onCenter?() }
+        return true
     }
 }
 
