@@ -323,6 +323,22 @@ pub enum Service {
     Claude,
     Codex,
     DeepSeek,
+    #[serde(rename = "zai-coding")]
+    ZaiCoding,
+    #[serde(rename = "zai-api")]
+    ZaiApi,
+    #[serde(rename = "qwen-coding")]
+    QwenCoding,
+    #[serde(rename = "qwen-token")]
+    QwenToken,
+    #[serde(rename = "qwen-api")]
+    QwenApi,
+    #[serde(rename = "opencode-go")]
+    OpenCodeGo,
+    #[serde(rename = "opencode-api")]
+    OpenCodeApi,
+    #[serde(rename = "openrouter")]
+    OpenRouter,
 }
 
 /// What a service reports: rate-limit windows that reset (Claude, Codex), or a prepaid
@@ -334,13 +350,25 @@ pub enum ServiceKind {
 }
 
 impl Service {
-    pub const ALL: [Service; 3] = [Service::Claude, Service::Codex, Service::DeepSeek];
+    pub const ALL: [Service; 11] = [
+        Self::Claude, Self::Codex, Self::DeepSeek,
+        Self::ZaiCoding, Self::ZaiApi, Self::QwenCoding, Self::QwenToken, Self::QwenApi, Self::OpenCodeGo, Self::OpenCodeApi, Self::OpenRouter,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::DeepSeek => "deepseek",
+            Self::ZaiCoding => "zai-coding",
+            Self::ZaiApi => "zai-api",
+            Self::QwenCoding => "qwen-coding",
+            Self::QwenToken => "qwen-token",
+            Self::QwenApi => "qwen-api",
+            Self::OpenCodeGo => "opencode-go",
+            Self::OpenCodeApi => "opencode-api",
+            Self::OpenRouter => "openrouter",
+
         }
     }
 
@@ -350,8 +378,8 @@ impl Service {
 
     pub fn kind(self) -> ServiceKind {
         match self {
-            Self::Claude | Self::Codex => ServiceKind::Limits,
-            Self::DeepSeek => ServiceKind::Balance,
+            Self::DeepSeek | Self::ZaiApi | Self::QwenApi | Self::OpenCodeApi | Self::OpenRouter => ServiceKind::Balance,
+            _ => ServiceKind::Limits,
         }
     }
 
@@ -360,6 +388,15 @@ impl Service {
             Self::Claude => "Claude",
             Self::Codex => "Codex",
             Self::DeepSeek => "DeepSeek",
+            Self::ZaiCoding => "Z.ai Coding Plan",
+            Self::ZaiApi => "Z.ai API",
+            Self::QwenCoding => "Qwen Coding Plan",
+            Self::QwenToken => "Qwen Token Plan",
+            Self::QwenApi => "Qwen API",
+            Self::OpenCodeGo => "OpenCode Go",
+            Self::OpenCodeApi => "OpenCode API",
+            Self::OpenRouter => "OpenRouter",
+
         }
     }
 
@@ -368,11 +405,15 @@ impl Service {
         match self {
             Self::Claude => "Claude Code",
             Self::Codex => "Codex",
-            Self::DeepSeek => "DeepSeek",
+            _ => self.display_name(),
         }
     }
 
     /// Codex is shown as remaining quota, Claude as used quota — by user preference.
+    pub fn uses_provider_connection(self) -> bool {
+        !matches!(self, Self::Claude | Self::Codex | Self::DeepSeek)
+    }
+
     pub fn shows_remaining(self) -> bool {
         self == Self::Codex
     }
@@ -504,6 +545,7 @@ pub struct AccountDetails {
     pub cloud_credits: Option<Allowance>,
     /// The subscription, e.g. "Ultra" or "Pro 100", shown after the service's name.
     pub plan: Option<String>,
+    pub provider: Option<crate::providers::ProviderData>,
 }
 
 impl AccountDetails {

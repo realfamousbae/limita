@@ -20,6 +20,7 @@ struct ServiceSettings: @unchecked Sendable {
     /// saw and would take the real numbers for a reset at the next launch.
     static let standardDefaults: UserDefaults = {
         let environment = ProcessInfo.processInfo.environment
+        if ProviderClient.isDemo { return UserDefaults(suiteName: "com.limita.fake.providers")! }
         let isFake = ["LIMITA_CLAUDE_API", "LIMITA_CODEX_CLI", "LIMITA_DEEPSEEK_API"].contains { environment[$0] != nil }
         return isFake ? UserDefaults(suiteName: "com.limita.fake")! : .standard
     }()

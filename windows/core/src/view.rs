@@ -145,7 +145,7 @@ pub fn panel(snapshot: &Snapshot, now: Timestamp) -> PanelView {
             .map(|id| ConnectOption {
                 id,
                 label: format!("Connect {}", id.product_name()),
-                in_settings: id.kind() == ServiceKind::Balance,
+                in_settings: id == Service::DeepSeek || id.uses_provider_connection(),
             })
             .collect()
     } else {
@@ -218,6 +218,16 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
     };
     view.updated = Some(format!("UPDATED {}", updated_text(data.captured_at, now).to_uppercase()));
     view.error = live_error;
+    if let Some(provider) = snapshot.details.get(&service).and_then(|detail| detail.provider.as_ref()) {
+        view.meters = provider.quotas.iter().map(|quota| meter(&quota.name, service, Some(quota.window), BarTone::AccentSoft, now)).collect();
+        if let Some(balance) = &data.balance {
+            let label = if service == Service::QwenApi { "ALIBABA CLOUD BALANCE" } else { "BALANCE LEFT" };
+            view.details.push(DetailRow { label: label.into(), value: balance.format_amount(balance.total) });
+        }
+        view.details.extend(provider.metrics.iter().map(|(label, value)| DetailRow { label: label.clone(), value: value.clone() }));
+        view.error = view.error.or_else(|| provider.notice.clone());
+        return view;
+    }
     if let Some(balance) = &data.balance {
         view.meters = vec![balance_meter(balance)];
         view.details = balance_rows(balance);
@@ -476,7 +486,7 @@ pub fn detail_rows(service: Service, details: &AccountDetails) -> Vec<DetailRow>
         // Claude's credits are meters; see `credit_meters`.
         Service::Claude => {}
         // A balance has its own rows; see `balance_rows`.
-        Service::DeepSeek => {}
+        _ => {}
     }
     rows
 }
@@ -560,6 +570,7 @@ pub fn provider_rows(snapshot: &Snapshot, now: Timestamp, interval: impl Fn(Serv
                     Service::Claude => "Not connected. Connecting adds Limita to Claude Code's status line.",
                     Service::Codex => "Not connected. Limits come from Codex's session logs and its app server.",
                     Service::DeepSeek => "Not connected. Needs an API key from platform.deepseek.com.",
+                    _ => "Not connected.",
                 }
                 .to_string()
             } else if let Some(error) = error {
@@ -676,7 +687,9 @@ pub fn reset_dates(snapshot: &Snapshot) -> Vec<Timestamp> {
         .flat_map(|s| {
             let windows = snapshot.states.get(s).and_then(ServiceState::snapshot).map(LimitSnapshot::reset_dates);
             let cloud = snapshot.details.get(s).and_then(|d| d.cloud_credits.as_ref()?.expires_at);
-            windows.unwrap_or_default().into_iter().chain(cloud)
+            let quotas = snapshot.details.get(s).and_then(|d| d.provider.as_ref())
+                .into_iter().flat_map(|data| data.quotas.iter().filter_map(|quota| quota.window.resets_at));
+            windows.unwrap_or_default().into_iter().chain(cloud).chain(quotas)
         })
         .collect()
 }
@@ -894,9 +907,10 @@ mod tests {
     fn nothing_connected_offers_every_service() {
         let view = panel(&Snapshot::default(), at(1.0));
         let labels: Vec<_> = view.connect.iter().map(|c| c.label.as_str()).collect();
-        assert_eq!(labels, ["Connect Claude Code", "Connect Codex", "Connect DeepSeek"]);
+        assert_eq!(labels, Service::ALL.map(|service| format!("Connect {}", service.product_name())));
         let in_settings: Vec<_> = view.connect.iter().map(|c| c.in_settings).collect();
-        assert_eq!(in_settings, [false, false, true], "DeepSeek needs its key, entered in Settings");
+        assert_eq!(&in_settings[..2], [false, false]);
+        assert!(in_settings[2..].iter().all(|&in_settings| in_settings));
         assert_eq!(tray(&Snapshot::default(), at(1.0)).level, None);
     }
 
@@ -910,7 +924,7 @@ mod tests {
         );
         snapshot.live_errors.insert(Service::DeepSeek, "Add your DeepSeek API key in Settings".into());
         let rows = provider_rows(&snapshot, now, |service| if service == Service::Codex { 600.0 } else { 300.0 });
-        assert_eq!(rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["Claude Code", "Codex", "DeepSeek"]);
+        assert_eq!(rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), Service::ALL.map(Service::product_name));
         assert_eq!(rows[0].status, "Not connected. Connecting adds Limita to Claude Code's status line.");
         assert_eq!(rows[0].interval, None, "only connected services are polled");
         assert_eq!(rows[1].status, "Connected · updated 2 minutes ago");

@@ -11,7 +11,8 @@ pub fn home() -> PathBuf {
 /// `%APPDATA%\Limita` on Windows, `~/Library/Application Support/Limita` on macOS
 /// (the same folder the macOS app uses, with the same file formats).
 pub fn app_data() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(home).join("Limita")
+    let folder = if crate::providers::is_demo() { "Limita Demo" } else { "Limita" };
+    dirs::config_dir().unwrap_or_else(home).join(folder)
 }
 
 pub fn claude_dir() -> PathBuf {

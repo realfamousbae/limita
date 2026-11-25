@@ -147,7 +147,7 @@ final class ResetWatcher {
             memory.claudeSeen = seen.union(new.map(\.id))
             // A batch of old events (e.g. the tracker backfilled) is recorded quietly.
             new.filter { $0.isShown(at: now) }.forEach { announce($0, now: now) }
-        case .deepseek:
+        default:
             return
         }
     }

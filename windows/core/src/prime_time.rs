@@ -92,7 +92,7 @@ impl Service {
             // Chosen by the user: weekdays 12:00–18:00 UTC.
             Service::Codex => Some(PrimeTime { zone: Zone::Utc, weekdays: WORKDAYS, start: 12 * 60, end: 18 * 60 }),
             // Billed per token, without limits that could run out faster.
-            Service::DeepSeek => None,
+            _ => None,
         }
     }
 

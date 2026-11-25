@@ -21,11 +21,12 @@ use crate::codex_live::CodexLiveClient;
 use crate::codex_reader::{self, CodexLimitsReader};
 use crate::deepseek_live::{self, DeepSeekClient};
 use crate::live;
-use crate::model::{AccountDetails, Balance, LimitSnapshot, LiveReading, Service, ServiceKind, ServiceState};
+use crate::model::{AccountDetails, Balance, LimitSnapshot, LiveReading, Service, ServiceState};
 use crate::resets::{self, ResetEvent, ResetFetch, ResetWatcher};
 use crate::secrets::{CredentialStore, SecretStore};
 use crate::settings::{self, ServiceSettings};
 use crate::statusline::{self, Configurator};
+use crate::providers::{self, Credentials, SpendHistory};
 use crate::time::{seconds_between, Timestamp};
 
 pub const LOCAL_INTERVAL: f64 = 60.0;
@@ -34,7 +35,7 @@ pub const LOCAL_INTERVAL: f64 = 60.0;
 pub fn default_live_interval(service: Service) -> f64 {
     match service {
         Service::Claude => 3.0 * 60.0,
-        Service::Codex | Service::DeepSeek => 5.0 * 60.0,
+        _ => 5.0 * 60.0,
     }
 }
 
@@ -137,6 +138,8 @@ struct Inner {
     /// Whether a low or exhausted DeepSeek balance is announced.
     balance_alerts: bool,
     ledger: BalanceLedger,
+    provider_generation: BTreeMap<Service, u64>,
+    spending: BTreeMap<Service, SpendHistory>,
 }
 
 #[derive(Clone)]
@@ -169,6 +172,8 @@ impl Store {
             low_balance_threshold: sources.settings.low_balance_threshold(),
             balance_alerts: sources.settings.balance_alerts(),
             ledger: BalanceLedger::open(sources.ledger_file.clone()),
+            provider_generation: BTreeMap::new(),
+            spending: BTreeMap::new(),
             ..Inner::default()
         };
         inner.public.enabled = Service::ALL.into_iter().filter(|s| enabled.contains(s)).collect();
@@ -337,7 +342,7 @@ impl Store {
     /// services are skipped. Returns the worker, which tests join.
     pub fn refresh(&self, force_live: bool) -> Option<JoinHandle<()>> {
         let now = Utc::now();
-        let (enabled, due) = {
+        let (enabled, due, generations) = {
             let mut inner = self.lock();
             if inner.public.is_refreshing {
                 // A manual refresh during a background local read must not be lost.
@@ -368,7 +373,7 @@ impl Store {
             for &service in &due {
                 inner.last_live_attempt.insert(service, now);
             }
-            (enabled, due)
+            (enabled, due, inner.provider_generation.clone())
         };
         (self.on_change)();
 
@@ -393,22 +398,26 @@ impl Store {
                 let mut alerts = Vec::new();
                 // A service disconnected while this refresh ran must stay cleared.
                 for service in Service::ALL {
-                    if !inner.public.enabled.contains(&service) {
+                    if !inner.public.enabled.contains(&service) || inner.provider_generation.get(&service) != generations.get(&service) {
                         continue;
                     }
-                    alerts.extend(apply(&mut inner, service, remotes.remove(&service)));
+                    let result = remotes.remove(&service);
+                    if let Some(Ok(reading)) = &result {
+                        store.record_spending(&mut inner, service, reading);
+                    }
+                    alerts.extend(apply(&mut inner, service, result));
                     let now = Utc::now();
                     if let Some(local) = locals.remove(&service) {
                         let stale_after = stale_after(&inner, service);
                         let merged = merge(local, inner.live_snapshots.get(&service).cloned(), stale_after, now);
                         inner.public.states.insert(service, merged);
-                    } else if service.kind() == ServiceKind::Balance {
+                    } else {
                         // Recomputed on every pass, so a balance nobody could fetch goes stale.
                         if let Some(state) = live_only_state(&inner, service, now) {
                             inner.public.states.insert(service, state);
                         }
                     }
-                    if service.kind() == ServiceKind::Limits {
+                    if matches!(service, Service::Claude | Service::Codex) {
                         let snapshot = inner.public.states.get(&service).and_then(ServiceState::snapshot).cloned();
                         observed.push((service, snapshot, inner.public.details.get(&service).cloned()));
                     }
@@ -437,7 +446,7 @@ impl Store {
                 let hooked = hook_installed(self.sources.configurator.as_ref());
                 Some(self.sources.claude_reader.read(hooked, Utc::now()))
             }
-            Service::DeepSeek => None,
+            _ => None,
         }
     }
 
@@ -446,6 +455,7 @@ impl Store {
             Service::Codex => (self.sources.codex_live)(now),
             Service::Claude => (self.sources.claude_live)(now),
             Service::DeepSeek => (self.sources.deepseek_live)(&self.deepseek_key()?, now),
+            _ => crate::providers::fetch(service, None, now),
         }
     }
 
@@ -477,6 +487,11 @@ impl Store {
         if self.is_enabled(service) {
             return;
         }
+        if service.uses_provider_connection() {
+            self.lock().public.setup_message = Some((service, "Connect this provider in Settings".into()));
+            (self.on_change)();
+            return;
+        }
         if service == Service::DeepSeek && self.deepseek_key_hint().is_none() {
             self.lock().public.setup_message = Some((service, deepseek_live::MISSING_KEY.into()));
             (self.on_change)();
@@ -493,6 +508,65 @@ impl Store {
         (self.on_change)();
         self.refresh(true);
         self.refresh_resets();
+    }
+
+    pub fn connect_provider(&self, service: Service, credentials: Credentials) -> Result<(), String> {
+        if !service.uses_provider_connection() { return Err("Unsupported provider".into()); }
+        let generation = {
+            let mut inner = self.lock();
+            let current = inner.provider_generation.entry(service).or_default();
+            *current += 1;
+            *current
+        };
+        let reading = providers::fetch(service, Some(&credentials), Utc::now())?;
+        let secret = providers::credential_store(service);
+        {
+            let mut inner = self.lock();
+            if inner.provider_generation.get(&service) != Some(&generation) { return Err("Connection changed".into()); }
+            let _secret_guard = providers::CREDENTIALS_LOCK.lock().unwrap_or_else(|guard| guard.into_inner());
+            let equivalent = secret.read()?.as_deref().and_then(|data| serde_json::from_str::<Credentials>(data).ok()) == Some(credentials.clone());
+            let json = serde_json::to_string(&credentials).map_err(|_| "Could not store provider connection")?;
+            secret.save(&json)?;
+            if !equivalent {
+                inner.spending.remove(&service);
+                let _ = std::fs::remove_file(self.spending_path(service));
+            }
+            set_enabled(&mut inner, &self.sources.settings, service, true);
+            inner.last_live_attempt.insert(service, Utc::now());
+            inner.public.setup_message = None;
+            self.record_spending(&mut inner, service, &reading);
+            apply(&mut inner, service, Some(Ok(reading)));
+            if let Some(state) = live_only_state(&inner, service, Utc::now()) {
+                inner.public.states.insert(service, state);
+            }
+        }
+        (self.on_change)();
+        Ok(())
+    }
+
+    fn spending_path(&self, service: Service) -> PathBuf {
+        self.sources.settings.file.with_file_name(format!("{}-spend.json", service.id()))
+    }
+
+    fn record_spending(&self, inner: &mut Inner, service: Service, reading: &LiveReading) {
+        if let Some(history) = reading.details.provider.as_ref().and_then(|data| data.history.as_ref()) {
+            inner.spending.insert(service, history.merge(&self.spending_path(service)));
+        }
+    }
+
+    pub fn spend_history(&self, service: Service) -> Option<SpendHistory> {
+        let inner = self.lock();
+        if !inner.public.enabled.contains(&service) { return None; }
+        if service == Service::DeepSeek {
+            let mut history = SpendHistory::new(inner.ledger.currency()?);
+            history.estimated = true;
+            for window in inner.ledger.samples().windows(2) {
+                let day = window[1].date.with_timezone(&Local).date_naive().to_string();
+                history.add(&day, "", (window[0].total - window[1].total).max(0.0));
+            }
+            return (!history.days.is_empty()).then_some(history);
+        }
+        inner.spending.get(&service).cloned().or_else(|| SpendHistory::load(&self.spending_path(service)))
     }
 
     /// Checks `api_key` with DeepSeek and, if it works, stores it in the Credential Manager
@@ -559,6 +633,18 @@ impl Store {
             }
             if service == Service::DeepSeek {
                 inner.ledger.clear();
+            }
+            if service.uses_provider_connection() {
+                *inner.provider_generation.entry(service).or_default() += 1;
+                let _secret_guard = providers::CREDENTIALS_LOCK.lock().unwrap_or_else(|guard| guard.into_inner());
+                if let Err(error) = providers::credential_store(service).delete() {
+                    inner.public.setup_message = Some((service, error));
+                }
+                inner.spending.remove(&service);
+                let _ = std::fs::remove_file(self.spending_path(service));
+                inner.last_live_attempt.remove(&service);
+                inner.rate_limit_streak.remove(&service);
+                inner.live_paused_until.remove(&service);
             }
             set_enabled(&mut inner, &self.sources.settings, service, false);
             inner.public.states.remove(&service);
@@ -667,7 +753,7 @@ fn stale_after(inner: &Inner, service: Service) -> f64 {
     match service {
         Service::Claude => claude_cache::STALE_AFTER,
         Service::Codex => codex_reader::STALE_AFTER,
-        Service::DeepSeek => (2.0 * interval(inner, service) + LOCAL_INTERVAL).max(30.0 * 60.0),
+        _ => (2.0 * interval(inner, service) + LOCAL_INTERVAL).max(30.0 * 60.0),
     }
 }
 
@@ -695,7 +781,7 @@ fn set_enabled(inner: &mut Inner, settings: &ServiceSettings, service: Service, 
 fn apply(inner: &mut Inner, service: Service, result: Option<Result<LiveReading, String>>) -> Option<(String, String)> {
     match result {
         Some(Ok(reading)) => {
-            let (reading, alert) = with_history(inner, reading);
+            let (reading, alert) = if service == Service::DeepSeek { with_history(inner, reading) } else { (reading, None) };
             inner.live_snapshots.insert(service, reading.snapshot);
             inner.public.details.insert(service, reading.details);
             inner.public.live_errors.remove(&service);

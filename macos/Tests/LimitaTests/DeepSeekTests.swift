@@ -413,7 +413,7 @@ final class DeepSeekTests: XCTestCase {
         XCTAssertNil(ResetFeed.url(for: .deepseek))
         XCTAssertNil(Service.deepseek.primeTime)
         XCTAssertEqual(Service.deepseek.kind, .balance)
-        XCTAssertEqual(Service.allCases, [.claude, .codex, .deepseek], "display order")
+        XCTAssertEqual(Array(Service.allCases.prefix(3)), [.claude, .codex, .deepseek], "existing display order")
     }
 
     func testPeakHoursNameTheServicesWhenDeepSeekIsConnected() {

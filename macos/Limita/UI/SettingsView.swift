@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import WebKit
 
 /// Every setting of the app, in four tabs. Changes apply at once; there is no Save.
 struct SettingsView: View {
@@ -80,6 +81,8 @@ private struct ProviderSettings: View {
                     ProviderHeader(store: store, service: service)
                     if service == .deepseek {
                         DeepSeekSettings(store: store)
+                    } else if service.usesProviderConnection {
+                        ExternalProviderSettings(store: store, service: service)
                     } else if let message = store.setupMessage, message.service == service {
                         HStack(alignment: .top) {
                             Text(message.text)
@@ -120,7 +123,7 @@ private struct ProviderHeader: View {
                 Spacer()
                 if store.isEnabled(service) {
                     Button("Disconnect") { store.disconnect(service) }
-                } else if service != .deepseek {
+                } else if service != .deepseek && !service.usesProviderConnection {
                     Button("Connect") { store.connect(service) }
                         .buttonStyle(.borderedProminent)
                 }
@@ -134,6 +137,7 @@ private struct ProviderHeader: View {
             case .claude: "Not connected. Connecting adds Limita to Claude Code's status line."
             case .codex: "Not connected. Limits come from Codex's session logs and its app server."
             case .deepseek: "Not connected. Needs an API key from platform.deepseek.com."
+            default: service.providerSetup
             }
         }
         if let error = store.liveErrors[service] { return error }
@@ -441,4 +445,152 @@ private struct UpdateSettings: View {
         }
         return "Not checked yet"
     }
+}
+
+
+private struct ExternalProviderSettings: View {
+    let store: LimitsStore
+    let service: Service
+    @State private var key = ""
+    @State private var workspace = ""
+    @State private var editing = false
+    @State private var saving = false
+    @State private var error: String?
+    @State private var code: String?
+    @State private var signIn: Task<Void, Never>?
+    @State private var zaiSignIn = false
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        let connected = store.isEnabled(service)
+        if service == .zaiAPI {
+            Button(connected ? "Reconnect to Z.ai" : "Sign in to Z.ai") {
+                if ProviderClient.isDemo {
+                    Task {
+                        error = await store.connectProvider(service, credentials: .init(key: "demo-session", workspace: "demo"))
+                    }
+                } else {
+                    zaiSignIn = true
+                }
+            }
+                .sheet(isPresented: $zaiSignIn) { ZaiSignInView(store: store) }
+        } else {
+            if !connected || editing {
+                if !service.providerUsesCLI { SecureField("API key", text: $key) }
+                if service == .openCodeAPI { TextField("Workspace ID", text: $workspace) }
+                if service == .qwenAPI { TextField("CLI profile (optional)", text: $workspace) }
+                Button(connected ? "Save connection" : "Connect", action: connect)
+                    .disabled(saving || (!service.providerUsesCLI && key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+            } else {
+                Button("Change connection") { editing = true }
+            }
+        }
+        if service == .openCodeAPI {
+            if let code {
+                Text("OpenCode sign-in code: \(code)").textSelection(.enabled)
+                Button("Cancel sign-in") { signIn?.cancel() }
+            } else {
+                Button("Sign in to OpenCode", action: signInToOpenCode).disabled(saving)
+            }
+        }
+        if let error { Text(error).foregroundStyle(.red) }
+        if let message = store.setupMessage, message.service == service { Text(message.text).foregroundStyle(.red) }
+        Link(service == .zaiAPI ? "Open billing" : "Provider setup", destination: service.providerLink)
+    }
+
+    private func signInToOpenCode() {
+        saving = true
+        error = nil
+        signIn = Task {
+            defer { saving = false; code = nil; signIn = nil }
+            do {
+                let device = try await ProviderClient.beginOpenCodeSignIn()
+                guard let url = device.verificationURL else { return }
+                code = device.user_code
+                openURL(url)
+                let credentials = try await ProviderClient.finishOpenCodeSignIn(device)
+                try Task.checkCancellation()
+                error = await store.connectProvider(service, credentials: credentials)
+                editing = error != nil
+            } catch is CancellationError {
+            } catch let failure {
+                error = failure.localizedDescription
+            }
+        }
+    }
+
+    private func connect() {
+        let credentials = ProviderClient.Credentials(
+            key: key.trimmingCharacters(in: .whitespacesAndNewlines),
+            workspace: workspace.trimmingCharacters(in: .whitespacesAndNewlines))
+        key = ""
+        saving = true
+        Task {
+            error = await store.connectProvider(service, credentials: credentials)
+            editing = error != nil
+            saving = false
+        }
+    }
+}
+
+
+private struct ZaiSignInView: View {
+    let store: LimitsStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var webView: WKWebView?
+    @State private var saving = false
+    @State private var message: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Sign in to Z.ai, open Billing, then connect Limita.").font(.headline)
+            if let webView { BrowserSurface(webView: webView) }
+            if let message { Text(message).foregroundStyle(.red) }
+            HStack {
+                Button("Cancel", role: .cancel) { dismiss() }.disabled(saving)
+                Spacer()
+                Button("Connect Z.ai API", action: connect).disabled(saving || webView == nil)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(14)
+        .frame(width: 750, height: 600)
+        .onAppear {
+            let config = WKWebViewConfiguration()
+            config.websiteDataStore = .nonPersistent()
+            let view = WKWebView(frame: .zero, configuration: config)
+            view.load(URLRequest(url: Service.zaiAPI.providerLink))
+            webView = view
+        }
+    }
+
+    private func connect() {
+        guard let webView, webView.url?.scheme == "https", webView.url?.host == "z.ai" else {
+            message = "Return to the Z.ai billing page after signing in."
+            return
+        }
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                guard let value = try await webView.evaluateJavaScript(ProviderClient.zaiSessionScript) as? [String: Any] else {
+                    message = "Complete sign-in in the billing page."
+                    return
+                }
+                let bytes = try JSONSerialization.data(withJSONObject: value)
+                let credentials = try JSONDecoder().decode(ProviderClient.Credentials.self, from: bytes)
+                message = await store.connectProvider(.zaiAPI, credentials: credentials)
+                if message == nil { dismiss() }
+            } catch {
+                message = "Could not read the Z.ai connection. Return to billing and try again."
+            }
+        }
+    }
+}
+
+private struct BrowserSurface: NSViewRepresentable {
+    let webView: WKWebView
+
+    func makeNSView(context: Context) -> WKWebView { webView }
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
 }

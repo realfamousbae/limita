@@ -201,7 +201,7 @@ pub fn feed_url(service: Service, env: impl Fn(&str) -> Option<String>) -> Optio
     let (key, default) = match service {
         Service::Codex => ("LIMITA_RESET_FEED_CODEX", CODEX_URL),
         Service::Claude => ("LIMITA_RESET_FEED_CLAUDE", CLAUDE_URL),
-        Service::DeepSeek => return None,
+        _ => return None,
     };
     Some(env(key).filter(|url| !url.is_empty()).unwrap_or_else(|| default.into()))
 }
@@ -255,7 +255,7 @@ pub fn parse(data: &[u8], service: Service) -> Result<Vec<ResetEvent>, String> {
     Ok(match service {
         Service::Codex => codex_forecast(data).into_iter().collect(),
         Service::Claude => claude_resets(data),
-        Service::DeepSeek => Vec::new(),
+        _ => Vec::new(),
     })
 }
 
@@ -576,7 +576,6 @@ fn ingest(state: &mut State, events: Vec<ResetEvent>, service: Service, now: Tim
             state.memory.codex_last_reset = Some(latest.date);
             vec![latest]
         }
-        Service::DeepSeek => Vec::new(),
         Service::Claude => {
             let confirmed: Vec<ResetEvent> = events.into_iter().filter(|event| !event.provisional).collect();
             let Some(seen) = state.memory.claude_seen.clone() else {
@@ -593,6 +592,7 @@ fn ingest(state: &mut State, events: Vec<ResetEvent>, service: Service, now: Tim
             // A batch of old events (e.g. the tracker backfilled) is recorded quietly.
             new.into_iter().filter(|event| event.is_shown(now)).collect()
         }
+        _ => Vec::new(),
     };
     announce.into_iter().filter(|event| !is_echo(state, event)).collect()
 }
@@ -855,7 +855,7 @@ mod tests {
                 match service {
                     Service::Codex => Err(FeedError::RateLimited(None)),
                     Service::Claude => Ok(Vec::new()),
-                    Service::DeepSeek => panic!("DeepSeek has no tracker to ask"),
+                    _ => panic!("DeepSeek has no tracker to ask"),
                 }
             }),
             Arc::new(|| {}),

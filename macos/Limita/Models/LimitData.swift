@@ -263,6 +263,14 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
     case claude
     case codex
     case deepseek
+    case zaiCoding = "zai-coding"
+    case zaiAPI = "zai-api"
+    case qwenCoding = "qwen-coding"
+    case qwenToken = "qwen-token"
+    case qwenAPI = "qwen-api"
+    case openCodeGo = "opencode-go"
+    case openCodeAPI = "opencode-api"
+    case openRouter = "openrouter"
 
     /// What a service reports: rate-limit windows that reset (Claude, Codex), or a
     /// prepaid balance spent per token (DeepSeek, connected with an API key).
@@ -275,8 +283,8 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
 
     var kind: Kind {
         switch self {
-        case .claude, .codex: .limits
-        case .deepseek: .balance
+        case .deepseek, .zaiAPI, .qwenAPI, .openCodeAPI, .openRouter: .balance
+        default: .limits
         }
     }
 
@@ -285,6 +293,14 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
         case .codex: "Codex"
         case .claude: "Claude"
         case .deepseek: "DeepSeek"
+        case .zaiCoding: "Z.ai Coding Plan"
+        case .zaiAPI: "Z.ai API"
+        case .qwenCoding: "Qwen Coding Plan"
+        case .qwenToken: "Qwen Token Plan"
+        case .qwenAPI: "Qwen API"
+        case .openCodeGo: "OpenCode Go"
+        case .openCodeAPI: "OpenCode API"
+        case .openRouter: "OpenRouter"
         }
     }
 
@@ -293,7 +309,7 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .codex: "Codex"
         case .claude: "Claude Code"
-        case .deepseek: "DeepSeek"
+        default: displayName
         }
     }
 
@@ -308,11 +324,14 @@ enum Service: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// The service's logo in the asset catalog; sources in `assets/design/`.
-    var logoName: String {
+    var usesProviderConnection: Bool { self != .claude && self != .codex && self != .deepseek }
+
+    var logoName: String? {
         switch self {
         case .codex: "CodexLogo"
         case .claude: "ClaudeLogo"
         case .deepseek: "DeepSeekLogo"
+        default: nil
         }
     }
 }
@@ -423,10 +442,11 @@ struct AccountDetails: Sendable, Equatable {
     var cloudCredits: Allowance?
     /// The subscription, e.g. "Ultra" or "Pro 100", shown after the service's name.
     var plan: String?
+    var provider: ProviderData?
 
     var isEmpty: Bool {
         limitResets == nil && codexCredits == nil && !codexCreditsUnlimited
-            && claudeUsageCredits == nil && cloudCredits == nil && plan == nil
+            && claudeUsageCredits == nil && cloudCredits == nil && plan == nil && provider == nil
     }
 }
 

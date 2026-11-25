@@ -28,3 +28,5 @@ pub mod time;
 pub mod view;
 
 pub use model::*;
+
+pub mod providers;

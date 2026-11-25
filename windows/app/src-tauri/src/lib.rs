@@ -12,7 +12,8 @@ mod updater;
 
 use std::collections::BTreeMap;
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use chrono::{Local, Utc};
@@ -94,6 +95,104 @@ fn connect_deepseek(key: String, app: AppHandle, store: State<'_, Store>) -> Res
     let result = store.connect_deepseek(&key);
     settings_window::changed(&app);
     result
+}
+
+#[tauri::command(async)]
+fn connect_provider(service: String, key: String, workspace: String, app: AppHandle, store: State<'_, Store>) -> Result<(), String> {
+    let service = Service::from_id(&service).ok_or("Unknown provider")?;
+    let result = store.connect_provider(service, limita_core::providers::Credentials {
+        key: key.trim().into(), workspace: workspace.trim().into(), ..Default::default()
+    });
+    settings_window::changed(&app);
+    result
+}
+
+#[derive(Default)]
+struct OpenCodeSignIn {
+    generation: AtomicU64,
+    challenge: Mutex<Option<(u64, limita_core::providers::OpenCodeDevice)>>,
+}
+
+#[tauri::command(async)]
+fn begin_opencode_sign_in(app: AppHandle, state: State<'_, Arc<OpenCodeSignIn>>) -> Result<String, String> {
+    let generation = state.generation.fetch_add(1, Ordering::Relaxed) + 1;
+    let challenge = limita_core::providers::begin_open_code_sign_in()?;
+    let url = challenge.verification_uri().ok_or("Invalid OpenCode sign-in URL")?;
+    let code = challenge.user_code.clone();
+    *state.challenge.lock().map_err(|_| "Could not start sign-in")? = Some((generation, challenge));
+    platform::open_url(&url);
+    settings_window::changed(&app);
+    Ok(code)
+}
+
+#[tauri::command]
+async fn finish_opencode_sign_in(app: AppHandle, store: State<'_, Store>, state: State<'_, Arc<OpenCodeSignIn>>) -> Result<(), String> {
+    let state = state.inner().clone();
+    let store = store.inner().clone();
+    let (generation, challenge) = state.challenge.lock().map_err(|_| "Could not start sign-in")?
+        .take().ok_or("Start OpenCode sign-in first")?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let cancelled = || state.generation.load(Ordering::Relaxed) != generation;
+        let credentials = limita_core::providers::finish_open_code_sign_in(challenge, cancelled)?;
+        if cancelled() { return Err("OpenCode sign-in cancelled".into()); }
+        store.connect_provider(Service::OpenCodeApi, credentials)
+    }).await.map_err(|_| "OpenCode sign-in stopped")?;
+    settings_window::changed(&app);
+    result
+}
+
+#[tauri::command(async)]
+fn cancel_opencode_sign_in(state: State<'_, Arc<OpenCodeSignIn>>) {
+    state.generation.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut challenge) = state.challenge.lock() { *challenge = None; }
+}
+
+const ZAI_LOGIN: &str = "zai-billing-sign-in";
+
+#[tauri::command]
+async fn begin_zai_sign_in(app: AppHandle) -> Result<(), String> {
+    if limita_core::providers::is_demo() { return Ok(()); }
+    if let Some(window) = app.get_webview_window(ZAI_LOGIN) {
+        window.set_focus().map_err(|_| "Could not focus the Z.ai window")?;
+        return Ok(());
+    }
+    let page = "https://z.ai/manage-apikey/billing".parse().map_err(|_| "Invalid Z.ai billing link")?;
+    tauri::WebviewWindowBuilder::new(&app, ZAI_LOGIN, tauri::WebviewUrl::External(page))
+        .title("Sign in to Z.ai").inner_size(860.0, 680.0)
+        .incognito(true)
+        .build().map_err(|_| "Could not open the Z.ai window")?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn finish_zai_sign_in(app: AppHandle, store: State<'_, Store>) -> Result<(), String> {
+    if limita_core::providers::is_demo() {
+        let store = store.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || store.connect_provider(Service::ZaiApi, limita_core::providers::Credentials {
+            key: "demo-session".into(), workspace: "demo".into(), ..Default::default()
+        })).await.map_err(|_| "Z.ai demo connection stopped")??;
+        settings_window::changed(&app);
+        return Ok(());
+    }
+    let window = app.get_webview_window(ZAI_LOGIN).ok_or("Open the Z.ai sign-in window first")?;
+    let url = window.url().map_err(|_| "Could not read the Z.ai page")?;
+    if url.scheme() != "https" || url.host_str() != Some("z.ai") {
+        return Err("Return to the Z.ai billing page after signing in.".into());
+    }
+    let (sender, receiver) = mpsc::sync_channel(1);
+    window.eval_with_callback(limita_core::providers::ZAI_SESSION_SCRIPT, move |result| {
+        let _ = sender.try_send(result);
+    }).map_err(|_| "Could not read the Z.ai connection")?;
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let value = receiver.recv_timeout(std::time::Duration::from_secs(5)).map_err(|_| "Could not read the Z.ai connection")?;
+        let credentials = serde_json::from_str::<limita_core::providers::Credentials>(&value)
+            .map_err(|_| "Complete sign-in in the Z.ai billing page.")?;
+        store.connect_provider(Service::ZaiApi, credentials)
+    }).await.map_err(|_| "Z.ai sign-in stopped")??;
+    let _ = window.close();
+    settings_window::changed(&app);
+    Ok(())
 }
 
 /// The dashboard's ⚙ and the connect prompt's DeepSeek row.
@@ -225,7 +324,7 @@ fn open_link(link: String, updater: State<'_, Updater>) {
             .view()
             .version
             .map(|version| format!("https://github.com/realfamousbae/limita/releases/tag/v{version}")),
-        _ => None,
+        _ => Service::from_id(&link).and_then(limita_core::providers::setup_link).map(str::to_owned),
     };
     if let Some(url) = url {
         platform::open_url(&url);
@@ -284,6 +383,13 @@ struct ActivityPanel {
     expanded: bool,
     period: activity::Period,
     grids: Vec<activity::ActivityGrid>,
+    spending: Vec<SpendingGrid>,
+}
+
+#[derive(Serialize)]
+struct SpendingGrid {
+    grid: activity::ActivityGrid,
+    history: Option<limita_core::providers::SpendHistory>,
 }
 
 fn activity_panel(store: &Store, reader: &ActivityReader, weeks: Option<usize>) -> ActivityPanel {
@@ -305,7 +411,17 @@ fn activity_panel(store: &Store, reader: &ActivityReader, weeks: Option<usize>) 
     } else {
         Vec::new()
     };
-    ActivityPanel { expanded, period, grids }
+    let spending = if expanded {
+        let today = Local::now().date_naive();
+        let days = Default::default();
+        store.snapshot().enabled.into_iter().map(|service| SpendingGrid {
+            grid: activity::grid_with_weeks(service, &days, period, today, weeks),
+            history: store.spend_history(service),
+        }).collect()
+    } else {
+        Vec::new()
+    };
+    ActivityPanel { expanded, period, grids, spending }
 }
 
 #[tauri::command(async)]
@@ -382,6 +498,12 @@ pub fn run() {
             connect,
             disconnect,
             connect_deepseek,
+            connect_provider,
+            begin_opencode_sign_in,
+            finish_opencode_sign_in,
+            cancel_opencode_sign_in,
+            begin_zai_sign_in,
+            finish_zai_sign_in,
             open_settings,
             settings_state,
             set_hover_pill,
@@ -438,6 +560,7 @@ pub fn run() {
                 let _ = notifier.notification().builder().title(title).body(body).show();
             }));
             app.manage(store.clone());
+            app.manage(Arc::new(OpenCodeSignIn::default()));
             app.manage(Arc::new(ActivityReader::default()));
 
             let handle = app.handle().clone();

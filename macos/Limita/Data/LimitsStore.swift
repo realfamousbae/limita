@@ -14,7 +14,7 @@ final class LimitsStore {
     static func defaultLiveInterval(for service: Service) -> TimeInterval {
         switch service {
         case .claude: 3 * 60
-        case .codex, .deepseek: 5 * 60
+        default: 5 * 60
         }
     }
 
@@ -40,7 +40,7 @@ final class LimitsStore {
         switch service {
         case .claude: ClaudeLimitsReader.staleAfter
         case .codex: CodexLimitsReader.staleAfter
-        case .deepseek: max(30 * 60, 2 * liveInterval(for: service) + Self.localInterval)
+        default: max(30 * 60, 2 * liveInterval(for: service) + Self.localInterval)
         }
     }
 
@@ -118,6 +118,9 @@ final class LimitsStore {
     }
     /// Tokens per day for the activity panel under the dashboard.
     let activity: ActivityStore
+    var spendingMode: SpendingMode = .activity
+    private(set) var spending: [Service: SpendHistory] = [:]
+    @ObservationIgnored private var providerGeneration: [Service: UUID] = [:]
     /// A newer Limita, when GitHub has one; the dashboard shows an install button for it.
     let updater: AppUpdater
     /// Limit resets from the public trackers and from the user's own numbers.
@@ -164,7 +167,7 @@ final class LimitsStore {
         activity: ActivityStore? = nil,
         updater: AppUpdater? = nil,
         resets: ResetWatcher? = nil,
-        detectInstalled: () -> Set<Service> = { ServiceSettings.detectInstalled() }
+        detectInstalled: () -> Set<Service> = { ProviderClient.isDemo ? [] : ServiceSettings.detectInstalled() }
     ) {
         self.codexReader = codexReader
         self.claudeReader = claudeReader
@@ -277,6 +280,7 @@ final class LimitsStore {
 
         let locals = services.compactMap { service in localSource(for: service).map { (service, $0) } }
         let remotes = due.map { ($0, liveSource(for: $0)) }
+        let generations = providerGeneration
 
         Task {
             var localStates: [Service: ServiceState] = [:]
@@ -298,13 +302,15 @@ final class LimitsStore {
 
             // A service disconnected while this refresh ran must stay cleared.
             for service in Service.allCases where isEnabled(service) {
-                apply(results[service].map(enriched), to: service)
+                guard generations[service] == providerGeneration[service] else { continue }
+                let fetched = results[service]
+                apply(service == .deepseek ? fetched.map(enriched) : fetched, to: service)
                 if let local = localStates[service] {
                     states[service] = Self.merge(local, live: liveSnapshots[service], staleAfter: staleAfter(for: service))
                 } else if localSource(for: service) == nil {
                     states[service] = liveOnlyState(service)
                 }
-                if service.kind == .limits {
+                if service == .claude || service == .codex {
                     resets.observe(service, snapshot: states[service]?.snapshot, details: details[service])
                 }
             }
@@ -338,7 +344,7 @@ final class LimitsStore {
                 if case .installed = try? configurator.status() { hooked = true } else { hooked = false }
                 return reader.read(isConnected: hooked)
             }
-        case .deepseek:
+        default:
             return nil
         }
     }
@@ -354,6 +360,8 @@ final class LimitsStore {
         case .deepseek:
             let client = deepseekLive
             return { try await client.fetch() }
+        default:
+            return { try await ProviderClient.fetch(service) }
         }
     }
 
@@ -386,6 +394,10 @@ final class LimitsStore {
         case .success(let reading):
             liveSnapshots[service] = reading.snapshot
             details[service] = reading.details
+            if let history = reading.details.provider?.history {
+                history.merge(into: service)
+                spending[service] = SpendHistory.load(service) ?? history
+            }
             liveErrors[service] = nil
             rateLimitStreak[service] = nil
             livePausedUntil[service] = nil
@@ -426,6 +438,10 @@ final class LimitsStore {
     /// which wraps any existing status line; its outcome is left in `setupMessage`.
     func connect(_ service: Service) {
         guard !isEnabled(service) else { return }
+        if service.usesProviderConnection {
+            onOpenSettings?(.providers)
+            return
+        }
         // DeepSeek connects with a key: `connectDeepSeek(apiKey:)`, from Settings.
         if service == .deepseek, deepseekKeyHint() == nil {
             setupMessage = (.deepseek, DeepSeekClient.MissingKey().localizedDescription)
@@ -437,6 +453,52 @@ final class LimitsStore {
         setEnabled(service, true)
         refresh(live: true)
         resets.refresh()
+    }
+
+    func connectProvider(_ service: Service, credentials: ProviderClient.Credentials) async -> String? {
+        guard service.usesProviderConnection else { return "Unsupported provider" }
+        let generation = UUID()
+        providerGeneration[service] = generation
+        let result = await Self.fetch { try await ProviderClient.fetch(service, supplied: credentials) }
+        guard providerGeneration[service] == generation else { return "Connection changed" }
+        switch result {
+        case .success:
+            do {
+                let replaced = try ProviderClient.credentialsLock.withLock {
+                    let previous = try? ProviderClient.credentials(service)
+                    let data = try JSONEncoder().encode(credentials)
+                    try ProviderClient.keychain(service).save(String(decoding: data, as: UTF8.self))
+                    return previous != credentials
+                }
+                if replaced {
+                    try? FileManager.default.removeItem(at: SpendHistory.file(for: service))
+                    spending[service] = nil
+                }
+            } catch { return error.localizedDescription }
+            if !isEnabled(service) { setEnabled(service, true) }
+            lastLiveAttempt[service] = Date()
+            apply(result, to: service)
+            states[service] = liveOnlyState(service)
+            writeTerminalSnapshot()
+            return nil
+        case .failure(let error):
+            return error.localizedDescription
+        }
+    }
+
+    func spendHistory(_ service: Service) -> SpendHistory? {
+        if service == .deepseek {
+            guard states[.deepseek]?.snapshot?.balance != nil, let currency = ledger.stored.currency, ledger.samples.count > 1 else { return nil }
+            let formatter = DayKeys.formatter()
+            var days: [DayKey: [String: Double]] = [:]
+            for (previous, reading) in zip(ledger.samples, ledger.samples.dropFirst()) {
+                let day = formatter.string(from: reading.date)
+                days[day, default: [:]]["", default: 0] += max(0, previous.total - reading.total)
+            }
+            return SpendHistory(currency: currency, days: days, estimated: true)
+        }
+        guard isEnabled(service) else { return nil }
+        return spending[service] ?? SpendHistory.load(service)
     }
 
     /// Checks `apiKey` against DeepSeek and, if it works, stores it in the Keychain and
@@ -497,6 +559,16 @@ final class LimitsStore {
                 setupMessage = (.deepseek, error.localizedDescription)
             }
             ledger.clear()
+        }
+        if service.usesProviderConnection {
+            providerGeneration[service] = UUID()
+            do { try ProviderClient.credentialsLock.withLock { try ProviderClient.keychain(service).delete() } }
+            catch { setupMessage = (service, error.localizedDescription) }
+            try? FileManager.default.removeItem(at: SpendHistory.file(for: service))
+            spending[service] = nil
+            lastLiveAttempt[service] = nil
+            rateLimitStreak[service] = nil
+            livePausedUntil[service] = nil
         }
         setEnabled(service, false)
         states[service] = nil

@@ -28,22 +28,20 @@ struct ExpandedView: View {
                 if store.enabledServices.isEmpty {
                     ConnectPrompt(store: store)
                 } else {
-                    HStack(spacing: 0) {
-                        ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
-                            if index > 0 {
-                                divider.frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 14)
-                            }
-                            serviceDashboard(service, state: store.state(for: service), now: context.date)
+                    if store.enabledServices.count > 3 {
+                        ScrollView(.horizontal) {
+                            dashboardColumns(now: context.date, showActivityButton: false)
+                                .frame(width: BezelPanelController.columnWidth * CGFloat(store.enabledServices.count))
                         }
-                    }
-                    // Columns and the divider take the height of the tallest column.
-                    .fixedSize(horizontal: false, vertical: true)
-
-                    ActivityToggle(store: store)
-                    // The window grows to fit, so the panel drops down below the toggle,
-                    // which stays where it is.
-                    if store.activity.isExpanded {
-                        ActivitySection(store: store)
+                        .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Spacer()
+                            ActivityToggle(store: store).button(expanded: store.activity.isExpanded)
+                        }
+                        .padding(.horizontal, Self.columnPadding)
+                        .padding(.vertical, 8)
+                    } else {
+                        dashboardColumns(now: context.date)
                     }
                 }
             }
@@ -60,11 +58,28 @@ struct ExpandedView: View {
         }
     }
 
+    private func dashboardColumns(now: Date, showActivityButton: Bool = true) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
+                    if index > 0 {
+                        divider.frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 14)
+                    }
+                    serviceDashboard(service, state: store.state(for: service), now: now)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            ActivityToggle(store: store, showButton: showActivityButton)
+            if store.activity.isExpanded { ActivitySection(store: store) }
+        }
+    }
+
     private var resetDates: [Date] {
         store.enabledServices.flatMap { service -> [Date] in
             guard let snapshot = store.state(for: service).snapshot else { return [] }
             let cloud = store.details[service]?.cloudCredits?.expiresAt
             return snapshot.resetDates + [cloud].compactMap { $0 }
+                + (store.details[service]?.provider?.quotas.compactMap { $0.window.resetsAt } ?? [])
         }
     }
 
@@ -297,6 +312,18 @@ struct ExpandedView: View {
 
             if let message = store.setupMessage, message.service == service {
                 SetupMessage(text: message.text) { store.setupMessage = nil }
+            } else if let snapshot = state.snapshot, let provider = store.details[service]?.provider {
+                if let balance = snapshot.balance {
+                    detailTiles([DetailRow(label: service == .qwenAPI ? "ALIBABA CLOUD BALANCE" : "BALANCE LEFT",
+                                           value: SpendHistory.amount(balance.total, currency: balance.currency))])
+                }
+                ForEach(Array(provider.quotas.enumerated()), id: \.offset) { _, quota in
+                    metric(quota.name, service: service, window: quota.window, color: DashboardStyle.accent(for: service),
+                           stale: state.isStale, now: now)
+                }
+                detailTiles(provider.metrics.sorted(by: { $0.key < $1.key }).map { DetailRow(label: $0.key, value: $0.value) })
+                if let notice = provider.notice { Text(notice).caption().fixedSize(horizontal: false, vertical: true) }
+                if let error = store.liveErrors[service] { ErrorLine(text: error) }
             } else if let snapshot = state.snapshot, let balance = snapshot.balance {
                 creditMeter(Self.balanceMeter(balance), service: service, stale: state.isStale)
 
@@ -601,7 +628,7 @@ struct ExpandedView: View {
         case .claude:
             // Claude's credits are meters; see `creditMeters`.
             break
-        case .deepseek:
+        default:
             // A balance has its own rows; see `balanceRows`.
             break
         }
@@ -963,6 +990,19 @@ struct LevelDot: View {
     }
 }
 
+struct ProviderLogo: View {
+    let service: Service
+
+    var body: some View {
+        if let logo = service.logoName {
+            Image(logo).resizable().interpolation(.high).scaledToFit()
+        } else {
+            Image(systemName: service.kind == .balance ? "creditcard" : "gauge.with.dots.needle.33percent")
+                .resizable().scaledToFit()
+        }
+    }
+}
+
 struct ServiceBadge: View {
     let service: Service
     var size: CGFloat = 30
@@ -971,10 +1011,7 @@ struct ServiceBadge: View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(DashboardStyle.accent(for: service).opacity(0.14))
-            Image(service.logoName)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
+            ProviderLogo(service: service)
                 .frame(width: size * 0.5, height: size * 0.5)
         }
         .frame(width: size, height: size)
@@ -1195,10 +1232,10 @@ private struct ConnectPrompt: View {
             Text("Connect a service to see its limits.")
                 .font(.app(DashboardStyle.valueSize))
                 .foregroundStyle(.white.opacity(0.8))
-            ForEach(Service.allCases) { service in
+            ForEach([Service.claude, .codex, .deepseek]) { service in
                 Button {
                     // A key is needed first, and it is entered in Settings.
-                    if service == .deepseek {
+                    if service == .deepseek || service.usesProviderConnection {
                         store.onOpenSettings?(.providers)
                     } else {
                         store.connect(service)
@@ -1223,6 +1260,9 @@ private struct ConnectPrompt: View {
                 }
                 .buttonStyle(.plain)
             }
+            Button("More providers") { store.onOpenSettings?(.providers) }
+                .buttonStyle(.plain)
+                .foregroundStyle(DashboardStyle.caption)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
@@ -1352,7 +1392,7 @@ enum DashboardStyle {
         case .codex: Color(red: 0.31, green: 0.67, blue: 1)
         case .claude: Color(red: 1, green: 0.58, blue: 0.30)
         // DeepSeek's blue, lifted a little to read on black.
-        case .deepseek: Color(red: 0.42, green: 0.53, blue: 1)
+        default: Color(red: 0.42, green: 0.53, blue: 1)
         }
     }
 
@@ -1370,7 +1410,7 @@ enum DashboardStyle {
         switch service {
         case .codex: Color(red: 0.62, green: 0.82, blue: 1)
         case .claude: Color(red: 1, green: 0.78, blue: 0.58)
-        case .deepseek: Color(red: 0.68, green: 0.74, blue: 1)
+        default: Color(red: 0.68, green: 0.74, blue: 1)
         }
     }
 

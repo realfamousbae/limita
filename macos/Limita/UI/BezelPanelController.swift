@@ -42,7 +42,7 @@ final class BezelPanelController {
         switch services {
         case 0: CGSize(width: 184, height: 34)
         case 1: CGSize(width: 150, height: 34)
-        default: CGSize(width: 138 * CGFloat(services) - 6, height: 34)
+        default: CGSize(width: 138 * CGFloat(min(services, 5)) - 6 + (services > 5 ? 33 : 0), height: 34)
         }
     }
 
@@ -50,7 +50,7 @@ final class BezelPanelController {
     /// room than the columns.
     static func expandedSize(services: Int, primeTime: PrimeTimeNotice? = nil, updateButton: Bool = false) -> CGSize {
         guard services > 0 else { return CGSize(width: 300, height: 210) }
-        var width = columnWidth * CGFloat(services)
+        var width = columnWidth * CGFloat(min(services, 3))
         if primeTime != nil || updateButton {
             width = max(width, ExpandedView.headerWidth(primeTime: primeTime, updateButton: updateButton).rounded(.up))
         }

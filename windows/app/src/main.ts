@@ -4,7 +4,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { icons } from "./icons";
-import type { ActivityDay, ActivityGrid, ActivityPanel, Meter, Mode, PanelView, Period, PrimeTimeNotice, ServiceView } from "./view";
+import { providerUsesSettings, reportsSpending } from "./view";
+import type { SpendingGrid, ActivityDay, ActivityGrid, ActivityPanel, Meter, Mode, PanelView, Period, PrimeTimeNotice, ServiceView } from "./view";
 
 let mode: Mode = "hidden";
 let view: PanelView | null = null;
@@ -19,7 +20,10 @@ let version = "";
 const ANNOUNCE_MS = 8000;
 let announced: { version: string; at: number } | null = null;
 let reported = "";
-let activity: ActivityPanel = { expanded: false, period: "all", grids: [] };
+let activity: ActivityPanel = { expanded: false, period: "all", grids: [], spending: [] };
+type ChartMode = "activity" | "models" | "money";
+let chartMode: ChartMode = "activity";
+let scrollLeft = 0;
 let shownWeeks = 0;
 let requestedWeeks = 0;
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -51,6 +55,7 @@ function dot(level: string | null, stale: boolean): HTMLElement {
 
 /** The service's logo; sources in assets/design/, copies via scripts/sync-assets.sh. */
 function logo(service: ServiceView["id"]): HTMLElement {
+  if (providerUsesSettings(service)) return el("span", "provider-glyph", reportsSpending(service) ? "$" : "◷");
   const img = document.createElement("img");
   img.className = "logo";
   img.src = `/logos/${service}.png`;
@@ -71,12 +76,13 @@ function pill(current: PanelView): HTMLElement {
     node.append(icon("plus", "muted"), el("span", "", "Connect a service"));
     return node;
   }
-  current.pill.forEach((item, index) => {
+  current.pill.slice(0, 5).forEach((item, index) => {
     if (index > 0) node.append(el("span", "pill-divider"));
     node.append(
       el("span", "pill-item", el("span", "pill-icon", logo(item.id)), dot(item.level, item.stale), el("span", "digits", item.label)),
     );
   });
+  if (current.pill.length > 5) node.append(el("span", "", `+${current.pill.length - 5}`));
   return node;
 }
 
@@ -160,20 +166,35 @@ function dashboard(current: PanelView): HTMLElement {
           column(service),
         ]));
 
-  const dashboard = el("div", "dashboard", header, el("div", "divider horizontal"), body);
+  const wide = current.services.length > 3 || (current.services.length > 1 && screen.availWidth < 850);
+  const dashboard = el("div", wide ? "dashboard wide" : "dashboard", header, el("div", "divider horizontal"));
+  const cards = el("div", wide ? "provider-scroll" : "", body);
+  dashboard.append(cards);
   if (current.services.length > 0) {
-    // The window grows to fit, so the panel drops down below the columns.
+    const supportsSpending = current.services.some(({ id }) => reportsSpending(id));
+    if (!supportsSpending) chartMode = "activity";
     if (activity.expanded && activity.grids.length > 0) {
-      dashboard.append(
-        el("div", "divider horizontal"),
-        el("div", "activity-header", el("div", "caption", "ACTIVITY"), periodSwitch()),
-        el("div", "columns", ...activity.grids.flatMap((grid, index) => [
-          index > 0 ? el("div", "divider vertical") : null,
-          activityColumn(grid),
-        ])),
-      );
+      const charts = chartMode === "activity"
+        ? activity.grids.map(activityColumn)
+        : activity.spending.map((entry) => spendingColumn(entry, chartMode));
+      const graphRow = el("div", "columns", ...charts.flatMap((chart, index) =>
+        [index > 0 ? el("div", "divider vertical") : null, chart]));
+      dashboard.append(el("div", "divider horizontal"),
+        el("div", "activity-header", periodSwitch(), supportsSpending && chartModeSwitch()),
+        el("div", wide ? "provider-scroll" : "", graphRow));
     }
     dashboard.append(activityToggle());
+  }
+  if (wide) {
+    dashboard.style.maxWidth = `min(${Math.max(310, screen.availWidth - 24)}px, calc(3 * (2 * var(--meter) + 46px) + 4px))`;
+    const scrolls = Array.from(dashboard.querySelectorAll<HTMLElement>(".provider-scroll"));
+    for (const scroll of scrolls) {
+      scroll.addEventListener("scroll", () => {
+        if (scroll.scrollLeft === scrollLeft) return;
+        scrollLeft = scroll.scrollLeft;
+        for (const other of scrolls) if (other !== scroll) other.scrollLeft = scrollLeft;
+      });
+    }
   }
   return dashboard;
 }
@@ -208,6 +229,115 @@ function periodSwitch(): HTMLElement {
   }));
 }
 
+function chartModeSwitch(): HTMLElement {
+  const modes: ChartMode[] = ["activity", "models", "money"];
+  const controls = el("div", "period-switch");
+  controls.setAttribute("aria-label", "Graph");
+  for (const id of modes) {
+    const button = el("button", id === chartMode ? "selected" : "", id.toUpperCase());
+    button.setAttribute("aria-pressed", String(id === chartMode));
+    button.addEventListener("click", () => {
+      if (chartMode === id) return;
+      chartMode = id;
+      shownWeeks = 0;
+      render();
+      app.querySelector<HTMLElement>('.period-switch[aria-label="Graph"] .selected')?.focus();
+    });
+    controls.append(button);
+  }
+  return controls;
+}
+
+function spendingColumn(entry: SpendingGrid, mode: ChartMode): HTMLElement {
+  const { grid, history } = entry;
+  const node = el("section", `column activity spending ${grid.id}`);
+  if (!history || (mode === "models" && !Object.values(history.days).some((models) => Object.keys(models).some(Boolean)))) {
+    node.append(el("p", "activity-message", reportsSpending(grid.id)
+      ? mode === "models" ? "Model spending unavailable" : "No spending history yet"
+      : "Spending is available on API connections"));
+    return node;
+  }
+  const { days } = history;
+  const money = new Intl.NumberFormat(undefined, { style: "currency", currency: history.currency, maximumFractionDigits: 6 });
+  const total = (day: Record<string, number> = {}) => Object.values(day).reduce((sum, amount) => sum + amount, 0);
+  const positive = (day: Record<string, number> = {}) => Math.max(0, total(day));
+  const peak = Math.max(0.000001, ...grid.cells.flatMap((row) => row.map((day) => {
+    const amounts = day ? days[day.key] : undefined;
+    return mode === "models" && grid.layout === "row"
+      ? Object.values(amounts ?? {}).reduce((sum, amount) => sum + Math.max(0, amount), 0)
+      : positive(amounts);
+  })));
+  const details = el("div", "caption spend-detail");
+  const palette = ["#64adf5", "#f69b5a", "#72d4b4", "#ac8cea", "#e787ae", "#efcf67", "#68cadc"];
+  const models = [...new Set(Object.keys(days).sort().flatMap((day) => Object.keys(days[day]).filter(Boolean).sort()))];
+  const modelColors = new Map(models.map((model, index) => [model, palette[index % palette.length]]));
+  const dayButton = (day: ActivityDay, className: string) => {
+    const amounts = days[day.key];
+    const values = amounts === undefined ? ["No data"] : [money.format(total(amounts))];
+    if (mode === "models" && amounts) {
+      for (const [name, cost] of Object.entries(amounts).sort((a, b) => b[1] - a[1])) {
+        if (name) values.push(`${name} ${money.format(cost)}`);
+      }
+    }
+    const caption = [day.label, ...values].join(" · ");
+    const button = el("button", className);
+    button.setAttribute("aria-label", caption);
+    const show = () => { details.textContent = caption; };
+    const hide = () => { if (document.activeElement !== button) details.textContent = ""; };
+    button.addEventListener("pointerenter", show);
+    button.addEventListener("pointerleave", hide);
+    button.addEventListener("focus", show);
+    button.addEventListener("blur", hide);
+    return button;
+  };
+  if (history.estimated) node.append(el("div", "caption", "Estimated from balance changes"));
+  if (grid.layout === "row") {
+    const graph = el("div", "spend-bars");
+    for (const [index, day] of (grid.cells[0] ?? []).entries()) {
+      if (!day) continue;
+      const amounts = days[day.key];
+      const button = dayButton(day, "spend-bar");
+      const track = el("span", "spend-stack");
+      if (amounts) {
+        const groups = mode === "models" ? Object.entries(amounts).filter(([name]) => name).sort(([a], [b]) => a.localeCompare(b)) : [];
+        const parts: [string, number][] = groups.length ? groups : [["", positive(amounts)]];
+        for (const [name, cost] of parts) {
+          if (cost <= 0 && parts.length > 1) continue;
+          const segment = el("span", "spend-segment");
+          segment.style.height = `${Math.max(1, 96 * Math.max(0, cost) / peak)}px`;
+          segment.style.background = modelColors.get(name) ?? palette[0];
+          track.append(segment);
+        }
+      }
+      button.append(track);
+      const label = index % 3 === 0
+        ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day.key))
+        : " ";
+      graph.append(el("div", "spend-day", button, el("span", "caption", label)));
+    }
+    node.append(graph);
+  } else {
+    const labelled = grid.layout === "weeks";
+    const graph = el("div", `activity-graph spend-grid ${grid.layout}`);
+    graph.style.gridTemplateColumns = `${labelled ? "26px " : ""}repeat(${grid.columnLabels.length}, 19px)`;
+    if (labelled) graph.append(el("span"));
+    for (const label of grid.columnLabels) graph.append(el("span", "column-label", label ?? ""));
+    for (const [row, cells] of grid.cells.entries()) {
+      if (labelled) graph.append(el("span", "row-label", grid.rowLabels[row] ?? ""));
+      for (const day of cells) {
+        if (!day) { graph.append(el("span", "spend-square future")); continue; }
+        const cell = dayButton(day, "spend-square");
+        const amounts = days[day.key];
+        if (amounts) cell.style.background = `rgb(100 173 245 / ${0.18 + 0.82 * Math.sqrt(positive(amounts) / peak)})`;
+        graph.append(cell);
+      }
+    }
+    node.append(graph);
+  }
+  node.append(details);
+  return node;
+}
+
 /** A small capsule at the bottom right, in line with the columns' right edge, that opens
  * and closes the panel. */
 function activityToggle(): HTMLElement {
@@ -216,7 +346,7 @@ function activityToggle(): HTMLElement {
   button.addEventListener("click", async () => {
     const expanded = !activity.expanded;
     if (!expanded) {
-      activity = { ...activity, expanded, grids: [] };
+      activity = { ...activity, expanded, grids: [], spending: [] };
       render();
     }
     shownWeeks = 0;
@@ -336,11 +466,13 @@ function primeTimeBadge(notice: PrimeTimeNotice): HTMLElement {
 }
 
 function connectPrompt(current: PanelView): HTMLElement {
+  const more = el("button", "caption", "More providers");
+  more.addEventListener("click", () => invoke("open_settings", { tab: "providers" }));
   return el(
     "div",
     "connect",
     el("p", "value muted", "Connect a service to see its limits."),
-    ...current.connect.map((option) => {
+    ...current.connect.slice(0, 3).map((option) => {
       const button = el("button", "connect-button", badge(option.id, "small"), el("span", "", option.label), el("span", "spacer"), icon("plus", "muted"));
       // A key is needed first, and it is entered in Settings.
       button.addEventListener("click", () =>
@@ -348,6 +480,7 @@ function connectPrompt(current: PanelView): HTMLElement {
       );
       return button;
     }),
+    more,
   );
 }
 
@@ -370,12 +503,13 @@ function column(service: ServiceView): HTMLElement {
     node.append(el("div", "setup", el("p", "value", service.setupMessage), ok));
     return node;
   }
-  if (service.meters.length === 0) {
+  if (!service.updated && service.meters.length === 0) {
     node.append(el("p", "value muted", service.message ?? "No data"));
     return node;
   }
   // One row per meter: the limits, then the credits.
-  node.append(el("div", "meters", ...[...service.meters, ...service.credits].map((m) => meter(m, service.stale))));
+  const meters = [...service.meters, ...service.credits];
+  if (meters.length) node.append(el("div", "meters", ...meters.map((m) => meter(m, service.stale))));
   // Tiles two to a row, on the meters' grid.
   if (service.details.length > 0) {
     node.append(
@@ -436,6 +570,7 @@ function render(modeChanged = false) {
   if (mode === "dashboard") {
     hideCoveredBadge();
     restoreActivity();
+    for (const row of app.querySelectorAll<HTMLElement>(".provider-scroll")) row.scrollLeft = scrollLeft;
     scheduleActivityWidth();
   }
   // Measured right away: a hidden window gets no animation frames, and it stays hidden
@@ -499,9 +634,20 @@ async function start() {
   render(true);
   loadActivity();
 
-  await listen<PanelView>("view", (event) => {
+  await listen<PanelView>("view", async (event) => {
     view = event.payload;
     render();
+    if (mode === "dashboard" && activity.expanded && chartMode !== "activity") {
+      const period = activity.period;
+      const weeks = shownWeeks;
+      const recent = weeks > 0
+        ? await invoke<ActivityPanel>("activity_for_weeks", { weeks })
+        : await invoke<ActivityPanel>("activity");
+      if (mode === "dashboard" && activity.expanded && activity.period === period) {
+        activity = recent;
+        render();
+      }
+    }
   });
   await listen<{ enabled: boolean }>("hover-pill", (event) => {
     hoverPill = event.payload.enabled;

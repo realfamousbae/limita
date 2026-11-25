@@ -76,6 +76,10 @@ impl BalanceLedger {
         Self { file, stored }
     }
 
+    pub fn currency(&self) -> Option<&str> {
+        self.stored.currency.as_deref()
+    }
+
     pub fn samples(&self) -> &[Sample] {
         &self.stored.samples
     }

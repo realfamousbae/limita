@@ -245,7 +245,7 @@ impl ActivityReader {
                 Service::Claude => scan_claude(&mut cache, &self.claude_projects, tz),
                 Service::Codex => scan_codex(&mut cache, &self.codex_dirs, tz),
                 // No local logs: DeepSeek is called by whatever tool holds the key.
-                Service::DeepSeek => continue,
+                _ => continue,
             };
             let saved = history.entry(service.id().to_string()).or_default();
             if service == Service::Codex {

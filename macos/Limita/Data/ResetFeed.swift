@@ -22,7 +22,7 @@ enum ResetFeed {
         switch service {
         case .codex: environment["LIMITA_RESET_FEED_CODEX"].flatMap(URL.init(string:)) ?? codexURL
         case .claude: environment["LIMITA_RESET_FEED_CLAUDE"].flatMap(URL.init(string:)) ?? claudeURL
-        case .deepseek: nil
+        default: nil
         }
     }
 
@@ -70,7 +70,7 @@ enum ResetFeed {
         switch service {
         case .codex: return codexForecast(from: data).map { [$0] } ?? []
         case .claude: return claudeResets(from: data)
-        case .deepseek: return []
+        default: return []
         }
     }
 

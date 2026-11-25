@@ -375,3 +375,7 @@ select option {
     transform: rotate(360deg);
   }
 }
+
+.external-provider { padding: 4px 12px 10px; }
+.external-provider-form:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.external-provider input { min-width: 105px; flex: 1; }

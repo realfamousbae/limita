@@ -157,7 +157,7 @@ final class ActivityReader: @unchecked Sendable {
             case .claude: scanned = scanClaude(clock)
             case .codex: scanned = scanCodex(clock)
             // No local logs: DeepSeek is called by whatever tool holds the key.
-            case .deepseek: continue
+            default: continue
             }
             history[service.rawValue] = Self.merge(history[service.rawValue] ?? [:], scanned, codex: service == .codex)
         }

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Fake Claude usage API, Codex app server and DeepSeek balance API, for trying plans you do not have.
+"""Fake provider usage and billing APIs and Codex app server.
 
 All responses are made up. To run Limita against them:
 
     scripts/fake-api.py serve &
     CFFIXED_USER_HOME=$(mktemp -d) LIMITA_CLAUDE_API=http://127.0.0.1:8377/ultra \
     LIMITA_CODEX_CLI=$PWD/scripts/fake-api.py LIMITA_FAKE_CODEX=pro \
-    LIMITA_DEEPSEEK_API=http://127.0.0.1:8377/ds-normal \
+    LIMITA_DEEPSEEK_API=http://127.0.0.1:8377/ds-normal LIMITA_FAKE_PROVIDERS=1 \
     path/to/Limita.app/Contents/MacOS/Limita
 
 With either variable set the app keeps its settings in `com.limita.fake`; run `defaults
@@ -16,11 +16,19 @@ the keys of CLAUDE and CODEX below list them, and DEEPSEEK the DeepSeek balances
 balance request spends a little, so the dashboard has spending to show; a DeepSeek
 key of "bad" is rejected with a 401. The app calls this script as `codex app-server`,
 so it answers on stdio too.
+
+Set LIMITA_FAKE_PROVIDERS=1 for the new cards. Use demo-management or demo for
+OpenRouter, demo for Z.ai Coding Plan and OpenCode, and org_demo as the OpenCode
+workspace. demo-partial omits OpenCode billing, demo-bad returns 401 and
+demo-limited returns 429. The Qwen cards read the corresponding CLI-shaped fixture.
+
 """
 import json
 import os
 import sys
 import time
+from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = 8377
@@ -105,8 +113,87 @@ def deepseek_balance(plan):
     return {"is_available": config["available"], "balance_infos": infos}
 
 
+def demo_usage():
+    today = datetime.now(timezone.utc).date()
+    models = ("glm-5", "qwen3.6-plus", "deepseek-v4")
+    return [
+        (today - timedelta(days=age), model, round((index + 1) * 0.019 * ((age + index) % 5), 4))
+        for age in range(1, 61)
+        for index, model in enumerate(models)
+        if (age + index) % 5
+    ]
+
+
+def provider_response(path, query, auth):
+    if auth.endswith("demo-bad"):
+        return 401, {"error": "bad demo credentials"}
+    if auth.endswith("demo-limited"):
+        return 429, {"error": "demo rate limit"}
+    if path == "/providers/zai/api/monitor/usage/quota/limit":
+        return 200, {"code": 200, "data": {"limits": [
+            {"type": "TOKENS_LIMIT", "number": 5, "percentage": 29, "nextResetTime": int(time.time() + HOUR) * 1000},
+            {"type": "TOKENS_LIMIT", "number": 7, "percentage": 41, "nextResetTime": int(time.time() + 60 * HOUR) * 1000},
+            {"type": "TIME_LIMIT", "percentage": 13},
+        ]}}
+    if path == "/providers/zai/api/platform-charge-zai/business/accountBalance":
+        return 200, {"code": 200, "data": {"totalBalance": "38.45"}}
+    if path == "/providers/zai/api/platform-charge-zai/bill/day":
+        period = query.get("billingPeriod", [""])[0]
+        rows = [{"billingDate": day.isoformat(), "modelCode": model, "settlementAmount": str(cost)}
+                for day, model, cost in demo_usage() if day.strftime("%Y-%m") == period]
+        page = int(query.get("pageNum", ["1"])[0])
+        size = int(query.get("pageSize", ["100"])[0])
+        return 200, {"code": 200, "data": {"records": rows[(page - 1) * size:page * size], "total": len(rows)}}
+    if path == "/providers/opencode/inference/go/v1/usage":
+        return 200, {"usage": {name: {"status": "ok", "percent": value, "resetsAt": iso(reset)}
+                                  for name, value, reset in [("rolling", 38, HOUR), ("weekly", 27, 48 * HOUR), ("monthly", 53, 400 * HOUR)]}}
+    if path == "/providers/opencode/console/api/billing/status":
+        return (403, {"error": "demo partial access"}) if auth.endswith("demo-partial") else (200, {"availableMicroCents": 1_737_000_000})
+    if path == "/providers/opencode/console/api/v2/usage/export":
+        return 200, "day,user,provider,model,cost_micro_cents\r\n" + "".join(
+            f'{day},"Demo, User",opencode,{model},{round(cost * 100_000_000)}\r\n' for day, model, cost in demo_usage())
+    if path == "/providers/opencode/console/auth/device/code":
+        return 200, {"device_code": "demo-device", "user_code": "DEMO-1234", "verification_uri_complete": "/demo-opencode", "expires_in": 120, "interval": 1}
+    if path == "/providers/opencode/console/auth/device/token":
+        return 200, {"access_token": "demo-session", "refresh_token": "demo-refresh", "expires_in": 3600, "org_id": "org_demo"}
+    if path == "/providers/openrouter/api/v1/key":
+        return 200, {"data": {"is_management_key": auth.endswith("demo-management"), "usage_daily": 0.53,
+                              "usage_weekly": 4.13, "usage_monthly": 15.73, "limit_remaining": 84.27}}
+    if path == "/providers/openrouter/api/v1/credits":
+        return (200, {"data": {"total_credits": 100, "total_usage": 15.73}}) if auth.endswith("demo-management") else (403, {})
+    if path == "/providers/openrouter/api/v1/activity":
+        if not auth.endswith("demo-management"):
+            return 403, {}
+        return 200, {"data": [{"date": (day.isoformat() + "T00:00:00Z"), "model": model, "usage": cost, "byok_usage_inference": 0.75}
+                              for day, model, cost in demo_usage()[:80]]}
+    if path == "/providers/qwen/coding-plan":
+        return 200, {"per5Hour": {"percentage": .21}, "perWeek": {"percentage": .32}, "perBillMonth": {"percentage": .64}}
+    if path == "/providers/qwen/token-plan":
+        return 200, {"hasQuotaData": True, "per1MonthPercentage": .57}
+    if path == "/providers/qwen/get-caller-identity":
+        return 200, {"AccountId": "demo-account"}
+    if path == "/providers/qwen/query-account-balance":
+        return 200, {"Data": {"AvailableAmount": "31.90", "Currency": "USD"}}
+    if path == "/providers/qwen/get-billing-trend":
+        days = {}
+        for day, model, cost in demo_usage():
+            days.setdefault(day, []).append({"key": model, "amount": str(cost)})
+        return 200, {"data": {"costTotals": {"currency": "USD"}, "resultByTime": [
+            {"period": day.strftime("%Y%m%d"), "periodDetails": rows,
+             "total": {"currency": "USD", "amount": str(sum(float(row["amount"]) for row in rows))}}
+            for day, rows in days.items()
+        ]}}
+    return 404, {"error": "unknown fixture"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith("/providers/"):
+            self.provider_request()
+            return
+        if self.path == "/demo-opencode":
+            self.reply("OpenCode demo sign-in complete. Return to Limita.")
+            return
         _, plan, *rest = self.path.split("/", 2)
         if plan in DEEPSEEK and "".join(rest) == "user/balance":
             if self.headers.get("Authorization") == "Bearer bad":
@@ -120,10 +207,27 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.reply(CLAUDE[plan][body])
 
-    def reply(self, payload):
-        data = json.dumps(payload).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+    def do_POST(self):
+        if self.path.startswith("/providers/"):
+            self.provider_request()
+        else:
+            self.send_error(404)
+
+    def provider_request(self):
+        url = urlsplit(self.path)
+        size = int(self.headers.get("Content-Length", "0"))
+        if size:
+            self.rfile.read(size)
+        status, response = provider_response(url.path, parse_qs(url.query), self.headers.get("Authorization", ""))
+        self.reply(response, status)
+
+    def reply(self, payload, status=200):
+        is_text = isinstance(payload, str)
+        data = (payload if is_text else json.dumps(payload)).encode()
+        self.send_response(status)
+        if status == 429:
+            self.send_header("Retry-After", "15")
+        self.send_header("Content-Type", "text/plain; charset=utf-8" if is_text else "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)

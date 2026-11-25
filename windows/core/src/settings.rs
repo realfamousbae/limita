@@ -231,6 +231,7 @@ pub fn detect_installed(home: &Path, find_cli: impl Fn(&str) -> Option<PathBuf>)
 }
 
 pub fn detect_installed_here() -> BTreeSet<Service> {
+    if crate::providers::is_demo() { return BTreeSet::new(); }
     detect_installed(&paths::home(), locator::find)
 }
 

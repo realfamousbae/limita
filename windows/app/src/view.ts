@@ -1,6 +1,16 @@
 // The shapes Rust sends (limita-core `view.rs`); the webview only renders them.
 
-export type Service = "claude" | "codex" | "deepseek";
+export type Service = "claude" | "codex" | "deepseek" | "zai-coding" | "zai-api"
+  | "qwen-coding" | "qwen-token" | "qwen-api" | "opencode-go" | "opencode-api" | "openrouter";
+
+export function providerUsesSettings(service: Service): boolean {
+  return service !== "claude" && service !== "codex" && service !== "deepseek";
+}
+
+export function reportsSpending(service: Service): boolean {
+  return service === "deepseek" || service === "openrouter" || service.endsWith("-api");
+}
+
 export type Level = "normal" | "warning" | "critical";
 export type Tone = "accent" | "accentSoft" | "share" | "unlimited" | "warning" | "critical";
 export type Mode = "hidden" | "pill" | "dashboard";
@@ -69,6 +79,7 @@ export interface ActivityPanel {
   expanded: boolean;
   period: Period;
   grids: ActivityGrid[];
+  spending: SpendingGrid[];
 }
 
 export interface ActivityGrid {
@@ -92,4 +103,9 @@ export interface ActivityDay {
   label: string;
   /** Tokens in thousands, for the chip over a hovered day. */
   chip: string;
+}
+
+export interface SpendingGrid {
+  grid: ActivityGrid;
+  history: { currency: string; estimated: boolean; days: Record<string, Record<string, number>> } | null;
 }

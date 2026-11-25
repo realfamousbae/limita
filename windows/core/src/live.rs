@@ -10,8 +10,18 @@ const RETRY_AFTER: &str = ", retry after ";
 /// HTTPS through the system's TLS (SChannel on Windows), so the system's certificates
 /// and any corporate root CA are trusted.
 pub fn agent() -> Result<ureq::Agent, String> {
+    http_agent(None)
+}
+
+pub fn agent_no_redirect() -> Result<ureq::Agent, String> {
+    http_agent(Some(0))
+}
+
+fn http_agent(redirects: Option<u32>) -> Result<ureq::Agent, String> {
     let tls = native_tls::TlsConnector::new().map_err(|error| format!("Could not set up TLS: {error}"))?;
-    Ok(ureq::AgentBuilder::new().tls_connector(std::sync::Arc::new(tls)).build())
+    let mut builder = ureq::AgentBuilder::new().tls_connector(std::sync::Arc::new(tls));
+    if let Some(redirects) = redirects { builder = builder.redirects(redirects); }
+    Ok(builder.build())
 }
 
 /// The error for a 429: `message` for the user, with the server's `Retry-After` in seconds

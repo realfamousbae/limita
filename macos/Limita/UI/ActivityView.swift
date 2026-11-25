@@ -7,10 +7,25 @@ struct ActivitySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PeriodSwitch(activity: store.activity)
-                .padding(.horizontal, ExpandedView.columnPadding)
-                .padding(.top, 6)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { switches }
+                VStack(alignment: .leading, spacing: 5) { switches }
+            }
+            .padding(.horizontal, ExpandedView.columnPadding)
+            .padding(.top, 6)
             columns
+        }
+    }
+
+    @ViewBuilder private var switches: some View {
+        PeriodSwitch(activity: store.activity)
+        if store.enabledServices.contains(where: { $0.kind == .balance }) {
+            Picker("Graph", selection: Binding(get: { store.spendingMode }, set: { store.spendingMode = $0 })) {
+                ForEach(SpendingMode.allCases) { mode in Text(mode.rawValue.uppercased()).tag(mode) }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .fixedSize()
         }
     }
 
@@ -21,7 +36,14 @@ struct ActivitySection: View {
                     Rectangle().fill(Color.white.opacity(0.08))
                         .frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 12)
                 }
-                ActivityColumn(service: service, grid: store.activity.grids[service], loaded: store.activity.isLoaded, activity: store.activity)
+                Group {
+                    if store.spendingMode == .activity || !store.enabledServices.contains(where: { $0.kind == .balance }) {
+                        ActivityColumn(service: service, grid: store.activity.grids[service], loaded: store.activity.isLoaded, activity: store.activity)
+                    } else {
+                        SpendingColumn(service: service, history: store.spendHistory(service),
+                                       mode: store.spendingMode, period: store.activity.period)
+                    }
+                }
                     .padding(.horizontal, ExpandedView.columnPadding)
                     .padding(.top, 12)
                     .padding(.bottom, 14)
@@ -65,6 +87,7 @@ private struct PeriodSwitch: View {
 /// share its line, each under its own column.
 struct ActivityToggle: View {
     let store: LimitsStore
+    var showButton = true
 
     var body: some View {
         let expanded = store.activity.isExpanded
@@ -76,7 +99,7 @@ struct ActivityToggle: View {
                         FoldedMeters(names: folded) { store.setCollapsed(false, $0, of: service) }
                     }
                     Spacer(minLength: 0)
-                    if service == store.enabledServices.last {
+                    if showButton && service == store.enabledServices.last {
                         button(expanded: expanded)
                     }
                 }
@@ -90,7 +113,7 @@ struct ActivityToggle: View {
         .padding(.bottom, expanded ? 6 : 12)
     }
 
-    private func button(expanded: Bool) -> some View {
+    func button(expanded: Bool) -> some View {
         Button {
             store.activity.isExpanded.toggle()
             store.activity.refresh(store.enabledServices, ifOlderThan: 60)
@@ -126,7 +149,7 @@ private struct ActivityColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if service.kind == .balance {
+            if service.kind == .balance || service.usesProviderConnection {
                 // No local logs to count tokens in; the spending is in the column above.
                 Text("No local activity for \(service.displayName)")
                     .font(.app(DashboardStyle.valueSize))

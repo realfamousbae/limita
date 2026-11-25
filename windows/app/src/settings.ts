@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { icons } from "./icons";
+import { providerUsesSettings, reportsSpending } from "./view";
 import type { Service } from "./view";
 
 type Tab = "general" | "providers" | "shortcuts" | "updates";
@@ -123,6 +124,7 @@ function section(title: string | null, ...rows: (Node | null | false)[]): HTMLEl
 }
 
 function badge(service: Service): HTMLElement {
+  if (providerUsesSettings(service)) return el("span", "badge", reportsSpending(service) ? "$" : "◷");
   const img = document.createElement("img");
   img.className = "logo";
   img.src = `/logos/${service}.png`;
@@ -165,7 +167,7 @@ function providers(s: SettingsState): HTMLElement[] {
   return s.providers.map((provider) => {
     const action = provider.enabled
       ? button("Disconnect", "button", () => invoke("disconnect", { service: provider.id }))
-      : provider.id === "deepseek"
+      : (provider.id === "deepseek" || providerUsesSettings(provider.id))
         ? null
         : button("Connect", "button primary", () => invoke("connect", { service: provider.id }));
     const head = el(
@@ -178,12 +180,97 @@ function providers(s: SettingsState): HTMLElement[] {
     const rows: (HTMLElement | null)[] = [head];
     if (provider.id === "deepseek") {
       rows.push(...deepseekRows(s, provider));
+    } else if (providerUsesSettings(provider.id)) {
+      rows.push(externalProvider(provider));
     } else if (provider.setupMessage) {
       rows.push(el("div", "row", el("p", "message", provider.setupMessage), button("OK", "button", () => invoke("dismiss_setup"))));
     }
     if (provider.interval) rows.push(intervalRow(provider.id, provider.interval));
     return section(null, ...rows);
   });
+}
+
+let openCodeSignIn = false;
+let openCodeCode: string | null = null;
+const externalErrors = new Map<Service, string>();
+
+function externalProvider(provider: Provider): HTMLElement {
+  const node = el("div", "external-provider");
+  const open = button(provider.id === "zai-api" ? "Open billing" : "Provider setup", "link",
+    () => invoke("open_link", { link: provider.id }));
+  if (provider.id === "zai-api") {
+    const error = el("p", "row-detail failed", externalErrors.get(provider.id) ?? "");
+    const run = async (command: string) => {
+      externalErrors.delete(provider.id);
+      try { await invoke(command); }
+      catch (failure) { externalErrors.set(provider.id, String(failure)); }
+      await load();
+    };
+    node.append(el("p", "row-detail", "Sign in to Z.ai and return here once Billing opens."),
+      button("Sign in to Z.ai", "button", () => run("begin_zai_sign_in")), " ",
+      button(provider.enabled ? "Reconnect" : "Finish connection", "button primary", () => run("finish_zai_sign_in")),
+      error, open);
+    return node;
+  }
+  if (provider.id === "opencode-api") {
+    const auth = button(openCodeSignIn ? "Cancel sign-in" : "Sign in to OpenCode", "button", async () => {
+      if (openCodeSignIn) {
+        await invoke("cancel_opencode_sign_in");
+        return;
+      }
+      openCodeSignIn = true;
+      externalErrors.delete(provider.id);
+      render();
+      try {
+        openCodeCode = await invoke<string>("begin_opencode_sign_in");
+        render();
+        await invoke("finish_opencode_sign_in");
+      } catch (failure) {
+        externalErrors.set(provider.id, String(failure));
+      } finally {
+        openCodeCode = null;
+        openCodeSignIn = false;
+        await load();
+      }
+    });
+    node.append(auth,
+      el("p", "row-detail", openCodeCode ? `OpenCode sign-in code: ${openCodeCode}` : ""),
+      el("p", "row-detail failed", externalErrors.get(provider.id) ?? ""));
+  }
+  const cli = provider.id.startsWith("qwen-");
+  const key = document.createElement("input");
+  key.type = "password";
+  key.autocomplete = "off";
+  key.placeholder = "API key";
+  key.setAttribute("aria-label", "API key");
+  const workspace = document.createElement("input");
+  workspace.placeholder = provider.id === "qwen-api" ? "CLI profile (optional)" : "Workspace ID";
+  workspace.setAttribute("aria-label", workspace.placeholder);
+  const message = el("p", "row-detail failed");
+  message.setAttribute("role", "status");
+  const form = el("div", "external-provider-form");
+  const connect = button(provider.enabled ? "Save connection" : "Connect", "button primary", async () => {
+    if (connect instanceof HTMLButtonElement) connect.disabled = true;
+    try {
+      await invoke("connect_provider", { service: provider.id, key: key.value, workspace: workspace.value });
+      key.value = "";
+      await load();
+    } catch (error) {
+      message.textContent = String(error);
+      if (connect instanceof HTMLButtonElement) connect.disabled = false;
+    }
+  });
+  if (!cli) form.append(key);
+  if (provider.id === "qwen-api" || provider.id === "opencode-api") form.append(workspace);
+  form.append(connect, message);
+  form.hidden = provider.enabled;
+  if (provider.enabled) node.append(button("Change connection", "button", () => { form.hidden = !form.hidden; }));
+  const hint = provider.id === "qwen-api" ? "Use an Alibaba Cloud CLI profile with read access to billing."
+    : cli ? "Install Bailian CLI and sign in to the international console."
+    : provider.id === "openrouter" ? "A Management key also shows account credits and model history."
+    : provider.id === "opencode-api" ? "Use a Console key with Usage read access." : "";
+  node.append(form, el("p", "row-detail", hint, hint && " ", open));
+  return node;
 }
 
 function intervalRow(service: Service, picker: IntervalPicker): HTMLElement {

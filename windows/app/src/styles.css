@@ -872,3 +872,26 @@ button.reset-title:hover .caption,
   box-sizing: border-box;
   pointer-events: none;
 }
+
+/* The cards and their graphs share a horizontal position when the panel reaches the screen edge. */
+.dashboard.wide .provider-scroll { overflow-x: auto; scrollbar-width: thin; }
+.dashboard.wide .provider-scroll > .columns { width: max-content; min-width: 100%; }
+.dashboard.wide .provider-scroll .column { flex: 0 0 auto; }
+.provider-glyph { font-size: 12px; }
+.activity-header { flex-wrap: wrap; gap: 6px; }
+.spend-bars { display: flex; gap: 4px; }
+.spend-day { flex: 1; min-width: 0; display: grid; gap: 6px; text-align: center; }
+.spend-day .caption { font-size: 8px; white-space: nowrap; }
+.spend-bar {
+  height: 96px;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  background: repeating-linear-gradient(to top, #ffffff12 0 1px, transparent 1px 32px);
+}
+.spend-stack { display: flex; flex-direction: column; width: min(70%, 55px); border-radius: 4px 4px 0 0; overflow: hidden; }
+.spend-segment { flex: none; }
+.spend-square { width: 19px; height: 19px; border-radius: 3px; background: #ffffff0a; }
+.spend-square.future { background: transparent; }
+.spend-bar:focus-visible, .spend-square:focus-visible { outline: 1px solid white; outline-offset: -1px; }
+.spend-detail { min-height: 12px; overflow-wrap: anywhere; }

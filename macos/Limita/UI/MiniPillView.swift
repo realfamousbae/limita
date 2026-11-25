@@ -17,13 +17,16 @@ struct MiniPillView: View {
                     Text("Connect a service")
                         .font(.app(11))
                 } else {
-                    ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
+                    ForEach(Array(store.enabledServices.prefix(5).enumerated()), id: \.element) { index, service in
                         if index > 0 {
                             Rectangle()
                                 .fill(Color.white.opacity(0.14))
                                 .frame(width: 1, height: 14)
                         }
                         indicator(service, state: store.state(for: service), now: context.date)
+                    }
+                    if store.enabledServices.count > 5 {
+                        Text("+\(store.enabledServices.count - 5)").font(.app(11))
                     }
                 }
             }
@@ -38,10 +41,7 @@ struct MiniPillView: View {
 
     private func indicator(_ service: Service, state: ServiceState, now: Date) -> some View {
         HStack(spacing: 5) {
-            Image(service.logoName)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
+            ProviderLogo(service: service)
                 .frame(width: 11, height: 11)
             LevelDot(state: state, now: now)
             Text(Self.label(for: service, state: state, now: now))
