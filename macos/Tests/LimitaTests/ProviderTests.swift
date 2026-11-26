@@ -68,6 +68,34 @@ final class ProviderTests: XCTestCase {
         XCTAssertNil(ExpandedView.providerRunway(balance: balance, history: history, summary: complete, service: .qwenAPI))
     }
 
+    func testSpendingUsesTheActivityCalendarAndSummarizesVisibleDates() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter.parseFlexible("2026-11-26T16:00:00Z"))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let history = SpendHistory(currency: "USD", days: [
+            "2026-11-01": ["outside": 100],
+            "2026-11-23": ["glm": 2],
+            "2026-11-24": [:],
+            "2026-11-25": ["qwen": 4, "Other": 2],
+        ])
+        let activity = ActivityGrid(days: [:], period: .all, today: now, calendar: calendar, visibleWeeks: 2)
+        let spending = ActivityGrid(days: [:], period: .all, today: now, calendar: calendar, visibleWeeks: 2,
+                                    spending: history.dailyTotals)
+        XCTAssertEqual(spending.cells.map { $0.map { $0?.key } }, activity.cells.map { $0.map { $0?.key } })
+        XCTAssertEqual(spending.columnLabels, activity.columnLabels)
+        XCTAssertEqual(spending.rowLabels, activity.rowLabels)
+        let levels = Dictionary(uniqueKeysWithValues: spending.cells.flatMap { $0.compactMap { $0 } }.map { ($0.key, $0.level) })
+        XCTAssertEqual(levels["2026-11-23"], 2)
+        XCTAssertEqual(levels["2026-11-24"], 0)
+        XCTAssertEqual(levels["2026-11-25"], 4)
+        let tiles = Dictionary(uniqueKeysWithValues: history.periodTiles(for: spending))
+        XCTAssertEqual(tiles["TOTAL SPENT"], SpendHistory.amount(8, currency: "USD"))
+        XCTAssertEqual(tiles["TOP MODEL"], "qwen")
+        XCTAssertEqual(tiles["PEAK DAY"], "Nov 25")
+        XCTAssertEqual(tiles["ACTIVE DAYS"], "2")
+        XCTAssertEqual(tiles["REPORTED DAYS"], "3")
+    }
+
     func testBailianQuotaRatiosAndMissingWindows() {
         let quota = ProviderClient.qwenQuotas([
             "per5Hour": ["percentage": 0.25, "resetTime": 1_800_000_000_000],

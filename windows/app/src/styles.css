@@ -782,6 +782,7 @@ button.reset-title:hover .caption,
 }
 
 .column.activity {
+  --shade: 107, 135, 255;
   min-width: 0;
   position: relative;
   padding-top: 12px;
@@ -791,7 +792,6 @@ button.reset-title:hover .caption,
 
 .column.activity.claude { --shade: 255, 148, 77; }
 .column.activity.codex { --shade: 79, 171, 255; }
-.column.activity.deepseek { --shade: 107, 135, 255; }
 
 /* A service without local logs (DeepSeek): a line instead of the graph. */
 .activity-message {
@@ -823,6 +823,8 @@ button.reset-title:hover .caption,
 .activity-graph.weeks {
   gap: 3px;
 }
+
+.activity-graph:focus-visible { outline: 1px solid rgba(var(--shade), 0.55); outline-offset: 3px; }
 
 .column-label,
 .row-label,
@@ -915,7 +917,6 @@ button.reset-title:hover .caption,
 }
 .spend-stack { display: flex; flex-direction: column; width: min(70%, 55px); border-radius: 4px 4px 0 0; overflow: hidden; }
 .spend-segment { flex: none; }
-.spend-square { width: 19px; height: 19px; border-radius: 3px; background: #ffffff0a; }
-.spend-square.future { background: transparent; }
-.spend-bar:focus-visible, .spend-square:focus-visible { outline: 1px solid white; outline-offset: -1px; }
+.spend-bar:focus-visible { outline: 1px solid white; outline-offset: -1px; }
+.activity-breakdown { min-height: 24px; max-height: 24px; line-height: 12px; overflow: hidden; overflow-wrap: anywhere; }
 .spend-detail { min-height: 12px; overflow-wrap: anywhere; }

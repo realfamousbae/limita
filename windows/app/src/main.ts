@@ -257,89 +257,70 @@ function chartModeSwitch(service: ServiceView["id"], name: string, selected: Cha
 
 function spendingColumn(entry: SpendingGrid, mode: ChartMode): HTMLElement {
   const { grid, history } = entry;
-  const node = el("section", `column activity spending ${grid.id}`);
   if (!history || Object.keys(history.days).length === 0) {
-    node.append(el("p", "activity-message", "No spending history yet"));
-    return node;
+    return el("section", `column activity spending ${grid.id}`, el("p", "activity-message", "No spending history yet"));
   }
   const { days } = history;
   const money = new Intl.NumberFormat(undefined, { style: "currency", currency: history.currency, maximumFractionDigits: 6 });
-  const total = (day: Record<string, number> = {}) => Object.values(day).reduce((sum, amount) => sum + amount, 0);
-  const positive = (day: Record<string, number> = {}) => Math.max(0, total(day));
-  const peak = Math.max(0.000001, ...grid.cells.flatMap((row) => row.map((day) => {
+  const breakdown = (day: ActivityDay) => Object.entries(days[day.key] ?? {})
+    .filter(([name]) => name)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, cost]) => `${name} ${money.format(cost)}`)
+    .join(" · ");
+  const bestEffort = history.estimated ? el("div", "caption", "Estimated from balance changes") : null;
+  if (grid.layout !== "row") {
+    const node = activityColumn(grid, mode === "models" ? breakdown : undefined);
+    if (bestEffort) node.append(bestEffort);
+    return node;
+  }
+
+  const node = el("section", `column activity spending ${grid.id}`);
+  const total = (amounts: Record<string, number> = {}) => Object.values(amounts).reduce((sum, amount) => sum + amount, 0);
+  const positive = (amounts: Record<string, number> = {}) => Math.max(0, total(amounts));
+  const peak = Math.max(0.000001, ...grid.cells[0].map((day) => {
     const amounts = day ? days[day.key] : undefined;
-    return mode === "models" && grid.layout === "row"
+    return mode === "models"
       ? Object.values(amounts ?? {}).reduce((sum, amount) => sum + Math.max(0, amount), 0)
       : positive(amounts);
-  })));
+  }));
   const details = el("div", "caption spend-detail");
   const palette = ["#64adf5", "#f69b5a", "#72d4b4", "#ac8cea", "#e787ae", "#efcf67", "#68cadc"];
   const models = [...new Set(Object.keys(days).sort().flatMap((day) => Object.keys(days[day]).filter(Boolean).sort()))];
   const modelColors = new Map(models.map((model, index) => [model, palette[index % palette.length]]));
-  const dayButton = (day: ActivityDay, className: string) => {
+  const graph = el("div", "spend-bars");
+  for (const [index, day] of grid.cells[0].entries()) {
+    if (!day) continue;
     const amounts = days[day.key];
-    const values = amounts === undefined ? ["No data"] : [money.format(total(amounts))];
-    if (mode === "models" && amounts) {
-      for (const [name, cost] of Object.entries(amounts).sort((a, b) => b[1] - a[1])) {
-        if (name) values.push(`${name} ${money.format(cost)}`);
-      }
-    }
-    const caption = [day.label, ...values].join(" · ");
-    const button = el("button", className);
+    const grouped = mode === "models" ? breakdown(day) : "";
+    const caption = [day.label, day.chip, grouped].filter(Boolean).join(" · ");
+    const button = el("button", "spend-bar");
     button.setAttribute("aria-label", caption);
     const show = () => { details.textContent = caption; };
     const hide = () => { if (document.activeElement !== button) details.textContent = ""; };
     button.addEventListener("pointerenter", show);
     button.addEventListener("pointerleave", hide);
     button.addEventListener("focus", show);
-    button.addEventListener("blur", hide);
-    return button;
-  };
-  if (history.estimated) node.append(el("div", "caption", "Estimated from balance changes"));
-  if (grid.layout === "row") {
-    const graph = el("div", "spend-bars");
-    for (const [index, day] of (grid.cells[0] ?? []).entries()) {
-      if (!day) continue;
-      const amounts = days[day.key];
-      const button = dayButton(day, "spend-bar");
-      const track = el("span", "spend-stack");
-      if (amounts) {
-        const groups = mode === "models" ? Object.entries(amounts).filter(([name]) => name).sort(([a], [b]) => a.localeCompare(b)) : [];
-        const parts: [string, number][] = groups.length ? groups : [["", positive(amounts)]];
-        for (const [name, cost] of parts) {
-          if (cost <= 0 && parts.length > 1) continue;
-          const segment = el("span", "spend-segment");
-          segment.style.height = `${Math.max(1, 96 * Math.max(0, cost) / peak)}px`;
-          segment.style.background = modelColors.get(name) ?? palette[0];
-          track.append(segment);
-        }
-      }
-      button.append(track);
-      const label = index % 3 === 0
-        ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day.key))
-        : " ";
-      graph.append(el("div", "spend-day", button, el("span", "caption", label)));
-    }
-    node.append(graph);
-  } else {
-    const labelled = grid.layout === "weeks";
-    const graph = el("div", `activity-graph spend-grid ${grid.layout}`);
-    graph.style.gridTemplateColumns = `${labelled ? "26px " : ""}repeat(${grid.columnLabels.length}, 19px)`;
-    if (labelled) graph.append(el("span"));
-    for (const label of grid.columnLabels) graph.append(el("span", "column-label", label ?? ""));
-    for (const [row, cells] of grid.cells.entries()) {
-      if (labelled) graph.append(el("span", "row-label", grid.rowLabels[row] ?? ""));
-      for (const day of cells) {
-        if (!day) { graph.append(el("span", "spend-square future")); continue; }
-        const cell = dayButton(day, "spend-square");
-        const amounts = days[day.key];
-        if (amounts) cell.style.background = `rgb(100 173 245 / ${0.18 + 0.82 * Math.sqrt(positive(amounts) / peak)})`;
-        graph.append(cell);
+    button.addEventListener("blur", () => { details.textContent = ""; });
+    const track = el("span", "spend-stack");
+    if (amounts) {
+      const groups = mode === "models" ? Object.entries(amounts).filter(([name]) => name).sort(([a], [b]) => a.localeCompare(b)) : [];
+      const parts: [string, number][] = groups.length ? groups : [["", positive(amounts)]];
+      for (const [name, cost] of parts) {
+        if (cost <= 0 && parts.length > 1) continue;
+        const segment = el("span", "spend-segment");
+        segment.style.height = `${Math.max(1, 96 * Math.max(0, cost) / peak)}px`;
+        segment.style.background = modelColors.get(name) ?? palette[0];
+        track.append(segment);
       }
     }
-    node.append(graph);
+    button.append(track);
+    const label = index % 3 === 0
+      ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day.key))
+      : " ";
+    graph.append(el("div", "spend-day", button, el("span", "caption", label)));
   }
-  node.append(details);
+  node.append(activitySummary(grid.summary), graph, details);
+  if (bestEffort) node.append(bestEffort);
   return node;
 }
 
@@ -362,10 +343,15 @@ function activityToggle(): HTMLElement {
   return el("div", "activity-toggle-row", button);
 }
 
+function activitySummary(items: ActivityGrid["summary"]): HTMLElement {
+  return el("div", "activity-summary", ...items.map(({ label, value }) =>
+    el("div", "tile", el("div", "caption nowrap", label), el("div", "tile-value digits", value))));
+}
+
 /** One service: the summary tiles, the graph, and under it the hovered day and the
  * legend. Cells fill the column; nothing scrolls or is cut off. Hovering a day shows its
- * tokens in a chip over it. */
-function activityColumn(grid: ActivityGrid): HTMLElement {
+ * value in a chip over it. */
+function activityColumn(grid: ActivityGrid, dayDetails?: (day: ActivityDay) => string): HTMLElement {
   const node = el("section", `column activity ${grid.id}`);
   if (grid.message) {
     node.append(el("p", "activity-message", grid.message));
@@ -373,6 +359,7 @@ function activityColumn(grid: ActivityGrid): HTMLElement {
   }
   const chip = el("span", "activity-chip");
   const date = el("div", "caption nowrap activity-date");
+  const details = dayDetails ? el("div", "caption activity-breakdown") : null;
   const columns = grid.cells[0]?.length ?? 0;
   const labelled = grid.rowLabels.some((label) => label !== null);
 
@@ -383,6 +370,8 @@ function activityColumn(grid: ActivityGrid): HTMLElement {
     graph.querySelector(".cell.hovered")?.classList.remove("hovered");
     hovered = day && { service: grid.id, day };
     date.textContent = day ? day.label : "";
+    graph.setAttribute("aria-label", day ? `Daily calendar, ${day.label}, ${day.chip}` : "Daily calendar");
+    if (details && dayDetails) details.textContent = day ? dayDetails(day) : "";
     if (!day || !cell) {
       chip.style.display = "none";
       return;
@@ -398,6 +387,26 @@ function activityColumn(grid: ActivityGrid): HTMLElement {
     chip.style.left = `${left}px`;
     chip.style.top = `${rect.top - box.top - 19}px`;
   };
+
+  const newest = grid.cells.flat().reduce<ActivityDay | null>((current, day) =>
+    day && (!current || day.key > current.key) ? day : current, null);
+  const showDay = (day: ActivityDay) => show(day, graph.querySelector<HTMLElement>(`[data-key="${day.key}"]`));
+  graph.tabIndex = 0;
+  graph.setAttribute("aria-label", "Daily calendar");
+  graph.addEventListener("focus", () => { if (newest && hovered?.service !== grid.id) showDay(newest); });
+  graph.addEventListener("blur", () => show(null, null));
+  graph.addEventListener("keydown", (event) => {
+    const directions: Record<string, [number, number]> = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] };
+    const direction = directions[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    const selected = hovered?.service === grid.id ? hovered.day : null;
+    if (!selected) { if (newest) showDay(newest); return; }
+    const row = grid.cells.findIndex((cells) => cells.some((day) => day?.key === selected.key));
+    const column = grid.cells[row]?.findIndex((day) => day?.key === selected.key) ?? -1;
+    const day = grid.cells[row + direction[0]]?.[column + direction[1]];
+    if (row >= 0 && column >= 0 && day) showDay(day);
+  });
 
   // Labels over the columns, then one grid row per row of days.
   if (labelled) graph.append(el("span"));
@@ -419,13 +428,13 @@ function activityColumn(grid: ActivityGrid): HTMLElement {
   node.addEventListener("restore", () => {
     if (hovered?.service !== grid.id) return;
     const cell = graph.querySelector<HTMLElement>(`[data-key="${hovered.day.key}"]`);
-    show(cell ? hovered.day : null, cell);
+    const currentDay = grid.cells.flat().find((day) => day?.key === hovered?.day.key);
+    show(cell ? currentDay ?? null : null, cell);
   });
 
-  const summary = el("div", "activity-summary", ...grid.summary.map((tile) =>
-    el("div", "tile", el("div", "caption nowrap", tile.label), el("div", "tile-value digits", tile.value))));
   const legend = el("div", "activity-legend", el("span", "", "LESS"), ...[0, 1, 2, 3, 4].map((l) => el("span", `cell l${l}`)), el("span", "", "MORE"));
-  node.append(summary, graph, el("div", "activity-footer", date, legend), chip);
+  node.append(activitySummary(grid.summary), graph, el("div", "activity-footer", date, legend), chip);
+  if (details) node.append(details);
   return node;
 }
 

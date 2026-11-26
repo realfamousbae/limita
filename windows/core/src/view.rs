@@ -335,7 +335,7 @@ fn provider_spend_rows(summary: &SpendSummary, currency: &str) -> Vec<DetailRow>
     rows
 }
 
-fn format_spend(amount: f64, currency: &str) -> String {
+pub(crate) fn format_spend(amount: f64, currency: &str) -> String {
     if amount == 0.0 || amount.abs() >= 0.01 { return Balance::format(amount, currency); }
     // Retain fractional cents in API usage tiles.
     let amount = number(amount, 2, 6);

@@ -65,6 +65,38 @@ struct SpendHistory: Codable, Sendable, Equatable {
                        weekComplete: week.count == 7, topModel: top)
     }
 
+    var dailyTotals: [DayKey: Double] {
+        days.mapValues { $0.values.reduce(0, +) }
+    }
+
+    func periodTiles(for grid: ActivityGrid) -> [(label: String, value: String)] {
+        let totals = dailyTotals
+        let reported = grid.cells.flatMap { $0.compactMap { $0 } }.compactMap { day in
+            totals[day.key].map { (day, $0) }
+        }
+        let active = reported.filter { $0.1 > 0 }
+        let total = reported.map(\.1).reduce(0, +)
+        var models: [String: Double] = [:]
+        for (day, _) in reported {
+            for (model, amount) in days[day.key] ?? [:] where !model.isEmpty && model != "Other" {
+                models[model, default: 0] += amount
+            }
+        }
+        let topModel = models.filter { $0.value > 0 }.sorted {
+            $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value
+        }.first?.key
+        let peak = active.sorted { $0.1 == $1.1 ? $0.0.key < $1.0.key : $0.1 > $1.1 }.first?.0
+        let amount = { Self.amount($0, currency: currency) }
+        return [
+            ("TOTAL SPENT", reported.isEmpty ? "—" : amount(total)),
+            ("TOP MODEL", topModel ?? "—"),
+            ("PEAK DAY", peak?.date.formatted(.dateTime.locale(.english).month(.abbreviated).day()) ?? "—"),
+            ("AVG / REPORTED DAY", reported.isEmpty ? "—" : amount(total / Double(reported.count))),
+            ("ACTIVE DAYS", TokenFormat.count(active.count)),
+            ("REPORTED DAYS", TokenFormat.count(reported.count)),
+        ]
+    }
+
     static func amount(_ value: Double, currency: String) -> String {
         value.formatted(.currency(code: currency).precision(.fractionLength(value != 0 && abs(value) < 0.01 ? 2...6 : 2...2)))
     }

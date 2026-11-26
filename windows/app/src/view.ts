@@ -99,7 +99,7 @@ export interface ActivityGrid {
   cells: (ActivityDay | null)[][];
   columnLabels: (string | null)[];
   rowLabels: (string | null)[];
-  /** Three to a row: the totals, then tokens by kind. */
+  /** The period summary, three tiles to a row. */
   summary: { label: string; value: string }[];
   /** Shown instead of the graph, for a service without local logs (DeepSeek). */
   message: string | null;
@@ -110,7 +110,7 @@ export interface ActivityDay {
   /** 0 for no activity, 1...4 for the four shades. */
   level: number;
   label: string;
-  /** Tokens in thousands, for the chip over a hovered day. */
+  /** Formatted value for the chip over a hovered day. */
   chip: string;
 }
 

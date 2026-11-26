@@ -579,7 +579,7 @@ pub struct ActivityDay {
     pub level: u8,
     /// "SUN, OCT 18, 2026", shown under the graph while the day is hovered.
     pub label: String,
-    /// The chip over a hovered day: tokens in thousands.
+    /// The chip over a hovered day: tokens or spending.
     pub chip: String,
 }
 
@@ -626,6 +626,80 @@ pub fn grid(service: Service, days: &Days, period: Period, today: NaiveDate) -> 
 }
 
 pub fn grid_with_weeks(service: Service, days: &Days, period: Period, today: NaiveDate, visible_weeks: Option<usize>) -> ActivityGrid {
+    let first = days.iter().filter(|(_, day)| day.is_active())
+        .find_map(|(key, _)| NaiveDate::parse_from_str(key, "%Y-%m-%d").ok());
+    let mut grid = calendar_grid(service, period, today, visible_weeks, first);
+    let shown_days: Vec<&DayStats> = grid.cells.iter().flatten().flatten()
+        .filter_map(|day| days.get(&day.key)).collect();
+    let active: Vec<u64> = shown_days.iter().map(|day| day.tokens).filter(|&tokens| tokens > 0).collect();
+    for day in grid.cells.iter_mut().flatten().flatten() {
+        let tokens = days.get(&day.key).map_or(0, |stats| stats.tokens);
+        day.level = level(tokens, &active);
+        day.chip = thousands(tokens);
+    }
+    grid.summary = summary(&shown_days);
+    grid
+}
+
+pub fn spending_grid(
+    service: Service, history: Option<&crate::providers::SpendHistory>, period: Period,
+    today: NaiveDate, visible_weeks: Option<usize>,
+) -> ActivityGrid {
+    let totals: BTreeMap<_, f64> = history.into_iter().flat_map(|history| history.days.iter())
+        .map(|(key, amounts)| (key.as_str(), amounts.values().sum())).collect();
+    let first = totals.iter()
+        .find(|(_, total)| **total != 0.0)
+        .and_then(|(key, _)| NaiveDate::parse_from_str(key, "%Y-%m-%d").ok());
+    let mut grid = calendar_grid(service, period, today, visible_weeks, first);
+    let Some(history) = history else { return grid };
+    let active: Vec<f64> = grid.cells.iter().flatten().flatten()
+        .filter_map(|day| totals.get(day.key.as_str()).copied()).filter(|amount| *amount > 0.0).collect();
+    for day in grid.cells.iter_mut().flatten().flatten() {
+        let amount = totals.get(day.key.as_str()).copied();
+        day.level = level(amount.unwrap_or(0.0), &active);
+        day.chip = amount.map_or_else(|| "No data".into(), |value| crate::view::format_spend(value, &history.currency));
+    }
+    grid.summary = spending_summary(&grid, history, &totals, active.len());
+    grid
+}
+
+fn spending_summary(
+    grid: &ActivityGrid, history: &crate::providers::SpendHistory,
+    totals: &BTreeMap<&str, f64>, active_days: usize,
+) -> Vec<Tile> {
+    let reported: Vec<_> = grid.cells.iter().flatten().flatten().filter_map(|day| {
+        Some((day, *totals.get(day.key.as_str())?))
+    }).collect();
+    let total: f64 = reported.iter().map(|(_, value)| value).sum();
+    let mut models: BTreeMap<&str, f64> = BTreeMap::new();
+    for (day, _) in &reported {
+        for (model, amount) in &history.days[&day.key] {
+            if !model.is_empty() && model != "Other" {
+                *models.entry(model).or_default() += amount;
+            }
+        }
+    }
+    let top = models.into_iter().filter(|(_, value)| *value > 0.0)
+        .max_by(|(left_model, left), (right_model, right)| left.total_cmp(right).then_with(|| right_model.cmp(left_model)))
+        .map(|(model, _)| model);
+    let peak = reported.iter().filter(|(_, value)| *value > 0.0)
+        .max_by(|(left_day, left), (right_day, right)| left.total_cmp(right).then_with(|| right_day.key.cmp(&left_day.key)))
+        .and_then(|(day, _)| NaiveDate::parse_from_str(&day.key, "%Y-%m-%d").ok())
+        .map(|date| date.format("%b %-d").to_string());
+    let money = |value| if reported.is_empty() { "—".into() } else { crate::view::format_spend(value, &history.currency) };
+    [
+        ("TOTAL SPENT", money(total)),
+        ("TOP MODEL", top.unwrap_or("—").into()),
+        ("PEAK DAY", peak.unwrap_or_else(|| "—".into())),
+        ("AVG / REPORTED DAY", money(total / reported.len().max(1) as f64)),
+        ("ACTIVE DAYS", grouped(active_days as u64)),
+        ("REPORTED DAYS", grouped(reported.len() as u64)),
+    ].into_iter().map(|(label, value)| Tile { label: label.into(), value }).collect()
+}
+
+fn calendar_grid(
+    service: Service, period: Period, today: NaiveDate, visible_weeks: Option<usize>, first: Option<NaiveDate>,
+) -> ActivityGrid {
     let this_monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
     let past = |date: NaiveDate| (date <= today).then_some(date);
     let (layout, dates): (Layout, Vec<Vec<Option<NaiveDate>>>) = match period {
@@ -637,13 +711,7 @@ pub fn grid_with_weeks(service: Service, days: &Days, period: Period, today: Nai
                 .collect(),
         ),
         Period::All => {
-            let first = days
-                .iter()
-                .filter(|(_, day)| day.is_active())
-                .filter_map(|(key, _)| NaiveDate::parse_from_str(key, "%Y-%m-%d").ok())
-                .min()
-                .unwrap_or(today);
-            let span = (this_monday - first).num_days().max(0) as usize;
+            let span = (this_monday - first.unwrap_or(today)).num_days().max(0) as usize;
             let weeks = visible_weeks.map(|n| n.clamp(1, 520))
                 .unwrap_or_else(|| (span.div_ceil(7) + 1).clamp(MIN_WEEKS, MAX_WEEKS)) as i64;
             let dates = (0..7)
@@ -653,25 +721,14 @@ pub fn grid_with_weeks(service: Service, days: &Days, period: Period, today: Nai
         }
     };
 
-    let key = |date: NaiveDate| date.format("%Y-%m-%d").to_string();
-    let shown: Vec<NaiveDate> = dates.iter().flatten().flatten().copied().collect();
-    let tokens = |date: NaiveDate| days.get(&key(date)).map_or(0, |d| d.tokens);
-    let active: Vec<u64> = shown.iter().map(|&d| tokens(d)).filter(|&t| t > 0).collect();
-    let cells = dates
-        .iter()
-        .map(|row| {
-            row.iter()
-                .map(|date| {
-                    date.map(|date| ActivityDay {
-                        key: key(date),
-                        level: level(tokens(date), &active),
-                        label: date.format("%a, %b %-d, %Y").to_string().to_uppercase(),
-                        chip: thousands(tokens(date)),
-                    })
-                })
-                .collect()
+    let cells = dates.iter().map(|row| row.iter().map(|date| {
+        date.map(|date| ActivityDay {
+            key: date.format("%Y-%m-%d").to_string(),
+            level: 0,
+            label: date.format("%a, %b %-d, %Y").to_string().to_uppercase(),
+            chip: String::new(),
         })
-        .collect();
+    }).collect()).collect();
 
     let (column_labels, row_labels) = match layout {
         Layout::Row => (dates[0].iter().map(|d| d.map(|d| d.format("%a %-d").to_string())).collect(), vec![None]),
@@ -686,18 +743,17 @@ pub fn grid_with_weeks(service: Service, days: &Days, period: Period, today: Nai
         }
     };
 
-    let shown_days: Vec<&DayStats> = shown.iter().filter_map(|&d| days.get(&key(d))).collect();
-    ActivityGrid { id: service, layout, cells, column_labels, row_labels, summary: summary(&shown_days), message: None }
+    ActivityGrid { id: service, layout, cells, column_labels, row_labels, summary: Vec::new(), message: None }
 }
 
-/// A day's shade is the share of active days with as many tokens or fewer, in
-/// quarters: the busiest day is always the darkest, and one huge day does not wash out
+/// A day's shade is its rank among active days, split into quarters.
+/// The busiest day always gets the strongest shade, and one huge day does not wash out
 /// the rest. The same rule as `ActivityGrid.swift` on macOS.
-pub fn level(tokens: u64, active: &[u64]) -> u8 {
-    if tokens == 0 || active.is_empty() {
+pub fn level<T: PartialOrd + Copy + Default>(amount: T, active: &[T]) -> u8 {
+    if amount <= T::default() || active.is_empty() {
         return 0;
     }
-    let at_most = active.iter().filter(|&&v| v <= tokens).count();
+    let at_most = active.iter().filter(|&&value| value <= amount).count();
     ((4 * at_most).div_ceil(active.len())).max(1) as u8
 }
 
@@ -913,6 +969,32 @@ mod tests {
         assert_eq!(wide.cells[0].last().unwrap().as_ref().unwrap().key, "2026-10-19");
         assert_eq!(narrow.summary[0].value, "7");
         assert_eq!(wide.summary[0].value, "19");
+    }
+
+    #[test]
+    fn spending_shares_calendar_layout_and_summarizes_visible_dates() {
+        let date = NaiveDate::from_ymd_opt(2026, 11, 26).unwrap();
+        let mut history = crate::providers::SpendHistory::new("USD");
+        history.add("2026-11-01", "outside", 100.0);
+        history.add("2026-11-23", "glm", 2.0);
+        history.days.insert("2026-11-24".into(), BTreeMap::new());
+        history.add("2026-11-25", "qwen", 4.0);
+        history.add("2026-11-25", "Other", 2.0);
+
+        let activity = grid_with_weeks(Service::Codex, &Days::new(), Period::All, date, Some(2));
+        let spending = spending_grid(Service::OpenCodeApi, Some(&history), Period::All, date, Some(2));
+        assert_eq!(spending.cells.iter().map(|row| keys(row)).collect::<Vec<_>>(),
+                   activity.cells.iter().map(|row| keys(row)).collect::<Vec<_>>());
+        assert_eq!(spending.column_labels, activity.column_labels);
+        assert_eq!(spending.row_labels, activity.row_labels);
+
+        let day = |key: &str| spending.cells.iter().flatten().flatten().find(|day| day.key == key).unwrap();
+        assert_eq!(day("2026-11-23").level, 2);
+        assert_eq!(day("2026-11-25").level, 4);
+        assert_eq!(day("2026-11-24").chip, "$0.00");
+        assert_eq!(day("2026-11-26").chip, "No data");
+        let values: Vec<_> = spending.summary.iter().map(|tile| tile.value.as_str()).collect();
+        assert_eq!(values, ["$8.00", "qwen", "Nov 25", "$2.67", "2", "3"]);
     }
 
     #[test]

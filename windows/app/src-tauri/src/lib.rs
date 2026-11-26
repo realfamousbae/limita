@@ -396,30 +396,22 @@ fn activity_panel(store: &Store, reader: &ActivityReader, weeks: Option<usize>) 
     let settings = ServiceSettings::default();
     let expanded = settings.activity_expanded();
     let period = settings.activity_period();
-    let grids = if expanded {
+    let (grids, spending) = if expanded {
         let enabled = store.snapshot().enabled;
         let today = Local::now().date_naive();
         let days = reader.read(&enabled, &Local);
-        enabled
-            .iter()
-            .map(|&service| match (service.kind(), days.get(&service)) {
-                (ServiceKind::Limits, Some(days)) => activity::grid_with_weeks(service, days, period, today, weeks),
-                // No local logs to count tokens in; the spending is in the column above.
-                _ => activity::no_activity(service),
-            })
-            .collect()
+        let grids = enabled.iter().map(|&service| match (service.kind(), days.get(&service)) {
+            (ServiceKind::Limits, Some(days)) => activity::grid_with_weeks(service, days, period, today, weeks),
+            _ => activity::no_activity(service),
+        }).collect();
+        let spending = enabled.into_iter().filter(|service| service.kind() == ServiceKind::Balance).map(|service| {
+            let history = store.spend_history(service);
+            let grid = activity::spending_grid(service, history.as_ref(), period, today, weeks);
+            SpendingGrid { grid, history }
+        }).collect();
+        (grids, spending)
     } else {
-        Vec::new()
-    };
-    let spending = if expanded {
-        let today = Local::now().date_naive();
-        let days = Default::default();
-        store.snapshot().enabled.into_iter().map(|service| SpendingGrid {
-            grid: activity::grid_with_weeks(service, &days, period, today, weeks),
-            history: store.spend_history(service),
-        }).collect()
-    } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
     ActivityPanel { expanded, period, grids, spending }
 }

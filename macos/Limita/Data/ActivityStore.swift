@@ -39,7 +39,7 @@ final class ActivityStore {
     @ObservationIgnored private var widths: [Service: Int] = [:]
 
     func setGraphWidth(_ width: CGFloat, for service: Service) {
-        let weeks = max(1, min(520, Int(((max(0, width - 26) + 3) / 22).rounded(.down))))
+        let weeks = ActivityGrid.weeksFitting(width: width)
         guard widths[service] != weeks else { return }
         widths[service] = weeks
         if period == .all, let serviceDays = days[service] {

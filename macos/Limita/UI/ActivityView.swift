@@ -41,7 +41,7 @@ struct ActivitySection: View {
             .frame(height: 24)
 
             if service.kind == .balance {
-                SpendingColumn(history: history,
+                SpendingColumn(service: service, history: history,
                                mode: offersModels ? (store.spendingModes[service] ?? .money) : .money,
                                period: store.activity.period)
             } else if !service.usesProviderConnection {
@@ -149,19 +149,19 @@ private struct ActivityColumn: View {
     let loaded: Bool
     let activity: ActivityStore
 
-    @State private var hovered: ActivityGrid.Day?
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let grid {
-                SummaryTiles(summary: grid.summary)
-                ActivityGraph(grid: grid, service: service, hovered: $hovered, activity: activity)
-                HStack(spacing: 8) {
-                    Text(hovered.map(Self.dateText) ?? "")
-                        .caption()
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    Legend(service: service)
+                SummaryTiles(items: [
+                    ("TOTAL TOKENS", TokenFormat.count(grid.summary.tokens)),
+                    ("FAVORITE MODEL", grid.summary.favoriteModel ?? "—"),
+                    ("PEAK HOUR", grid.summary.peakHourText),
+                    ("INPUT", TokenFormat.count(grid.summary.usage.input)),
+                    ("OUTPUT", TokenFormat.count(grid.summary.usage.output)),
+                    ("CACHE READ", TokenFormat.count(grid.summary.usage.cacheRead)),
+                ])
+                ActivityCalendar(grid: grid, service: service) { width in
+                    activity.setGraphWidth(width, for: service)
                 }
             } else {
                 Text(loaded ? "No activity yet" : "Reading logs…")
@@ -169,9 +169,36 @@ private struct ActivityColumn: View {
                     .foregroundStyle(DashboardStyle.caption)
             }
         }
-        // A new period lays the cells out anew; a day kept from the old one would point
-        // at the wrong cell.
-        .onChange(of: grid?.layout) { hovered = nil }
+    }
+}
+
+struct ActivityCalendar: View {
+    let grid: ActivityGrid
+    let service: Service
+    var chipText: (ActivityGrid.Day) -> String = { TokenFormat.thousands($0.tokens) }
+    var dayDetails: ((ActivityGrid.Day) -> String?)?
+    let onWidthChange: (CGFloat) -> Void
+
+    @State private var hovered: ActivityGrid.Day?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ActivityGraph(grid: grid, service: service, hovered: $hovered,
+                          chipText: chipText, onWidthChange: onWidthChange)
+            HStack(spacing: 8) {
+                Text(hovered.map(Self.dateText) ?? "")
+                    .caption()
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Legend(service: service)
+            }
+            if let dayDetails {
+                Text(hovered.flatMap(dayDetails) ?? " ")
+                    .caption()
+                    .lineLimit(2, reservesSpace: true)
+            }
+        }
+        .onChange(of: grid.layout) { hovered = nil }
     }
 
     static func dateText(_ day: ActivityGrid.Day) -> String {
@@ -179,24 +206,20 @@ private struct ActivityColumn: View {
     }
 }
 
-/// Three evenly spaced tiles per row: the totals, then tokens by kind.
-private struct SummaryTiles: View {
-    let summary: ActivitySummary
+/// Three evenly spaced summary tiles per row.
+struct SummaryTiles: View {
+    let items: [(label: String, value: String)]
 
-    /// Wider than the meters' gap, so the tiles do not read as one line of text.
     private static let tileSpacing: CGFloat = 22
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .top, spacing: Self.tileSpacing) {
-                tile("TOTAL TOKENS", TokenFormat.count(summary.tokens))
-                tile("FAVORITE MODEL", summary.favoriteModel ?? "—")
-                tile("PEAK HOUR", summary.peakHourText)
-            }
-            HStack(alignment: .top, spacing: Self.tileSpacing) {
-                tile("INPUT", TokenFormat.count(summary.usage.input))
-                tile("OUTPUT", TokenFormat.count(summary.usage.output))
-                tile("CACHE READ", TokenFormat.count(summary.usage.cacheRead))
+            ForEach(Array(stride(from: 0, to: items.count, by: 3)), id: \.self) { start in
+                HStack(alignment: .top, spacing: Self.tileSpacing) {
+                    ForEach(start..<min(start + 3, items.count), id: \.self) { index in
+                        tile(items[index].label, items[index].value)
+                    }
+                }
             }
         }
     }
@@ -224,10 +247,12 @@ private struct ActivityGraph: View {
     let grid: ActivityGrid
     let service: Service
     @Binding var hovered: ActivityGrid.Day?
-    let activity: ActivityStore
+    let chipText: (ActivityGrid.Day) -> String
+    let onWidthChange: (CGFloat) -> Void
 
     /// The column's width once laid out; until then a guess from the dashboard's width.
     @State private var width: CGFloat = BezelPanelController.columnWidth - 2 * ExpandedView.columnPadding
+    @FocusState private var keyboardFocused: Bool
 
     private var labelHeight: CGFloat { grid.layout == .row ? 16 : 14 }
     /// The week's few labels are larger, to be read at a glance.
@@ -273,7 +298,7 @@ private struct ActivityGraph: View {
 
     private func updateWidth(_ value: CGFloat) {
         width = value
-        activity.setGraphWidth(value, for: service)
+        onWidthChange(value)
         hovered = nil
     }
 
@@ -306,6 +331,40 @@ private struct ActivityGraph: View {
         }
         // A click shows the day too, in case the panel gets no hover events.
         .onTapGesture { point in hover(point) }
+        .focusable()
+        .focused($keyboardFocused)
+        .accessibilityLabel("Daily calendar")
+        .accessibilityValue(hovered.map { "\(ActivityCalendar.dateText($0)), \(chipText($0))" } ?? "")
+        .onChange(of: keyboardFocused) { _, focused in
+            if focused && hovered == nil {
+                set(grid.cells.flatMap { $0.compactMap { $0 } }.max(by: { $0.key < $1.key }))
+            } else if !focused {
+                set(nil)
+            }
+        }
+        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { press in
+            switch press.key {
+            case .leftArrow: move(row: 0, column: -1)
+            case .rightArrow: move(row: 0, column: 1)
+            case .upArrow: move(row: -1, column: 0)
+            case .downArrow: move(row: 1, column: 0)
+            default: return .ignored
+            }
+            return .handled
+        }
+    }
+
+    private func move(row: Int, column: Int) {
+        guard let hovered, let position = position(of: hovered.key) else {
+            set(grid.cells.flatMap { $0.compactMap { $0 } }.max(by: { $0.key < $1.key }))
+            return
+        }
+        let nextRow = position.0 + row
+        let nextColumn = position.1 + column
+        if grid.cells.indices.contains(nextRow), grid.cells[nextRow].indices.contains(nextColumn),
+           let day = grid.cells[nextRow][nextColumn] {
+            set(day)
+        }
     }
 
     private func hover(_ point: CGPoint) {
@@ -347,11 +406,11 @@ private struct ActivityGraph: View {
         }
     }
 
-    /// The hovered day's tokens in thousands, just above its cell, kept inside the graph.
+    /// The hovered day's value, just above its cell and kept inside the graph.
     @ViewBuilder
     private var chip: some View {
         if let hovered, let (row, column) = position(of: hovered.key) {
-            let text = TokenFormat.thousands(hovered.tokens)
+            let text = chipText(grid.cells[row][column] ?? hovered)
             // The font is monospaced, so the width is known before layout.
             let chipWidth = CGFloat(text.count) * 5.6 + 12
             let centre = leading + CGFloat(column) * stepX + cellWidth / 2

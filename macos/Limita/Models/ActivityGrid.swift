@@ -67,7 +67,12 @@ struct ActivityGrid: Equatable {
     var rows: Int { cells.count }
     var columns: Int { cells.first?.count ?? 0 }
 
-    init(days: [DayKey: DayStats], period: ActivityPeriod, today: Date = Date(), calendar: Calendar = .activity, visibleWeeks: Int? = nil) {
+    static func weeksFitting(width: CGFloat) -> Int {
+        max(1, min(520, Int(((max(0, width - 26) + 3) / 22).rounded(.down))))
+    }
+
+    init(days: [DayKey: DayStats], period: ActivityPeriod, today: Date = Date(), calendar: Calendar = .activity, visibleWeeks: Int? = nil,
+         spending: [DayKey: Double]? = nil) {
         let formatter = DayKeys.formatter(timeZone: calendar.timeZone)
         let today = calendar.startOfDay(for: today)
         func shift(_ date: Date, _ days: Int) -> Date {
@@ -92,7 +97,8 @@ struct ActivityGrid: Equatable {
             }
         case .all:
             layout = .weeks
-            let first = days.filter { $0.value.isActive }.keys.min().flatMap { formatter.date(from: $0) } ?? today
+            let firstKey = spending?.filter { $0.value != 0 }.keys.min() ?? days.filter { $0.value.isActive }.keys.min()
+            let first = firstKey.flatMap { formatter.date(from: $0) } ?? today
             let span = calendar.dateComponents([.day], from: calendar.startOfDay(for: first), to: thisMonday).day ?? 0
             let weeks = visibleWeeks.map { min(max($0, 1), 520) } ?? min(max((span + 6) / 7 + 1, Self.minWeeks), Self.maxWeeks)
             dates = (0..<7).map { day in
@@ -105,10 +111,16 @@ struct ActivityGrid: Equatable {
 
         let keyed = dates.joined().compactMap { $0 }.map { ($0, formatter.string(from: $0)) }
         let active = keyed.map { days[$0.1]?.tokens ?? 0 }.filter { $0 > 0 }
+        let activeSpending = spending.map { totals in keyed.compactMap { totals[$0.1] }.filter { $0 > 0 } }
         var byDate: [Date: Day] = [:]
         for (date, key) in keyed {
             let tokens = days[key]?.tokens ?? 0
-            byDate[date] = Day(key: key, date: date, tokens: tokens, level: Self.level(tokens, active: active))
+            let level = if let spending, let activeSpending {
+                Self.level(spending[key] ?? 0, active: activeSpending)
+            } else {
+                Self.level(tokens, active: active)
+            }
+            byDate[date] = Day(key: key, date: date, tokens: tokens, level: level)
         }
         cells = dates.map { row in row.map { $0.flatMap { byDate[$0] } } }
 
@@ -133,12 +145,12 @@ struct ActivityGrid: Equatable {
         summary = ActivitySummary(days: days, keys: keyed.map(\.1))
     }
 
-    /// A day's shade is the share of active days with as many tokens or fewer, in
-    /// quarters: the busiest day is always the darkest, and one huge day does not wash
+    /// A day's shade is its rank among active days, split into quarters.
+    /// The busiest day always gets the strongest shade, and one huge day does not wash
     /// out the rest. The same rule as `activity.rs` on Windows.
-    static func level(_ tokens: Int, active: [Int]) -> Int {
-        guard tokens > 0, !active.isEmpty else { return 0 }
-        let atMost = active.filter { $0 <= tokens }.count
+    static func level<Value: Comparable & ExpressibleByIntegerLiteral>(_ amount: Value, active: [Value]) -> Int {
+        guard amount > 0, !active.isEmpty else { return 0 }
+        let atMost = active.filter { $0 <= amount }.count
         return max(1, (4 * atMost + active.count - 1) / active.count)
     }
 

@@ -6,26 +6,36 @@ enum SpendingMode: String, CaseIterable {
 }
 
 struct SpendingColumn: View {
+    let service: Service
     let history: SpendHistory?
     let mode: SpendingMode
     let period: ActivityPeriod
     @State private var selected: DayKey?
+    @State private var visibleWeeks: Int?
 
     private static let colors: [Color] = [.init(red: 0.39, green: 0.68, blue: 0.96), .orange, .mint, .purple, .pink, .yellow, .cyan]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if let history, !history.days.isEmpty {
-                if history.estimated { Text("Estimated from balance changes").caption() }
+                let totals = history.dailyTotals
+                let grid = ActivityGrid(days: [:], period: period, visibleWeeks: visibleWeeks, spending: totals)
+                SummaryTiles(items: history.periodTiles(for: grid))
                 if period == .week {
-                    let days = ActivityGrid(days: [:], period: .week).cells.flatMap { $0.compactMap { $0 } }
-                    week(days, history: history)
+                    week(grid.cells[0].compactMap { $0 }, history: history)
+                    Text(selected.map { description($0, amounts: history.days[$0], currency: history.currency) } ?? " ")
+                        .caption()
+                        .lineLimit(2, reservesSpace: true)
                 } else {
-                    calendar(history)
+                    ActivityCalendar(grid: grid, service: service, chipText: { day in
+                        totals[day.key].map { SpendHistory.amount($0, currency: history.currency) } ?? "No data"
+                    }, dayDetails: mode == .models ? { day in
+                        breakdown(history.days[day.key], currency: history.currency)
+                    } : nil) { width in
+                        visibleWeeks = ActivityGrid.weeksFitting(width: width)
+                    }
                 }
-                Text(selected.map { description($0, amounts: history.days[$0], currency: history.currency) } ?? " ")
-                    .caption()
-                    .lineLimit(2, reservesSpace: true)
+                if history.estimated { Text("Estimated from balance changes").caption() }
             } else {
                 Text("No spending history yet")
                     .caption()
@@ -88,47 +98,6 @@ struct SpendingColumn: View {
         }
     }
 
-    private func calendar(_ history: SpendHistory) -> some View {
-        let size: CGFloat = period == .all ? 17 : 21
-        let spacing: CGFloat = 2
-        return GeometryReader { proxy in
-            let weeks = max(1, Int((proxy.size.width - 26) / (size + spacing)))
-            let grid = ActivityGrid(days: [:], period: period, visibleWeeks: weeks)
-            let peak = max(grid.cells.flatMap { $0.compactMap { $0 } }.map { sum(history.days[$0.key]) }.max() ?? 0, 0.000_001)
-            VStack(alignment: .leading, spacing: spacing) {
-                HStack(spacing: spacing) {
-                    if period == .all { Color.clear.frame(width: 24, height: 10) }
-                    ForEach(grid.columnLabels.indices, id: \.self) { col in
-                        Text(grid.columnLabels[col] ?? "").font(.app(8)).lineLimit(1)
-                            .fixedSize().frame(width: size, alignment: .leading)
-                    }
-                }
-                ForEach(grid.cells.indices, id: \.self) { row in
-                    HStack(spacing: spacing) {
-                        if period == .all {
-                            Text(grid.rowLabels[row] ?? "").font(.app(8)).frame(width: 24, alignment: .leading)
-                        }
-                        ForEach(grid.cells[row].indices, id: \.self) { col in
-                            if let day = grid.cells[row][col] {
-                                let amounts = history.days[day.key]
-                                dayButton(day.key, amounts: amounts, currency: history.currency) {
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .fill(amounts == nil ? .white.opacity(0.035)
-                                              : Self.colors[0].opacity(0.18 + 0.82 * sqrt(sum(amounts) / peak)))
-                                        .frame(width: size, height: size)
-                                }
-                            } else {
-                                Color.clear.frame(width: size, height: size)
-                            }
-                        }
-                    }
-                }
-            }
-            .foregroundStyle(DashboardStyle.caption)
-        }
-        .frame(height: 13 + CGFloat(period == .all ? 7 : 5) * (size + spacing))
-    }
-
     private func dayButton<Content: View>(_ date: DayKey, amounts: [String: Double]?, currency: String,
                                          @ViewBuilder content: () -> Content) -> some View {
         Button { selected = date } label: { content().contentShape(Rectangle()) }
@@ -141,10 +110,15 @@ struct SpendingColumn: View {
     private func description(_ date: DayKey, amounts: [String: Double]?, currency: String) -> String {
         guard let amounts else { return "\(date) · No data" }
         let total = SpendHistory.amount(amounts.values.reduce(0, +), currency: currency)
-        let details = mode == .models ? amounts.filter { !$0.key.isEmpty }.sorted { $0.value > $1.value }.map {
+        let details = mode == .models ? breakdown(amounts, currency: currency) : nil
+        return [date, total, details].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func breakdown(_ amounts: [String: Double]?, currency: String) -> String? {
+        let details = (amounts ?? [:]).filter { !$0.key.isEmpty }.sorted { $0.value > $1.value }.map {
             "\($0.key) \(SpendHistory.amount($0.value, currency: currency))"
-        } : []
-        return ([date, total] + details).joined(separator: " · ")
+        }
+        return details.isEmpty ? nil : details.joined(separator: " · ")
     }
 
     private func sum(_ amounts: [String: Double]?) -> Double { max(0, (amounts ?? [:]).values.reduce(0, +)) }
