@@ -27,6 +27,14 @@ export interface Meter {
   caption: string;
 }
 
+export interface BalanceHeadline {
+  title: string;
+  value: string;
+  fraction: number | null;
+  amount: string | null;
+  caption: string | null;
+}
+
 export interface ServiceView {
   id: Service;
   name: string;
@@ -35,6 +43,7 @@ export interface ServiceView {
   status: string;
   setupMessage: string | null;
   meters: Meter[];
+  balanceHeadline: BalanceHeadline | null;
   /** Claude's credits as meters, in rows after the limits. */
   credits: Meter[];
   details: { label: string; value: string }[];

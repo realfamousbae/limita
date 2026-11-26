@@ -1,71 +1,72 @@
 import SwiftUI
 
-/// The panel that drops down under the activity toggle: a period switch, and for each
-/// service, under its column, a short summary and a graph of tokens per day.
+/// A shared period, with each provider choosing its own chart.
 struct ActivitySection: View {
     let store: LimitsStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { switches }
-                VStack(alignment: .leading, spacing: 5) { switches }
-            }
-            .padding(.horizontal, ExpandedView.columnPadding)
-            .padding(.top, 6)
-            columns
-        }
-    }
-
-    @ViewBuilder private var switches: some View {
-        PeriodSwitch(activity: store.activity)
-        if store.enabledServices.contains(where: { $0.kind == .balance }) {
-            Picker("Graph", selection: Binding(get: { store.spendingMode }, set: { store.spendingMode = $0 })) {
-                ForEach(SpendingMode.allCases) { mode in Text(mode.rawValue.uppercased()).tag(mode) }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .fixedSize()
-        }
-    }
-
-    private var columns: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             ForEach(Array(store.enabledServices.enumerated()), id: \.element) { index, service in
                 if index > 0 {
                     Rectangle().fill(Color.white.opacity(0.08))
                         .frame(width: 1).frame(maxHeight: .infinity).padding(.vertical, 12)
                 }
-                Group {
-                    if store.spendingMode == .activity || !store.enabledServices.contains(where: { $0.kind == .balance }) {
-                        ActivityColumn(service: service, grid: store.activity.grids[service], loaded: store.activity.isLoaded, activity: store.activity)
-                    } else {
-                        SpendingColumn(service: service, history: store.spendHistory(service),
-                                       mode: store.spendingMode, period: store.activity.period)
-                    }
-                }
+                column(service, showsPeriod: index == 0)
                     .padding(.horizontal, ExpandedView.columnPadding)
-                    .padding(.top, 12)
+                    .padding(.top, 6)
                     .padding(.bottom, 14)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
     }
+
+    private func column(_ service: Service, showsPeriod: Bool) -> some View {
+        let history = service.kind == .balance ? store.spendHistory(service) : nil
+        let offersModels = history?.hasModelBreakdown == true
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                if showsPeriod {
+                    ChartSwitch(values: ActivityPeriod.allCases, selection: Binding(
+                        get: { store.activity.period }, set: { store.activity.period = $0 }
+                    ), label: "Period", title: \.title)
+                }
+                if offersModels {
+                    ChartSwitch(values: SpendingMode.allCases, selection: Binding(
+                        get: { store.spendingModes[service] ?? .money },
+                        set: { store.spendingModes[service] = $0 }
+                    ), label: "\(service.displayName) graph", title: \.title)
+                }
+            }
+            .frame(height: 24)
+
+            if service.kind == .balance {
+                SpendingColumn(history: history,
+                               mode: offersModels ? (store.spendingModes[service] ?? .money) : .money,
+                               period: store.activity.period)
+            } else if !service.usesProviderConnection {
+                ActivityColumn(service: service, grid: store.activity.grids[service],
+                               loaded: store.activity.isLoaded, activity: store.activity)
+            }
+        }
+    }
 }
 
-/// WEEK · MONTH · ALL, shared by every service's graph.
-private struct PeriodSwitch: View {
-    let activity: ActivityStore
+/// Both controls use the same capsule, typography and selection treatment.
+private struct ChartSwitch<Value: Hashable>: View {
+    let values: [Value]
+    @Binding var selection: Value
+    let label: String
+    let title: (Value) -> String
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(ActivityPeriod.allCases, id: \.self) { period in
-                let selected = activity.period == period
+            ForEach(values, id: \.self) { value in
+                let selected = selection == value
                 Button {
-                    activity.period = period
+                    selection = value
                 } label: {
-                    Text(period.title)
+                    Text(title(value))
                         .font(.app(DashboardStyle.captionSize))
                         .tracking(DashboardStyle.captionTracking)
                         .foregroundStyle(selected ? Color.white : DashboardStyle.caption)
@@ -75,10 +76,13 @@ private struct PeriodSwitch: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
             }
         }
         .padding(2)
         .background(Capsule().fill(Color.white.opacity(0.06)))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
     }
 }
 
@@ -149,12 +153,7 @@ private struct ActivityColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if service.kind == .balance || service.usesProviderConnection {
-                // No local logs to count tokens in; the spending is in the column above.
-                Text("No local activity for \(service.displayName)")
-                    .font(.app(DashboardStyle.valueSize))
-                    .foregroundStyle(DashboardStyle.caption)
-            } else if let grid {
+            if let grid {
                 SummaryTiles(summary: grid.summary)
                 ActivityGraph(grid: grid, service: service, hovered: $hovered, activity: activity)
                 HStack(spacing: 8) {

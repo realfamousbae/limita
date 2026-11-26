@@ -182,7 +182,8 @@ function providers(s: SettingsState): HTMLElement[] {
       rows.push(...deepseekRows(s, provider));
     } else if (providerUsesSettings(provider.id)) {
       rows.push(externalProvider(provider));
-    } else if (provider.setupMessage) {
+    }
+    if (provider.id !== "deepseek" && provider.setupMessage) {
       rows.push(el("div", "row", el("p", "message", provider.setupMessage), button("OK", "button", () => invoke("dismiss_setup"))));
     }
     if (provider.interval) rows.push(intervalRow(provider.id, provider.interval));

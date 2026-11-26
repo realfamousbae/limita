@@ -10,6 +10,7 @@ struct ProviderData: Sendable, Equatable {
 
     var quotas: [Quota] = []
     var metrics: [String: String] = [:]
+    var totalCredits: Double?
     var history: SpendHistory?
     var notice: String?
 }
@@ -19,6 +20,50 @@ struct SpendHistory: Codable, Sendable, Equatable {
     var days: [DayKey: [String: Double]]
     var estimated = false
     var accountScope: String?
+
+    var hasModelBreakdown: Bool {
+        days.values.contains { $0.keys.contains { !$0.isEmpty } }
+    }
+
+    struct Summary {
+        let today: Double?
+        let yesterday: Double?
+        let month: Double?
+        let monthComplete: Bool
+        let dailyAverage: Double?
+        let weekComplete: Bool
+        let topModel: String?
+    }
+
+    func summary(at now: Date, for service: Service) -> Summary {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: service == .qwenAPI ? 8 * 3600 : 0)!
+        let formatter = DayKeys.formatter(timeZone: calendar.timeZone)
+        let today = calendar.startOfDay(for: now)
+        let dayKey = formatter.string(from: today)
+        let monthStart = calendar.dateInterval(of: .month, for: today)!.start
+        let monthKey = formatter.string(from: monthStart)
+        let monthDays = calendar.dateComponents([.day], from: monthStart, to: today).day ?? 0
+        let priorMonthDates = (0..<monthDays).map { formatter.string(from: calendar.date(byAdding: .day, value: $0, to: monthStart)!) }
+        let month = days.filter { $0.key >= monthKey && $0.key <= dayKey }.values
+        let weekKeys = (1...7).map { formatter.string(from: calendar.date(byAdding: .day, value: -$0, to: today)!) }
+        let week = weekKeys.compactMap { days[$0] }
+        let sum: ([String: Double]) -> Double = { $0.values.reduce(0, +) }
+        var models: [String: Double] = [:]
+        for amounts in week {
+            for (model, amount) in amounts where !model.isEmpty && model != "Other" {
+                models[model, default: 0] += amount
+            }
+        }
+        let top = models.filter { $0.value > 0 }.sorted { lhs, rhs in
+            lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
+        }.first?.key
+        return Summary(today: days[dayKey].map(sum), yesterday: days[weekKeys[0]].map(sum),
+                       month: month.isEmpty ? nil : month.map(sum).reduce(0, +),
+                       monthComplete: priorMonthDates.allSatisfy { days[$0] != nil },
+                       dailyAverage: week.isEmpty ? nil : week.map(sum).reduce(0, +) / Double(week.count),
+                       weekComplete: week.count == 7, topModel: top)
+    }
 
     static func amount(_ value: Double, currency: String) -> String {
         value.formatted(.currency(code: currency).precision(.fractionLength(value != 0 && abs(value) < 0.01 ? 2...6 : 2...2)))
@@ -480,7 +525,10 @@ enum ProviderClient {
             do {
                 let root = try await json(base + "/credits", authorization: auth)
                 if let credits = root["data"] as? JSON, let purchased = number(credits["total_credits"]),
-                   let used = number(credits["total_usage"]) { balance = simpleBalance(purchased - used, "USD") }
+                   let used = number(credits["total_usage"]) {
+                    balance = simpleBalance(purchased - used, "USD")
+                    if purchased > 0 { output.totalCredits = purchased }
+                }
             } catch let error as Throttled { throw error }
             catch { output.notice = "Account balance unavailable with this key." }
             do {

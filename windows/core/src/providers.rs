@@ -20,6 +20,7 @@ use crate::{
 pub struct ProviderData {
     pub quotas: Vec<Quota>,
     pub metrics: BTreeMap<String, String>,
+    pub total_credits: Option<f64>,
     pub history: Option<SpendHistory>,
     pub notice: Option<String>,
 }
@@ -41,7 +42,65 @@ pub struct SpendHistory {
     pub account_scope: Option<String>,
 }
 
+pub struct SpendSummary {
+    pub today: Option<f64>,
+    pub yesterday: Option<f64>,
+    pub month: Option<f64>,
+    pub month_complete: bool,
+    pub daily_average: Option<f64>,
+    pub week_complete: bool,
+    pub top_model: Option<String>,
+}
+
 impl SpendHistory {
+    pub fn summary(&self, service: Service, now: Timestamp) -> SpendSummary {
+        use chrono::Datelike;
+
+        let offset = if service == Service::QwenApi { 8 } else { 0 };
+        let today = (now + chrono::TimeDelta::hours(offset)).date_naive();
+        let month_start = today.with_day(1).unwrap();
+        let today_key = today.to_string();
+        let month_key = month_start.to_string();
+        let week: Vec<_> = (1..=7)
+            .filter_map(|day| self.days.get(&(today - Days::new(day)).to_string()))
+            .collect();
+        let month: Vec<_> = self
+            .days
+            .range(month_key..=today_key.clone())
+            .map(|(_, amounts)| amounts)
+            .collect();
+        let sum = |amounts: &BTreeMap<String, f64>| amounts.values().sum::<f64>();
+        let mut models: BTreeMap<&str, f64> = BTreeMap::new();
+        for amounts in &week {
+            for (model, amount) in *amounts {
+                if !model.is_empty() && model != "Other" {
+                    *models.entry(model).or_default() += amount;
+                }
+            }
+        }
+        let top_model = models
+            .into_iter()
+            .filter(|(_, amount)| *amount > 0.0)
+            .max_by(|(left_name, left), (right_name, right)| {
+                left.total_cmp(right)
+                    .then_with(|| right_name.cmp(left_name))
+            })
+            .map(|(model, _)| model.to_owned());
+        SpendSummary {
+            today: self.days.get(&today_key).map(sum),
+            yesterday: self.days.get(&(today - Days::new(1)).to_string()).map(sum),
+            month: (!month.is_empty()).then(|| month.into_iter().map(sum).sum()),
+            month_complete: (0..u64::from(today.day0())).all(|offset| {
+                self.days
+                    .contains_key(&(month_start + Days::new(offset)).to_string())
+            }),
+            daily_average: (!week.is_empty())
+                .then(|| week.iter().map(|amounts| sum(amounts)).sum::<f64>() / week.len() as f64),
+            week_complete: week.len() == 7,
+            top_model,
+        }
+    }
+
     pub fn new(currency: impl Into<String>) -> Self {
         Self {
             currency: currency.into(),
@@ -702,7 +761,10 @@ fn open_router(key: &str, now: Timestamp) -> Result<(Option<Balance>, ProviderDa
                 let credits = &credits["data"];
                 balance = number(&credits["total_credits"])
                     .zip(number(&credits["total_usage"]))
-                    .map(|(bought, used)| simple_balance(bought - used, "USD"));
+                    .map(|(bought, used)| {
+                        provider.total_credits = (bought > 0.0).then_some(bought);
+                        simple_balance(bought - used, "USD")
+                    });
             }
             Err(error) if live::rate_limit_of(&error).is_some() => return Err(error),
             Err(_) => provider.notice = Some("Account balance unavailable with this key.".into()),
@@ -1144,6 +1206,11 @@ mod tests {
         assert_eq!(device.user_code, "DEMO-1234");
         let credentials = finish_open_code_sign_in(device, || false).unwrap();
         assert_eq!(credentials.workspace, "org_demo");
+        store.disconnect(Service::OpenCodeApi);
+        assert!(!store.snapshot().enabled.contains(&Service::OpenCodeApi));
+        assert!(store.snapshot().enabled.contains(&Service::OpenCodeGo));
+        assert!(store.snapshot().enabled.contains(&Service::OpenRouter));
+        assert!(store.spend_history(Service::OpenRouter).is_some());
         for (service, _, _, _, _) in providers {
             store.disconnect(service);
             assert!(store.spend_history(service).is_none());
@@ -1152,6 +1219,30 @@ mod tests {
                 .join(format!("{}-spend.json", service.id()))
                 .exists());
         }
+    }
+
+    #[test]
+    fn spend_summary_keeps_missing_days_distinct_from_zero() {
+        let now = time::parse_flexible("2026-11-08T15:30:00Z").unwrap();
+        let mut history = SpendHistory::new("USD");
+        history.days.insert("2026-11-07".into(), BTreeMap::new());
+        history.add("2026-11-06", "qwen", 2.0);
+        let partial = history.summary(Service::OpenCodeApi, now);
+        assert_eq!(partial.today, None);
+        assert_eq!(partial.yesterday, Some(0.0));
+        assert_eq!(partial.month, Some(2.0));
+        assert!(!partial.month_complete);
+        assert!(!partial.week_complete);
+        assert_eq!(partial.daily_average, Some(1.0));
+        assert_eq!(partial.top_model.as_deref(), Some("qwen"));
+
+        for day in 1..=5 {
+            history.add(&format!("2026-11-0{day}"), "glm", 0.3);
+        }
+        let complete = history.summary(Service::OpenCodeApi, now);
+        assert!(complete.month_complete);
+        assert!(complete.week_complete);
+        assert!((complete.daily_average.unwrap() - 0.5).abs() < 1e-8);
     }
 
     #[test]

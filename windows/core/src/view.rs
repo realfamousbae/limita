@@ -12,6 +12,7 @@ use crate::model::{
     ServiceState, UsageCredits,
 };
 use crate::prime_time::PrimeTimeNotice;
+use crate::providers::{SpendHistory, SpendSummary};
 use crate::store::Snapshot;
 use crate::time::{relative_text, seconds_between, Timestamp};
 
@@ -43,6 +44,7 @@ pub struct ServiceView {
     /// Outcome of connecting, shown instead of the meters until dismissed.
     pub setup_message: Option<String>,
     pub meters: Vec<MeterView>,
+    pub balance_headline: Option<BalanceHeadline>,
     /// Claude's credits as meters, in rows after the limits.
     pub credits: Vec<MeterView>,
     pub details: Vec<DetailRow>,
@@ -54,6 +56,16 @@ pub struct ServiceView {
     pub error: Option<String>,
     /// Shown instead of the meters when there is no data at all.
     pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BalanceHeadline {
+    title: String,
+    value: String,
+    fraction: Option<f64>,
+    amount: Option<String>,
+    caption: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -202,6 +214,7 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
         status: status.into(),
         setup_message: setup_message.clone(),
         meters: Vec::new(),
+        balance_headline: None,
         credits: Vec::new(),
         details: Vec::new(),
         reset: None,
@@ -220,11 +233,18 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
     view.error = live_error;
     if let Some(provider) = snapshot.details.get(&service).and_then(|detail| detail.provider.as_ref()) {
         view.meters = provider.quotas.iter().map(|quota| meter(&quota.name, service, Some(quota.window), BarTone::AccentSoft, now)).collect();
+        let history = provider.history.as_ref();
+        let summary = history.map(|history| history.summary(service, now));
         if let Some(balance) = &data.balance {
-            let label = if service == Service::QwenApi { "ALIBABA CLOUD BALANCE" } else { "BALANCE LEFT" };
-            view.details.push(DetailRow { label: label.into(), value: balance.format_amount(balance.total) });
+            view.balance_headline = Some(provider_balance_headline(
+                service, balance, provider.total_credits, history.zip(summary.as_ref()),
+            ));
         }
-        view.details.extend(provider.metrics.iter().map(|(label, value)| DetailRow { label: label.clone(), value: value.clone() }));
+        view.details = if provider.metrics.is_empty() {
+            history.zip(summary.as_ref()).map_or_else(Vec::new, |(history, summary)| provider_spend_rows(summary, &history.currency))
+        } else {
+            provider.metrics.iter().map(|(label, value)| DetailRow { label: label.clone(), value: value.clone() }).collect()
+        };
         view.error = view.error.or_else(|| provider.notice.clone());
         return view;
     }
@@ -274,6 +294,56 @@ fn service_view(service: Service, snapshot: &Snapshot, now: Timestamp) -> Servic
         has_link: event.url.is_some(),
     });
     view
+}
+
+fn provider_balance_headline(service: Service, balance: &Balance, total_credits: Option<f64>,
+                             history: Option<(&SpendHistory, &SpendSummary)>) -> BalanceHeadline {
+    let runway = history
+        .filter(|(history, summary)| service != Service::QwenApi && history.currency == balance.currency && summary.week_complete)
+        .and_then(|(_, summary)| summary.daily_average)
+        .filter(|average| *average > 0.0 && balance.total > 0.0)
+        .map(|average| balance.total / average)
+        .filter(|days| days.is_finite());
+    let caption = if let Some(days) = runway {
+        Some(if days >= 365.0 { "LASTS OVER A YEAR".into() } else { format!("LASTS ~{} AT THIS PACE", days_text(days)) })
+    } else {
+        total_credits.map(|_| "TOTAL CREDITS".into())
+    };
+    BalanceHeadline {
+        title: if service == Service::QwenApi { "ALIBABA CLOUD BALANCE" } else { "BALANCE LEFT" }.into(),
+        value: balance.format_amount(balance.total),
+        fraction: total_credits.map(|credits| (balance.total / credits).clamp(0.0, 1.0)),
+        amount: total_credits.map(|credits| format!("OF {}", balance.format_amount(credits))),
+        caption,
+    }
+}
+
+fn provider_spend_rows(summary: &SpendSummary, currency: &str) -> Vec<DetailRow> {
+    let mut rows = Vec::new();
+    let mut add = |label: &str, amount: Option<f64>| {
+        if let Some(amount) = amount {
+            rows.push(DetailRow { label: label.into(), value: format_spend(amount, currency) });
+        }
+    };
+    if summary.today.is_some() { add("SPENT TODAY", summary.today); }
+    else { add("SPENT YESTERDAY", summary.yesterday); }
+    add(if summary.month_complete { "THIS MONTH" } else { "RECORDED THIS MONTH" }, summary.month);
+    add(if summary.week_complete { "PER DAY (7D)" } else { "PER REPORTED DAY" }, summary.daily_average);
+    if let Some(model) = &summary.top_model {
+        rows.push(DetailRow { label: "TOP MODEL (7D)".into(), value: model.clone() });
+    }
+    rows
+}
+
+fn format_spend(amount: f64, currency: &str) -> String {
+    if amount == 0.0 || amount.abs() >= 0.01 { return Balance::format(amount, currency); }
+    // Retain fractional cents in API usage tiles.
+    let amount = number(amount, 2, 6);
+    match currency {
+        "USD" => format!("${amount}"),
+        "CNY" | "RMB" => format!("¥{amount}"),
+        _ => format!("{currency} {amount}"),
+    }
 }
 
 /// The balance as a credit meter: the share of the last top-up that is left, the money

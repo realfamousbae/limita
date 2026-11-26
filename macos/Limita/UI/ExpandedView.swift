@@ -34,12 +34,14 @@ struct ExpandedView: View {
                                 .frame(width: BezelPanelController.columnWidth * CGFloat(store.enabledServices.count))
                         }
                         .fixedSize(horizontal: false, vertical: true)
-                        HStack {
-                            Spacer()
-                            ActivityToggle(store: store).button(expanded: store.activity.isExpanded)
+                        if hasActivityCharts {
+                            HStack {
+                                Spacer()
+                                ActivityToggle(store: store).button(expanded: store.activity.isExpanded)
+                            }
+                            .padding(.horizontal, Self.columnPadding)
+                            .padding(.vertical, 8)
                         }
-                        .padding(.horizontal, Self.columnPadding)
-                        .padding(.vertical, 8)
                     } else {
                         dashboardColumns(now: context.date)
                     }
@@ -58,6 +60,10 @@ struct ExpandedView: View {
         }
     }
 
+    private var hasActivityCharts: Bool {
+        store.enabledServices.contains { $0.kind == .balance || !$0.usesProviderConnection }
+    }
+
     private func dashboardColumns(now: Date, showActivityButton: Bool = true) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
@@ -69,8 +75,8 @@ struct ExpandedView: View {
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
-            ActivityToggle(store: store, showButton: showActivityButton)
-            if store.activity.isExpanded { ActivitySection(store: store) }
+            ActivityToggle(store: store, showButton: showActivityButton && hasActivityCharts)
+            if hasActivityCharts && store.activity.isExpanded { ActivitySection(store: store) }
         }
     }
 
@@ -292,14 +298,19 @@ struct ExpandedView: View {
                 HStack(spacing: 6) {
                     Text([service.displayName, store.details[service]?.plan].compactMap { $0 }.joined(separator: " "))
                         .font(.app(14))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
                     LevelDot(state: state, now: now)
                 }
 
                 Spacer(minLength: 8)
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(statusLabel(state))
-                        .caption()
+                    HStack(spacing: 6) {
+                        Text(statusLabel(state))
+                            .caption()
+                        providerMenu(service)
+                    }
                     if let snapshot = state.snapshot {
                         Text("UPDATED \(Self.updatedText(snapshot.capturedAt, now: now).uppercased())")
                             .caption(faint: true)
@@ -313,15 +324,23 @@ struct ExpandedView: View {
             if let message = store.setupMessage, message.service == service {
                 SetupMessage(text: message.text) { store.setupMessage = nil }
             } else if let snapshot = state.snapshot, let provider = store.details[service]?.provider {
+                let history = provider.history
+                let summary = history?.summary(at: now, for: service)
                 if let balance = snapshot.balance {
-                    detailTiles([DetailRow(label: service == .qwenAPI ? "ALIBABA CLOUD BALANCE" : "BALANCE LEFT",
-                                           value: SpendHistory.amount(balance.total, currency: balance.currency))])
+                    providerBalance(balance, totalCredits: provider.totalCredits, service: service,
+                                    history: history, summary: summary, stale: state.isStale)
                 }
                 ForEach(Array(provider.quotas.enumerated()), id: \.offset) { _, quota in
                     metric(quota.name, service: service, window: quota.window, color: DashboardStyle.accent(for: service),
                            stale: state.isStale, now: now)
                 }
-                detailTiles(provider.metrics.sorted(by: { $0.key < $1.key }).map { DetailRow(label: $0.key, value: $0.value) })
+                var providerRows: [DetailRow] {
+                    if let history, let summary, provider.metrics.isEmpty {
+                        return Self.providerSpendRows(summary, currency: history.currency)
+                    }
+                    return provider.metrics.sorted(by: { $0.key < $1.key }).map { DetailRow(label: $0.key, value: $0.value) }
+                }
+                detailTiles(providerRows)
                 if let notice = provider.notice { Text(notice).caption().fixedSize(horizontal: false, vertical: true) }
                 if let error = store.liveErrors[service] { ErrorLine(text: error) }
             } else if let snapshot = state.snapshot, let balance = snapshot.balance {
@@ -355,6 +374,23 @@ struct ExpandedView: View {
         .padding(.horizontal, Self.columnPadding)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func providerMenu(_ service: Service) -> some View {
+        Menu {
+            Button("Disconnect", role: .destructive) { store.disconnect(service) }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(DashboardStyle.caption)
+                .frame(width: 19, height: 19)
+                .background(.white.opacity(0.07), in: Circle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Options for \(service.displayName)")
+        .help("Options for \(service.displayName)")
     }
 
     /// "just now" for fresh data. The timeline tick can predate a just-fetched snapshot,
@@ -635,6 +671,49 @@ struct ExpandedView: View {
         return rows
     }
 
+    private func providerBalance(_ balance: Balance, totalCredits: Double?, service: Service,
+                                 history: SpendHistory?, summary: SpendHistory.Summary?, stale: Bool) -> MeterView {
+        let days = Self.providerRunway(balance: balance, history: history, summary: summary, service: service)
+        let caption: String
+        if let days {
+            caption = days >= 365 ? "LASTS OVER A YEAR" : "LASTS ~\(Self.daysText(days)) AT THIS PACE"
+        } else if totalCredits != nil {
+            caption = "TOTAL CREDITS"
+        } else {
+            caption = ""
+        }
+        return MeterView(
+            title: service == .qwenAPI ? "ALIBABA CLOUD BALANCE" : "BALANCE LEFT",
+            value: SpendHistory.amount(balance.total, currency: balance.currency),
+            amount: totalCredits.map { "OF \(SpendHistory.amount($0, currency: balance.currency))" },
+            fill: totalCredits.map { balance.total / $0 } ?? 0,
+            color: DashboardStyle.accent(for: service).opacity(0.72),
+            caption: caption,
+            stale: stale,
+            showsBar: totalCredits != nil
+        )
+    }
+
+    static func providerRunway(balance: Balance, history: SpendHistory?, summary: SpendHistory.Summary?, service: Service) -> Double? {
+        guard service != .qwenAPI, balance.total > 0, history?.currency == balance.currency,
+              summary?.weekComplete == true, let daily = summary?.dailyAverage, daily > 0 else { return nil }
+        let days = balance.total / daily
+        return days.isFinite ? days : nil
+    }
+
+    static func providerSpendRows(_ summary: SpendHistory.Summary, currency: String) -> [DetailRow] {
+        var rows: [DetailRow] = []
+        func add(_ title: String, _ amount: Double?) {
+            if let amount { rows.append(DetailRow(label: title, value: SpendHistory.amount(amount, currency: currency))) }
+        }
+        if let today = summary.today { add("SPENT TODAY", today) }
+        else { add("SPENT YESTERDAY", summary.yesterday) }
+        add(summary.monthComplete ? "THIS MONTH" : "RECORDED THIS MONTH", summary.month)
+        add(summary.weekComplete ? "PER DAY (7D)" : "PER REPORTED DAY", summary.dailyAverage)
+        if let model = summary.topModel { rows.append(DetailRow(label: "TOP MODEL (7D)", value: model)) }
+        return rows
+    }
+
     /// The balance as a credit meter: the share of the last top-up that is left, the
     /// money beside the bar, and how long it lasts under it. The bar's colour follows
     /// the balance's level, so the user's threshold turns it red.
@@ -717,6 +796,7 @@ struct MeterView: View {
     var highlight: (fill: Double, color: Color)?
     let caption: String
     let stale: Bool
+    var showsBar = true
     /// Tints the value and makes it and the bar shine in this colour.
     var glow: Color? = nil
     /// Shows a chevron after the title that folds the meter away.
@@ -758,21 +838,25 @@ struct MeterView: View {
                     .opacity(stale ? 0.55 : 1)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        bar
-                        if let amount {
-                            Text(amount)
-                                .caption(size: DashboardStyle.meterCaptionSize)
-                                .monospacedDigit()
-                                .lineLimit(1)
-                                .fixedSize()
-                                .opacity(stale ? 0.55 : 1)
+                    if showsBar {
+                        HStack(spacing: 8) {
+                            bar
+                            if let amount {
+                                Text(amount)
+                                    .caption(size: DashboardStyle.meterCaptionSize)
+                                    .monospacedDigit()
+                                    .lineLimit(1)
+                                    .fixedSize()
+                                    .opacity(stale ? 0.55 : 1)
+                            }
                         }
                     }
-                    Text(caption)
-                        .caption(size: DashboardStyle.meterCaptionSize)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                    if !caption.isEmpty {
+                        Text(caption)
+                            .caption(size: DashboardStyle.meterCaptionSize)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
                 }
             }
         }

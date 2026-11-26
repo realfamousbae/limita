@@ -46,6 +46,28 @@ final class ProviderTests: XCTestCase {
         XCTAssertEqual(credentials.workspace, "org_demo")
     }
 
+    @MainActor
+    func testProviderForecastNeedsSevenRecordedDaysAndMatchingCurrency() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter.parseFlexible("2026-11-08T15:30:00Z"))
+        var history = SpendHistory(currency: "USD", days: ["2026-11-07": [:], "2026-11-06": ["qwen": 2]])
+        let balance = Balance(currency: "USD", total: 8, granted: 0, toppedUp: 0, isAvailable: true)
+        let partial = history.summary(at: now, for: .openCodeAPI)
+        XCTAssertNil(partial.today)
+        XCTAssertEqual(partial.yesterday, 0)
+        XCTAssertEqual(partial.month, 2)
+        XCTAssertFalse(partial.monthComplete)
+        XCTAssertEqual(partial.dailyAverage, 1)
+        XCTAssertEqual(partial.topModel, "qwen")
+        XCTAssertNil(ExpandedView.providerRunway(balance: balance, history: history, summary: partial, service: .openCodeAPI))
+
+        for day in 1...5 { history.days["2026-11-0\(day)"] = ["glm": 0.3] }
+        let complete = history.summary(at: now, for: .openCodeAPI)
+        XCTAssertTrue(complete.monthComplete)
+        XCTAssertTrue(complete.weekComplete)
+        XCTAssertEqual(ExpandedView.providerRunway(balance: balance, history: history, summary: complete, service: .openCodeAPI) ?? 0, 16, accuracy: 0.0001)
+        XCTAssertNil(ExpandedView.providerRunway(balance: balance, history: history, summary: complete, service: .qwenAPI))
+    }
+
     func testBailianQuotaRatiosAndMissingWindows() {
         let quota = ProviderClient.qwenQuotas([
             "per5Hour": ["percentage": 0.25, "resetTime": 1_800_000_000_000],

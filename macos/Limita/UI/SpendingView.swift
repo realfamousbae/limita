@@ -1,12 +1,11 @@
 import SwiftUI
 
-enum SpendingMode: String, CaseIterable, Identifiable {
-    case activity, models, money
-    var id: Self { self }
+enum SpendingMode: String, CaseIterable {
+    case models, money
+    var title: String { rawValue.uppercased() }
 }
 
 struct SpendingColumn: View {
-    let service: Service
     let history: SpendHistory?
     let mode: SpendingMode
     let period: ActivityPeriod
@@ -16,7 +15,7 @@ struct SpendingColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let history, mode == .money || history.days.values.contains(where: { $0.keys.contains(where: { !$0.isEmpty }) }) {
+            if let history, !history.days.isEmpty {
                 if history.estimated { Text("Estimated from balance changes").caption() }
                 if period == .week {
                     let days = ActivityGrid(days: [:], period: .week).cells.flatMap { $0.compactMap { $0 } }
@@ -28,9 +27,7 @@ struct SpendingColumn: View {
                     .caption()
                     .lineLimit(2, reservesSpace: true)
             } else {
-                Text(service.kind == .balance
-                     ? (mode == .models ? "Model spending unavailable" : "No spending history yet")
-                     : "Spending is available on API connections")
+                Text("No spending history yet")
                     .caption()
             }
         }

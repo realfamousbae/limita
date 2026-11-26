@@ -118,7 +118,7 @@ final class LimitsStore {
     }
     /// Tokens per day for the activity panel under the dashboard.
     let activity: ActivityStore
-    var spendingMode: SpendingMode = .activity
+    var spendingModes: [Service: SpendingMode] = [:]
     private(set) var spending: [Service: SpendHistory] = [:]
     @ObservationIgnored private var providerGeneration: [Service: UUID] = [:]
     /// A newer Limita, when GitHub has one; the dashboard shows an install button for it.
@@ -507,12 +507,15 @@ final class LimitsStore {
     func connectDeepSeek(apiKey: String) async -> String? {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return "Enter a DeepSeek API key" }
+        let generation = UUID()
+        providerGeneration[.deepseek] = generation
         let reading: LiveReading
         do {
             reading = try await deepseekLive.fetch(key: key)
         } catch {
             return error.localizedDescription
         }
+        guard providerGeneration[.deepseek] == generation else { return "Connection changed" }
         do {
             // Another key may be another account: its history would read as spending.
             if (try? deepseekKey.read()) != key { ledger.clear() }
@@ -545,6 +548,8 @@ final class LimitsStore {
     /// the API key from the Keychain and the balance history.
     func disconnect(_ service: Service) {
         guard isEnabled(service) else { return }
+        providerGeneration[service] = UUID()
+        if setupMessage?.service == service { setupMessage = nil }
         if service == .claude {
             do {
                 try configurator.uninstall()
@@ -561,16 +566,16 @@ final class LimitsStore {
             ledger.clear()
         }
         if service.usesProviderConnection {
-            providerGeneration[service] = UUID()
             do { try ProviderClient.credentialsLock.withLock { try ProviderClient.keychain(service).delete() } }
             catch { setupMessage = (service, error.localizedDescription) }
             try? FileManager.default.removeItem(at: SpendHistory.file(for: service))
             spending[service] = nil
-            lastLiveAttempt[service] = nil
-            rateLimitStreak[service] = nil
-            livePausedUntil[service] = nil
         }
+        lastLiveAttempt[service] = nil
+        rateLimitStreak[service] = nil
+        livePausedUntil[service] = nil
         setEnabled(service, false)
+        spendingModes.removeValue(forKey: service)
         states[service] = nil
         liveErrors[service] = nil
         details[service] = nil

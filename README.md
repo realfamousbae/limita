@@ -191,7 +191,7 @@ Open **Settings → Providers** to connect each plan or API account. Limita uses
 - **OpenCode Go** uses an OpenCode API key. For **OpenCode API**, enter a Console key with Usage read access and your workspace ID. For balance access, use a key with Billing read access or sign in as a workspace owner or admin.
 - **OpenRouter** accepts a standard key for its own usage, or a Management key for account credits and model history.
 
-In the Activity panel, **Models** shows spending by model and **Money** shows the total for each day. **Week** uses bars. **Month** and **All** use the calendar grid, with a breakdown on hover or focus. DeepSeek spending is estimated from balance changes.
+Each API card defaults to **Money** and can switch to **Models** when model-level spending is available. Local activity stays in its own card. To disconnect a provider, choose **Disconnect** in its card menu or in Settings. **Week** uses bars. **Month** and **All** use the calendar grid, with a breakdown on hover or focus. DeepSeek spending is estimated from balance changes.
 
 To try the providers locally, run `scripts/fake-api.py serve` and launch Limita with `LIMITA_FAKE_PROVIDERS=1`. The script header lists the demo keys. Demo settings, history and keys use separate storage.
 

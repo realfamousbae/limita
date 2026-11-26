@@ -458,13 +458,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				INFOPLIST_FILE = Limita/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.25.4;
+				MARKETING_VERSION = 0.25.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.limita.app;
 				PRODUCT_NAME = Limita;
 				SDKROOT = macosx;
@@ -569,13 +569,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				INFOPLIST_FILE = Limita/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.25.4;
+				MARKETING_VERSION = 0.25.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.limita.app;
 				PRODUCT_NAME = Limita;
 				SDKROOT = macosx;

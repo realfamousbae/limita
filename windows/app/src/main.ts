@@ -21,8 +21,8 @@ const ANNOUNCE_MS = 8000;
 let announced: { version: string; at: number } | null = null;
 let reported = "";
 let activity: ActivityPanel = { expanded: false, period: "all", grids: [], spending: [] };
-type ChartMode = "activity" | "models" | "money";
-let chartMode: ChartMode = "activity";
+type ChartMode = "models" | "money";
+const chartModes = new Map<ServiceView["id"], ChartMode>();
 let scrollLeft = 0;
 let shownWeeks = 0;
 let requestedWeeks = 0;
@@ -64,7 +64,7 @@ function logo(service: ServiceView["id"]): HTMLElement {
 }
 
 function badge(service: ServiceView["id"], size: "large" | "small" = "large"): HTMLElement {
-  return el("span", `badge ${service} ${size}`, logo(service));
+  return el("span", `badge ${service} ${size}${providerUsesSettings(service) ? " external" : ""}`, logo(service));
 }
 
 // MARK: - Pill
@@ -170,18 +170,22 @@ function dashboard(current: PanelView): HTMLElement {
   const dashboard = el("div", wide ? "dashboard wide" : "dashboard", header, el("div", "divider horizontal"));
   const cards = el("div", wide ? "provider-scroll" : "", body);
   dashboard.append(cards);
-  if (current.services.length > 0) {
-    const supportsSpending = current.services.some(({ id }) => reportsSpending(id));
-    if (!supportsSpending) chartMode = "activity";
+  if (current.services.some(({ id }) => reportsSpending(id) || !providerUsesSettings(id))) {
     if (activity.expanded && activity.grids.length > 0) {
-      const charts = chartMode === "activity"
-        ? activity.grids.map(activityColumn)
-        : activity.spending.map((entry) => spendingColumn(entry, chartMode));
-      const graphRow = el("div", "columns", ...charts.flatMap((chart, index) =>
-        [index > 0 ? el("div", "divider vertical") : null, chart]));
-      dashboard.append(el("div", "divider horizontal"),
-        el("div", "activity-header", periodSwitch(), supportsSpending && chartModeSwitch()),
-        el("div", wide ? "provider-scroll" : "", graphRow));
+      const graphRow = el("div", "columns", ...current.services.flatMap(({ id, name }, index) => {
+        const spending = activity.spending.find((entry) => entry.grid.id === id);
+        const grid = activity.grids.find((entry) => entry.id === id);
+        const supportsModels = spending?.history
+          && Object.values(spending.history.days).some((models) => Object.keys(models).some(Boolean));
+        const mode = supportsModels ? chartModes.get(id) ?? "money" : "money";
+        const chart = reportsSpending(id) && spending
+          ? spendingColumn(spending, mode)
+          : grid && !providerUsesSettings(id) ? activityColumn(grid) : el("section", `column activity ${id}`);
+        chart.prepend(el("div", "activity-controls", index === 0 && periodSwitch(),
+          Boolean(supportsModels) && chartModeSwitch(id, name, mode)));
+        return [index > 0 ? el("div", "divider vertical") : null, chart];
+      }));
+      dashboard.append(el("div", "divider horizontal"), el("div", wide ? "provider-scroll" : "", graphRow));
     }
     dashboard.append(activityToggle());
   }
@@ -229,19 +233,22 @@ function periodSwitch(): HTMLElement {
   }));
 }
 
-function chartModeSwitch(): HTMLElement {
-  const modes: ChartMode[] = ["activity", "models", "money"];
-  const controls = el("div", "period-switch");
-  controls.setAttribute("aria-label", "Graph");
+function chartModeSwitch(service: ServiceView["id"], name: string, selected: ChartMode): HTMLElement {
+  const modes: ChartMode[] = ["models", "money"];
+  const controls = el("div", "period-switch chart-mode-switch");
+  controls.dataset.service = service;
+  controls.setAttribute("role", "group");
+  controls.setAttribute("aria-label", `${name} graph`);
   for (const id of modes) {
-    const button = el("button", id === chartMode ? "selected" : "", id.toUpperCase());
-    button.setAttribute("aria-pressed", String(id === chartMode));
+    const button = el("button", id === selected ? "selected" : "", id.toUpperCase());
+    button.setAttribute("aria-pressed", String(id === selected));
     button.addEventListener("click", () => {
-      if (chartMode === id) return;
-      chartMode = id;
+      if (id === selected) return;
+      chartModes.set(service, id);
       shownWeeks = 0;
+      requestedWeeks = 0;
       render();
-      app.querySelector<HTMLElement>('.period-switch[aria-label="Graph"] .selected')?.focus();
+      app.querySelector<HTMLElement>(`.chart-mode-switch[data-service="${service}"] .selected`)?.focus();
     });
     controls.append(button);
   }
@@ -251,10 +258,8 @@ function chartModeSwitch(): HTMLElement {
 function spendingColumn(entry: SpendingGrid, mode: ChartMode): HTMLElement {
   const { grid, history } = entry;
   const node = el("section", `column activity spending ${grid.id}`);
-  if (!history || (mode === "models" && !Object.values(history.days).some((models) => Object.keys(models).some(Boolean)))) {
-    node.append(el("p", "activity-message", reportsSpending(grid.id)
-      ? mode === "models" ? "Model spending unavailable" : "No spending history yet"
-      : "Spending is available on API connections"));
+  if (!history || Object.keys(history.days).length === 0) {
+    node.append(el("p", "activity-message", "No spending history yet"));
     return node;
   }
   const { days } = history;
@@ -484,6 +489,46 @@ function connectPrompt(current: PanelView): HTMLElement {
   );
 }
 
+function providerMenu(service: ServiceView): HTMLElement {
+  const menu = el("details", "provider-menu");
+  const summary = el("summary", "round", "⋯");
+  summary.title = `Options for ${service.name}`;
+  summary.setAttribute("aria-label", summary.title);
+  const disconnect = el("button", "provider-disconnect", "Disconnect");
+  disconnect.setAttribute("aria-label", `Disconnect ${service.name}`);
+  const error = el("p", "activity-message");
+  disconnect.addEventListener("click", async () => {
+    try {
+      await invoke("disconnect", { service: service.id });
+      menu.removeAttribute("open");
+    } catch (failure) {
+      error.textContent = String(failure);
+    }
+  });
+  menu.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && menu.hasAttribute("open")) {
+      event.stopPropagation();
+      menu.removeAttribute("open");
+      summary.focus();
+    }
+  });
+  menu.append(summary, el("div", "provider-menu-items", disconnect, error));
+  return menu;
+}
+
+function balanceHeadline(balance: NonNullable<ServiceView["balanceHeadline"]>, stale: boolean): HTMLElement {
+  const bar = balance.fraction === null ? null : el("div", "bar", el("span", "fill accentSoft"));
+  if (bar?.firstElementChild instanceof HTMLElement) {
+    bar.firstElementChild.style.width = `${balance.fraction! * 100}%`;
+  }
+  const track = bar || balance.caption ? el("div", "meter-track",
+    bar && el("div", "bar-line", bar, balance.amount && el("div", "caption meter-caption nowrap", balance.amount)),
+    balance.caption && el("div", "caption meter-caption nowrap", balance.caption)) : null;
+  return el("div", stale ? "meter stale" : "meter",
+    el("div", "caption meter-caption nowrap", balance.title),
+    el("div", "meter-body", el("span", "big digits", balance.value), track));
+}
+
 function column(service: ServiceView): HTMLElement {
   // Name on the left, how fresh the data is on the right. The meter titles already
   // say "used" or "left".
@@ -491,9 +536,11 @@ function column(service: ServiceView): HTMLElement {
     "div",
     "column-head",
     badge(service.id),
-    el("div", "service-name", service.name, dot(service.level, service.stale)),
+    el("div", "service-name", el("span", "service-name-label", service.name), dot(service.level, service.stale)),
     el("span", "spacer"),
-    el("div", "head-status", el("div", "caption", service.status), service.updated ? el("div", "caption faint", service.updated) : null),
+    el("div", "head-status",
+      el("div", "head-status-line", el("div", "caption", service.status), providerMenu(service)),
+      service.updated ? el("div", "caption faint", service.updated) : null),
   );
 
   const node = el("section", `column ${service.id}`, head);
@@ -508,6 +555,7 @@ function column(service: ServiceView): HTMLElement {
     return node;
   }
   // One row per meter: the limits, then the credits.
+  if (service.balanceHeadline) node.append(balanceHeadline(service.balanceHeadline, service.stale));
   const meters = [...service.meters, ...service.credits];
   if (meters.length) node.append(el("div", "meters", ...meters.map((m) => meter(m, service.stale))));
   // Tiles two to a row, on the meters' grid.
@@ -635,9 +683,14 @@ async function start() {
   loadActivity();
 
   await listen<PanelView>("view", async (event) => {
+    const previous = view?.services.map(({ id }) => id).join(",");
     view = event.payload;
+    for (const id of chartModes.keys()) {
+      if (!view.services.some((service) => service.id === id)) chartModes.delete(id);
+    }
     render();
-    if (mode === "dashboard" && activity.expanded && chartMode !== "activity") {
+    if (mode === "dashboard" && activity.expanded &&
+        (previous !== view.services.map(({ id }) => id).join(",") || view.services.some(({ id }) => reportsSpending(id)))) {
       const period = activity.period;
       const weeks = shownWeeks;
       const recent = weeks > 0
@@ -669,7 +722,7 @@ async function start() {
   // The floating dashboard moves when dragged by anything but a button, as on macOS.
   app.addEventListener("mousedown", (event) => {
     if (!floating || mode !== "dashboard" || event.button !== 0) return;
-    if ((event.target as Element).closest("button, a, input")) return;
+    if ((event.target as Element).closest("button, a, input, summary")) return;
     invoke("start_drag");
   });
   window.addEventListener("keydown", (event) => {

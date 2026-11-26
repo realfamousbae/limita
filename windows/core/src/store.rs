@@ -628,6 +628,10 @@ impl Store {
         };
         {
             let mut inner = self.lock();
+            *inner.provider_generation.entry(service).or_default() += 1;
+            if inner.public.setup_message.as_ref().is_some_and(|(id, _)| *id == service) {
+                inner.public.setup_message = None;
+            }
             if let Some(failure) = failure {
                 inner.public.setup_message = Some((service, failure));
             }
@@ -635,17 +639,16 @@ impl Store {
                 inner.ledger.clear();
             }
             if service.uses_provider_connection() {
-                *inner.provider_generation.entry(service).or_default() += 1;
                 let _secret_guard = providers::CREDENTIALS_LOCK.lock().unwrap_or_else(|guard| guard.into_inner());
                 if let Err(error) = providers::credential_store(service).delete() {
                     inner.public.setup_message = Some((service, error));
                 }
                 inner.spending.remove(&service);
                 let _ = std::fs::remove_file(self.spending_path(service));
-                inner.last_live_attempt.remove(&service);
-                inner.rate_limit_streak.remove(&service);
-                inner.live_paused_until.remove(&service);
             }
+            inner.last_live_attempt.remove(&service);
+            inner.rate_limit_streak.remove(&service);
+            inner.live_paused_until.remove(&service);
             set_enabled(&mut inner, &self.sources.settings, service, false);
             inner.public.states.remove(&service);
             inner.public.live_errors.remove(&service);
